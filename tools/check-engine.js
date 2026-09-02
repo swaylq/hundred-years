@@ -766,5 +766,45 @@ console.log('22. 替玩家把事否掉的那种拒绝，落不了地');
   else ok(`他这个月走了：${原来} → ${s.city}，年卡照旧用${原来}那一份`);
 }
 
+/* 23. 自己写的路子要值钱：奖励和奇遇都盯着「有几成是他自己写的」。 */
+console.log('23. 照着纸条走给稳当那一份，自己想的路子给足');
+{
+  const opts = [{ what: '一早去十六铺找工头老周，扛包按件算，一件八分' },
+    { what: '把手上那块表当了，进一批线香试试水' },
+    { what: '去城西打听纱厂这个月招不招人' }];
+  const 抄 = opts[0].what;
+  const 半 = opts[0].what + '\n然后我要把老赵压着的那批货吃下来，找船运到宁波去卖';
+  const 全 = '我要把手上的钱押进一批线香，找宁波的船运过去，再托人介绍两个买家，月底之前出手';
+  const f = t => E.offScript(t, opts);
+  if (f(抄) > 0.01) fail(`原样点一条纸条，自己写的比例该是 0，实际 ${f(抄).toFixed(2)}`);
+  else if (f(opts.map(o => o.what).join('\n')) > 0.01) fail('三条都点了还算自己写的');
+  else if (!(f(半) > 0.4 && f(半) < 0.85)) fail(`点一条再自己加一段，该在四到八成之间，实际 ${f(半).toFixed(2)}`);
+  else if (f(全) < 0.99) fail(`一个字没抄，该是 1，实际 ${f(全).toFixed(2)}`);
+  else ok(`照抄 ${f(抄).toFixed(2)}、抄一半 ${f(半).toFixed(2)}、全自己写 ${f(全).toFixed(2)}`);
+
+  /* 撞上奇遇的频次：照抄约 8%，全自己写约 45%，四百局跑出来的数要落在附近 */
+  const 频 = list => {
+    let hit = 0, n = 0;
+    for (let seed = 1; seed <= 400; seed++) for (let i = 1; i <= E.MONTHS; i++) {
+      n++; if (E.serendipity({ seed, n: i, options: opts, months: [] }, list).luck) hit++;
+    }
+    return hit / n;
+  };
+  const p抄 = 频(抄), p全 = 频(全);
+  if (Math.abs(p抄 - 0.08) > 0.02) fail(`照着纸条走的奇遇频次跑偏：${(p抄 * 100).toFixed(1)}%，该在 8% 上下`);
+  else if (Math.abs(p全 - 0.45) > 0.03) fail(`自己写的奇遇频次跑偏：${(p全 * 100).toFixed(1)}%，该在 45% 上下`);
+  else ok(`四百局 × ${E.MONTHS} 个月：照抄撞上 ${(p抄 * 100).toFixed(1)}%，自己写撞上 ${(p全 * 100).toFixed(1)}%`);
+
+  /* 三条底线：同一局同一个月结果不变、上个月刚撞过就减半、一句话的清单不算 */
+  const s1 = { seed: 99, n: 7, options: opts, months: [] };
+  const 两次 = E.serendipity(s1, 全).luck === E.serendipity(s1, 全).luck;
+  const 减半 = E.serendipity({ ...s1, months: [{ luck: true }] }, 全).p;
+  const 一句话 = E.serendipity(s1, '去干活').p;
+  if (!两次) fail('同一局同一个月，两次算出来不一样');
+  else if (Math.abs(减半 - 0.225) > 1e-9) fail(`上个月刚撞过该减半到 0.225，实际 ${减半}`);
+  else if (一句话 !== 0) fail(`「去干活」这种清单不该有奇遇，实际 ${一句话}`);
+  else ok('同一局重算结果不变；上个月刚撞过减半到 0.225；一句话的清单不给');
+}
+
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');
 process.exit(bad ? 1 : 0);

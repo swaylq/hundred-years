@@ -384,6 +384,9 @@ async function runOneMonthInner(req, res, b, s) {
     const res1 = E.applyMonth(s, out.delta);
     /* 他这个月要是走了（换城、出海），人跟着搬——年卡照旧用原来那座城的。 */
     const moved = E.applyMove(s, out.delta.moveTo);
+    /* 这个月有几成是他自己写的、撞没撞上奇遇。跟 sim.buildUser 里算的是同一个函数、
+     * 同一份存档（还没 push、还没 advanceTo），所以结果一定一样；记下来是为了回头能查。 */
+    const sd = E.serendipity(s, b.list);
     /* 把这个月压成的那几行并进记忆。**要在 advanceTo 之前**——
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
@@ -393,6 +396,7 @@ async function runOneMonthInner(req, res, b, s) {
       story: out.delta.story, tally, entries: res1.entries,
       refused: out.delta.refused || [], capped: res1.capped, local: usedLocal,
       moved: moved || null,
+      luck: sd.luck, fresh: Math.round(sd.fresh * 100) / 100,
       /* 进了货却没记下东西——下个月的提示词里要拿它提醒模型自己补上 */
       missedGoods: res1.missedGoods || null,
     });

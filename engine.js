@@ -538,6 +538,55 @@ function cleanRefused(list, hits) {
     .slice(0, 3);
 }
 
+/* ── 自己写的路子，值得给他更多 ──────────────────────
+ * 每个月算完，模型顺手给三条下个月能走的路，点一条就填进格子里。
+ * 那三条是**稳当**的：照年卡里现成的路子来，不出彩也不出事。
+ * 玩家自己动手写的才是这个游戏好玩的地方——所以自己写的那部分要有回报：
+ * 尺子抬高一截，还多一次撞上奇遇的机会。
+ *
+ * 「有多少是自己写的」拿现成的三条纸条比：点一条填进去是原样插进格子里的
+ * （app.js 的 writeIn），所以纸条上的话在清单里就是一段整的子串。
+ * 剩下的字数就是他自己写的。 */
+
+/* 一步的线性同余（LCG）拿连着的月份当输入会排出规律：种子每加一个月，
+ * 随机数就往前挪固定的一段，走出来是 0.10 / 0.68 / 0.26 / 0.84 这样的等差数列，
+ * 小概率那一档可能整局一次都不响。所以这里用一个把每一位都搅匀的散列。 */
+function hash32(n) {
+  let x = n >>> 0;
+  x = (x ^ (x >>> 16)) >>> 0;
+  x = Math.imul(x, 0x7feb352d) >>> 0;
+  x = (x ^ (x >>> 15)) >>> 0;
+  x = Math.imul(x, 0x846ca68b) >>> 0;
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+/** 这份清单里有几成是他自己写的（0 = 三条纸条原样抄，1 = 全是自己想的） */
+function offScript(list, options) {
+  const text = String(list || '');
+  const han = countHan(text);
+  if (!han) return 0;
+  let copied = 0;
+  for (const o of (options || [])) {
+    const w = String((o && o.what) || '').trim();
+    if (w.length < 4) continue;
+    if (text.includes(w)) copied += countHan(w);
+  }
+  return Math.max(0, Math.min(1, 1 - copied / han));
+}
+
+/* 奇遇的机会：照着纸条走 8%，全是自己写的到 45%。
+ * 上个月刚撞过一次就减半——连着走运不像运气，像放水。
+ * 骰子只认存档的种子和第几个月，所以同一局重跑得到同一串结果，验收才盯得住。 */
+function serendipity(s, list) {
+  const fresh = offScript(list, (s && s.options) || []);
+  const han = countHan(list);
+  const last = (s.months || [])[(s.months || []).length - 1];
+  let p = 0.08 + 0.37 * fresh;
+  if (last && last.luck) p /= 2;
+  if (han < 20) p = 0;                       // 「去干活」这种一句话清单不算数
+  return { fresh, p, luck: hash32((s.seed || 1) * 7919 + (s.n || 1) * 104729) / 2 ** 32 < p };
+}
+
 /** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话就不动。
  *  年卡还是原来那座城的（物价、政策、时局照用），提示词里会说明人不在那儿。 */
 function applyMove(s, to) {
@@ -1042,7 +1091,7 @@ function checkPersona(text) {
 }
 
 module.exports = {
-  cleanOptions, cleanRefused, applyMove,
+  cleanOptions, cleanRefused, applyMove, offScript, serendipity,
   DAYS, MONTHS, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,
   money, moneyIn, unitOf, fixScale, fixSigns, unpairedBuys,

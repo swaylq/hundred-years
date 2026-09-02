@@ -394,10 +394,20 @@ function buildUser(s, list, extra = {}) {
    * 按天走的那一版实测三十天净赚 0.04 / −0.09 / −0.46 年的收入，两局是亏的。
    * 尺子按当月那种钱算，换币之后自动跟着变。 */
   const income = E.incomeOf(s.year, s.month);
-  const good = income / 6;                      // 做顺了的一个月：两个月的收入
-  const big = income / 2;                       // 谈成一笔：半年的收入
+  /* 三条纸条是稳当那一份；自己动手写的路子才是这个游戏好玩的地方，所以尺子跟着抬：
+   * 全是自己写的一个月，做顺了多五成、谈成一笔多三成，另外还多一次撞上奇遇的机会。 */
+  const sd = E.serendipity(s, list);
+  const good = income / 6 * (1 + 0.25 * sd.fresh);  // 做顺了的一个月：两个月的收入
+  const big = income / 2 * (1 + 0.3 * sd.fresh);    // 谈成一笔：半年的收入
   const wage = income / 12;                     // 老老实实做一个月工
   const capThis = E.monthCap(s.year, s.month);
+  /* 奖励要落在**撞上奇遇的那几个月**，不是每个月的底薪都抬一截：
+   * 底薪抬五成的那一版，1962 那一局二十四个月光靠「做顺了」就顶到了那一年的上限，
+   * 三个月被削顶（正文写了、账上没给，玩家会看见「多出来的没算进去」）。 */
+  /* 奇遇给多少，还要看这一年扛不扛得住：1962 年一个月的顶只有 1.2 年的收入，
+   * 张口就要 0.8 年，模型再往上写一点就撞顶，玩家看到的是「多出来的没算进去」。
+   * 所以按当月的顶收一道，宽年份（2015 年的顶是 108 年）根本碰不到这条线。 */
+  const bigLuck = Math.min(income * (0.45 + 0.35 * sd.fresh), capThis * 0.6);
   /* 进度用「相当于几年的收入」说，不用钱数——两年里可能换两次钱，
    * 数目差几百万倍，除以当月的年收入之后两头才比得了。 */
   const yearsNow = E.netWorth(s) / income;
@@ -478,6 +488,30 @@ function buildUser(s, list, extra = {}) {
         `门包、被抽的头、罚款、货被扣、被关几天，麻烦跟着涨。\n`
       : '');
 
+  /* 照着纸条走给稳当那一份，自己想的路子给足——这个差别要让玩家感觉得到。 */
+  const ownSay = sd.fresh >= 0.5
+    ? `\n**这个月他写的是自己想出来的路子，不是照着给他的三条走。** 敢想的就让他吃到肉：` +
+      `路子走得通就写透、给足，别拿「他还嫩」平白削他一刀。`
+    : sd.fresh <= 0.2
+      ? `\n这个月他是照着给他的三条路走的：稳当那一份给足就行，不出彩，也不出事。`
+      : '';
+
+  const luckSay = sd.luck
+    ? `\n【这个月给他一次奇遇 —— 必须写进正文】\n` +
+      `挑下面一种，照这一年这座城的实情写具体：\n` +
+      `· 一个人：肯带他一把、肯赊他货、把手上的门路让给他\n` +
+      `· 一样东西：低价收进来的、别人急着脱手的，后来才知道值钱\n` +
+      `· 一个消息：他比别人早知道几天——哪批货要涨、哪个厂要招人、哪条街要拆\n` +
+      `· 一笔活儿：对家临时加价，或者急着找人，价钱由他开\n` +
+      `· 一个旧账：有人还了欠他的人情，还的是实在东西\n` +
+      `奇遇不是天上掉钱：是**一个具体的人、在具体的地方、给了他一个机会**，` +
+      `他还得把这件事做完才拿得到。写清楚这人是谁、怎么碰上的、他做了什么、最后落到手多少。\n` +
+      `这个月的进项因此可以到 ${both(bigLuck, cur)}，但一分都不许超过 ${both(capThis, cur)}。\n` +
+      `**不许写成他运气好**——正文里不出现「幸运」「机缘」这类字眼，只写发生了什么。\n` +
+      `奇遇要留下钩子：碰上的这个人、这批货、这个消息，下个月还用得着，` +
+      `写进 memo.people 或者 memo.threads，别写成一锤子买卖。`
+    : '';
+
   return `${compactCard(c, sy, s.month, s.city)}
 
 【这个月】${s.year} 年 ${s.month} 月，是他这两年里的第 ${s.n} 个月，一共 ${E.MONTHS} 个月。
@@ -508,7 +542,7 @@ ${behind ? '他落下了：这个月让他抓住点实在的东西，把欠的�
   : '他走在道上：接着按他写的算，别忽然塞给他一座金山。'}
 
 【他这个月写的清单】
-${String(list).trim()}
+${String(list).trim()}${ownSay}${luckSay}
 ${rulings}${extra.retry ? `\n\n【上一版写得不合格，改掉这几条再给我一遍完整的 JSON】\n${extra.retry.map(x => '- ' + x).join('\n')}` : ''}`;
 }
 
@@ -607,8 +641,14 @@ function runMonthLocal(s, list) {
    * 做顺了的一个月约合两个月的收入（inc/6）。 */
   const effort = 0.5 + Math.min(1, E.countHan(list) / 160);
   const luck = 0.5 + r() * 0.9;
+  /* 自己写的路子给得多一点，撞上奇遇再加一笔——跟提示词那边是同一套规矩 */
+  const sd = E.serendipity(s, list);
   /* 撞上这一年没有的东西：只废掉那一件，剩下的日子照旧干活，拿平常的一半。 */
-  const gain = inc / 6 * effort * luck * (hits.some(h => h.kind !== 'banned') ? 0.5 : 1) * 0.5;
+  const gain = inc / 6 * effort * luck * (hits.some(h => h.kind !== 'banned') ? 0.5 : 1) * 0.5
+    * (1 + 0.5 * sd.fresh);
+  /* 兜底那份正文是模板，给的钱就别跟模型那边一样厚：模型那边奇遇能到大半年的收入，
+   * 这里最多给三成——一段套话换半年工钱，玩家一眼就看出是假的。 */
+  const bonus = sd.luck ? inc * (0.15 + 0.15 * sd.fresh) : 0;
 
   /* 犯法的那种（banned）不算办不成：有人管，他照样做得成，代价折在钱和麻烦上。
    * 只有「那一年根本没有这东西」才让他碰壁。 */
@@ -622,12 +662,17 @@ function runMonthLocal(s, list) {
         `月底有人来打听过你，${way.who}那边照旧要人，你就接着做${way.way}。`
       : `你按写下的去做了。${way.way}这条路，${way.who}。` +
         `起早贪黑跑了一个月，鞋底磨薄了一层。到月底结账的时候，事情算是有了个着落。`;
+  const storyLuck = bonus
+    ? `${story}月中你在${way.who}那边碰上一个人，手里正压着一批货急着脱手，价钱压得很低。` +
+      `你把手头的钱都押了进去，转手出了大半，剩下的还压在屋里。`
+    : story;
 
   return {
     delta: {
-      story,
+      story: storyLuck,
       entries: [
         { what: hits.length ? '白忙半个月的开销' : (way.way || '打零工'), amount: Math.round(gain * 100) / 100 },
+        ...(bonus ? [{ what: '碰上的那一笔', amount: Math.round(bonus * 100) / 100 }] : []),
         { what: '一个月的吃住', amount: -Math.round(inc / 24 * 100) / 100 },
       ],
       assetsAdd: [], assetsDrop: [], debtsAdd: [], debtsClear: [],
