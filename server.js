@@ -151,7 +151,7 @@ function monthList(s) {
       n: d.n, year: d.year, month: d.month,
       list: d.list, story: d.story, tally: d.tally,
       say: t ? t.say : '', worth: t ? t.worth : '',
-      refused: d.refused || [], capped: !!d.capped,
+      refused: d.refused || [], overTop: !!d.overTop,
     };
   });
 }
@@ -414,8 +414,7 @@ const routes = {
           yearEarned: r.extra_year_earned, yearEarnedText: r.extra_result?.yearEarnedText || null,
           worldUsd: r.extra_world_usd, worldUsdText: E.fmtUsd(r.extra_world_usd || 0),
           score: r.extra_score, scoreText: E.fmtScore(r.extra_score),
-          city: r.extra_result?.city, ceiling: r.extra_result?.ceiling,
-          capped: !!r.extra_result?.cappedTotal, at: r.updated,
+          city: r.extra_result?.city, at: r.updated,
         })),
       });
     }
@@ -434,8 +433,7 @@ const routes = {
         worldUsd: r.world_usd,
         worldUsdText: E.fmtUsd(r.world_usd || 0),
         score: r.score, scoreText: E.fmtScore(r.score),
-        city: r.result?.city, ceiling: r.result?.ceiling,
-        capped: !!r.result?.cappedTotal,
+        city: r.result?.city,
         at: r.updated,
       })),
     });
@@ -542,7 +540,10 @@ async function runOneMonthInner(req, res, b, s) {
     s.months.push({
       n: s.n, year: s.year, month: s.month, list: String(b.list).slice(0, 2000),
       story: out.delta.story, tally, entries: res1.entries,
-      refused: out.delta.refused || [], capped: res1.capped, local: usedLocal,
+      refused: out.delta.refused || [], local: usedLocal,
+      /* 这个月挣得超过了「那一年做到头的一个月」。以前这里是削顶的记号，
+       * 2026-09-05 不削了，留着它只为在界面上给这个月一句话。 */
+      overTop: res1.gained > E.monthTop(s.year, s.month),
       moved: moved || null,
       luck: sd.luck, fresh: Math.round(sd.fresh * 100) / 100,
       /* 押了本钱的月份：赢没赢、几倍、押的是哪一段行情——回头查「投机是不是又一直亏」用 */
@@ -576,7 +577,7 @@ async function runOneMonthInner(req, res, b, s) {
       })(),
       refused: out.delta.refused || [],
       moved: moved || null,
-      capped: res1.capped,
+      overTop: played.overTop,
       overspent: res1.overspent > 0 ? E.money(res1.overspent, curNow) : null,
       /* 换之前那种钱的名字，直接用 applySwitch 返回的 from。
        * 原来是照 cur 猜的（`cur==='GOLDYUAN' ? 'FABI' : 'RMB1'`），

@@ -63,19 +63,42 @@ console.log('2. 揣着一年的收入当月结算 = 1.00 分');
   ok(`${n} 个组合都对`);
 }
 
-/* 2b. 任何一局都不可能超过整局的上限 —— 这条挡的是提示词注入 */
-console.log('2b. 整局封顶：月月顶格也超不过「平均每月上限 × 6」');
+/* 2b. 没有上限了（2026-09-05 sway 定的）：月月做到头，二十四个月照实累加 */
+console.log('2b. 不封顶：月月做到头，整局照实累加');
 {
-  let worst = 0, worstAt = '';
-  for (const y of [1930, 1948, 1962, 1970, 1988, 2015]) {
-    const { s } = walk(y, 6, st => E.applyMonth(st, { entries: [{ what: '注入', amount: 1e13 }] }));
-    const r = E.settle(s);
-    if (r.score > r.ceiling + 1e-6) fail(`${y} 年月月顶格打出 ${r.score.toFixed(1)} 年，超过整局上限 ${r.ceiling.toFixed(1)}`);
-    if (r.capHits < E.MONTHS) fail(`${y} 年月月顶格，削顶只记了 ${r.capHits} 次，该是 ${E.MONTHS} 次`);
-    const ratio = r.score / r.ceiling;
-    if (ratio > worst) { worst = ratio; worstAt = `${y}(${r.score.toFixed(1)}/${r.ceiling.toFixed(1)})`; }
-  }
-  ok(`六个年份月月顶格，全部压在各自的上限之内，最贴边的是 ${worstAt}`);
+  const { s } = walk(2015, 6, st => E.applyMonth(st, { entries: [{ what: '做到头的一个月', amount: E.monthTop(st.year, st.month) }] }));
+  const r = E.settle(s);
+  const was = E.yearOf(2015).ceiling * 6;            // 老口径：平均每月做到头 × 六个满月
+  if (r.ceiling != null || r.cappedTotal != null) fail('结算结果里还留着封顶那几项');
+  if (!(r.score > was * 3)) fail(`月月做到头只打出 ${r.score.toFixed(1)} 年，老封顶是 ${was.toFixed(1)} 年，撤了闸该在它三倍以上`);
+  else ok(`2015-06 月月做到头，打出 ${r.score.toFixed(1)} 年的收入（老封顶 ${was.toFixed(1)} 年，早过了）`);
+}
+
+/* 2c. 撤了上限之后剩下的唯一一道：单位写错。
+ *     判据是「比那一年做到头的一个月还高一千倍」——挣得再多也够不着，
+ *     够得着的只有换币后照旧钱记账和清单里的注入。 */
+console.log('2c. 只有单位写错才折回去，挣得多不折');
+{
+  const top = E.monthTop(2015, 6);
+  const put = delta => {
+    const s = E.newRun({ year: 2015, month: 6, nick: 'x', seed: 1 });
+    const before = E.netWorth(s);
+    const res = E.applyMonth(s, delta);
+    return { got: E.netWorth(s) - before, res };
+  };
+  const a = put({ entries: [{ what: '一笔天大的买卖', amount: top * 999 }] });
+  if (a.res.rescaled) fail('做到头的九百九十九倍被当成单位写错了');
+  else if (Math.abs(a.got - top * 999) > 1e-6) fail(`九百九十九倍进去 ${top * 999}，落下的却是 ${a.got}`);
+  else ok(`做到头的九百九十九倍，一分不少全记上（${E.money(top * 999, 'RMB')}）`);
+
+  const b = put({ entries: [{ what: '注入', amount: 1e13 }] });
+  if (!b.res.rescaled) fail('清单里注入 1e13，没被当成单位写错');
+  else if (b.got > top * 10) fail(`折回去之后还剩 ${b.got}，该落回那一年的量级（做到头 ${top}）`);
+  else ok(`注入 1e13，按 10 的 ${-b.res.rescaled.zeros} 次幂折回 ${E.money(b.got, 'RMB')}（做到头是 ${E.money(top, 'RMB')}）`);
+
+  const c = put({ assetsAdd: [{ name: '一栋楼', kind: '实物', worth: 1e13 }] });
+  if (!c.res.rescaled || c.got > top * 10) fail(`写成「家当」的 1e13 绕过去了：落下 ${c.got}`);
+  else ok(`写在 assetsAdd 里的 1e13（整月一笔账都不记）一样折回 ${E.money(c.got, 'RMB')}`);
 }
 
 /* 3. 换币的月份整月按旧钱过，月底那一下现金按公布的比价折过去 */
@@ -134,23 +157,24 @@ console.log('4b. 1947 年 6 月开局：一局之内换两次钱');
   else ok(`攥现金 ${a.toFixed(4)} 年（赔光），换成米 ${b.toFixed(4)} 年（保住了）`);
 }
 
-/* 5. 一个月赚太多要被削回上限 */
-console.log('5. 一个月赚过头要被削');
+/* 5. 一个月赚过头，一分不削 */
+console.log('5. 一个月赚过头也照记');
 {
   const s = E.newRun({ year: 2015, month: 6, nick: 'x', seed: 1 });
-  const cap = E.monthCap(2015, 6);
+  const top = E.monthTop(2015, 6);
   const before = E.netWorth(s);
-  const res = E.applyMonth(s, { cash: cap * 100 });
-  if (!res.capped) fail('一个月塞进一百倍上限的钱，没被削');
-  else if (Math.abs(E.netWorth(s) - before - cap) > 1e-6) fail(`削完之后多了 ${E.netWorth(s) - before}，应该正好是上限 ${cap}`);
-  else ok(`塞 ${E.money(cap * 100, 'RMB')} 进去，削到 ${E.money(cap, 'RMB')}`);
+  const res = E.applyMonth(s, { cash: top * 100 });
+  const got = E.netWorth(s) - before;
+  if (res.capped !== undefined) fail('applyMonth 还在返回削顶的记号');
+  else if (Math.abs(got - top * 100) > 1e-6) fail(`塞进做到头的一百倍，落下的却是 ${got}`);
+  else ok(`塞 ${E.money(top * 100, 'RMB')} 进去，家底就多 ${E.money(got, 'RMB')}，一分没削`);
 }
 
 /* 6. 家底要把票证和权益算进来 */
 console.log('6. 票证和权益算进家底');
 {
   const s = E.newRun({ year: 1962, month: 5, nick: 'x', seed: 1 });
-  /* 这两笔加起来 105，1962 年一个月的上限是七百多，不会被削——要验的是家底算法，不是上限 */
+  /* 这两笔加起来 105，验的是家底算法 */
   E.applyMonth(s, { assetsAdd: [{ name: '全国粮票三十斤', kind: '票证', worth: 45 }, { name: '调回县城的名额', kind: '权益', worth: 60 }] });
   const nw = E.netWorth(s);
   if (Math.abs(nw - (s.cash + 105)) > 1e-9) fail(`家底 ${nw} 没把票证和权益算进去（现金 ${s.cash}）`);
@@ -214,21 +238,21 @@ for (const [y, mo, strict] of [[1948, 8, false], [1949, 5, true]]) {
     (b > a + 1e-9 ? `——差 ${(b - a).toFixed(4)} 年的收入` : '——这一年比价公道，两边一样'));
 }
 
-/* 5d. 一个月的上限必须跟着换币走 */
-console.log('5d. 换币之后，一个月的上限要按新钱算');
+/* 5d. 「做到头的一个月」这把尺子必须跟着换币走 */
+console.log('5d. 换币之后，「做到头的一个月」要按新钱算');
 {
-  const before = E.monthCap(1948, 8);          // 换币那个月整月按法币过
-  const after = E.monthCap(1948, 9);           // 下个月起是金圆券
+  const before = E.monthTop(1948, 8);          // 换币那个月整月按法币过
+  const after = E.monthTop(1948, 9);           // 下个月起是金圆券
   const r = E.yearOf(1948).switch.rate;
   if (!(before / after > r * 0.5 && before / after < r * 2)) {
-    fail(`换币前后的上限差了 ${(before / after).toExponential(2)} 倍，应该跟比价 ${r.toExponential(2)} 一个量级`);
+    fail(`换币前后的尺子差了 ${(before / after).toExponential(2)} 倍，应该跟比价 ${r.toExponential(2)} 一个量级`);
   } else ok(`换币前 ${E.money(before, 'FABI')}，换币后 ${E.money(after, 'GOLDYUAN')}`);
 
-  /* 拿它挡一遍「换币之后照旧用法币数目记账」那种错 */
+  /* 尺子跟着换币走，「换币之后照旧用法币数目记账」才认得出来是单位错了 */
   const { s } = walk(1948, 8, st => E.applyMonth(st, { entries: [{ what: '照法币量级乱记的进账', amount: 5e7 }] }));
   const r2 = E.settle(s);
-  if (r2.score > r2.ceiling + 1e-6) fail(`换币后月月记五千万，算出 ${r2.score.toFixed(1)} 年的收入，超过整局上限 ${r2.ceiling.toFixed(1)}`);
-  else ok(`换币后月月记五千万，被上限压到 ${E.fmtScore(r2.score)}（整局上限 ${r2.ceiling.toFixed(1)}）`);
+  if (r2.score > 500) fail(`换币后月月记五千万，算出 ${r2.score.toFixed(1)} 年的收入——单位没折回金圆券的量级`);
+  else ok(`换币后月月记五千万，折回金圆券的量级，整局 ${E.fmtScore(r2.score)}`);
 }
 
 /* 6b. 绕过 advanceTo 直接改月份，结算要当场报错，不许静静算出个天文数字 */

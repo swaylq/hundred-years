@@ -91,20 +91,18 @@ console.log('2. 1947-06 那一局，第 24 个月正好是换币的 1949 年 5 �
   else ok(`两年那一份记着 ${r1.months} 个月、${r1.scoreText}；接着走完是 ${r2.months} 个月、${r2.scoreText}`);
 }
 
-/* 3. 整局封顶按走过的月数放大，两年那一档一点没变 ——— */
-console.log('3. 整局封顶：二十四个月还是「六个满月」，走得久的按比例放大');
+/* 3. 走得久的局也不封顶：接着走的月份照实往上加（2026-09-05 撤了整局封顶）——— */
+console.log('3. 不封顶：84 个月照实累加，比 24 个月多出一大截');
 {
-  const meanOf = st => st.months.reduce((t, m) => t + E.yearOf(m.year).ceiling, 0) / st.months.length;
+  const each = st => E.applyMonth(st, { entries: [{ what: '做到头的一个月', amount: E.monthTop(st.year, st.month) }] });
 
-  const a = start(1962, 5); walk(a, E.MONTHS);
+  const a = start(1962, 5); walk(a, E.MONTHS, each);
   const ra = E.settle(a);
-  if (!near(ra.ceiling, meanOf(a) * 6, 1e-9)) fail(`两年那一档的封顶变了：${ra.ceiling} 该是 ${meanOf(a) * 6}`);
-  else ok(`1962-05 两年封顶 ${ra.ceiling.toFixed(1)} 年的收入（平均月上限 × 6，跟以前一模一样）`);
-
-  const b = start(1962, 5); walk(b, E.MONTHS); E.reopen(b); walk(b, b.extraTo);
+  const b = start(1962, 5); walk(b, E.MONTHS, each); E.reopen(b); walk(b, b.extraTo, each);
   const rb = E.settle(b);
-  if (!near(rb.ceiling, meanOf(b) * (84 / 4), 1e-9)) fail(`84 个月的封顶该是 ${(meanOf(b) * 21).toFixed(2)}，实际 ${rb.ceiling.toFixed(2)}`);
-  else ok(`同一局走满 84 个月，封顶放大到 ${rb.ceiling.toFixed(1)} 年的收入（21 个满月），两年那一档 ${ra.ceiling.toFixed(1)} 没动`);
+  if (ra.ceiling != null || rb.ceiling != null) fail('结算结果里还留着封顶那一项');
+  if (!(rb.score > ra.score * 2.5)) fail(`月月做到头：84 个月 ${rb.score.toFixed(1)} 年，24 个月 ${ra.score.toFixed(1)} 年——三倍半的月数该拿到明显更多`);
+  else ok(`月月做到头：24 个月 ${ra.scoreText}、84 个月 ${rb.scoreText}，照实累加，没有封顶`);
 }
 
 /* 4. 冻结闸：两年的成绩只写得进去一次 ————————— */

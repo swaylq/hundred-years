@@ -77,12 +77,12 @@ async function playOne(year, month, seed) {
     const res = E.applyMonth(s, out.delta);
     const tally = E.tallyLine(res.entries, curNow);
     const memoAdd = E.applyMemo(s, out.delta, { ...at, tally });
-    s.months.push({ ...at, list, story: out.delta.story, tally, refused: out.delta.refused || [], capped: res.capped, missedGoods: res.missedGoods || null });
+    s.months.push({ ...at, list, story: out.delta.story, tally, refused: out.delta.refused || [], overTop: res.gained > E.monthTop(at.year, at.month), missedGoods: res.missedGoods || null });
     const switched = i < E.MONTHS ? E.advanceTo(s, i + 1) : [E.closeOut(s)].filter(Boolean);
     log.write(JSON.stringify({
       n: at.n, year: at.year, month: at.month, list, story: out.delta.story,
       cash: res.cash, entries: res.entries, tally,
-      refused: out.delta.refused || [], capped: res.capped, local: !!out.local,
+      refused: out.delta.refused || [], local: !!out.local,
       /* 模型这个月的账写小了几个数量级、被引擎补回来了：回头查日志时要看得见 */
       rescaled: res.rescaled ? res.rescaled.zeros : 0,
       flipped: res.flipped ? res.flipped.flipped : [],
@@ -94,7 +94,7 @@ async function playOne(year, month, seed) {
     }) + '\n');
 
     if (!QUIET) {
-      console.log(`  ${at.year} 年 ${String(at.month).padStart(2)} 月  家底 ${E.money(E.netWorth(s), curNow).padStart(16)}  ${tally.slice(0, 46)}${res.capped ? '  [削顶]' : ''}${res.rescaled ? `  [补了${res.rescaled.zeros}个零]` : ''}${res.flipped ? `  [翻了${res.flipped.flipped.length}个负号]` : ''}${out.local ? '  [本地]' : ''}`);
+      console.log(`  ${at.year} 年 ${String(at.month).padStart(2)} 月  家底 ${E.money(E.netWorth(s), curNow).padStart(16)}  ${tally.slice(0, 46)}${res.gained > E.monthTop(at.year, at.month) ? '  [超过做到头的一个月]' : ''}${res.rescaled ? `  [补了${res.rescaled.zeros}个零]` : ''}${res.flipped ? `  [翻了${res.flipped.flipped.length}个负号]` : ''}${out.local ? '  [本地]' : ''}`);
     }
     if (switched.length) console.log(`         ※ ${switched[0].say}`);
   }
@@ -117,9 +117,9 @@ async function playOne(year, month, seed) {
     const out = await playOne(year, month, SEED0 + year * 13 + month);
     const R = out.result;
     console.log(`  结算：${R.scoreText}（${out.secs.toFixed(0)} 秒，模型 ${out.modelDays} 个月 / 本地 ${out.localDays} 个月）`);
-    console.log(`  ${R.year}-${R.month} → ${R.endYear}-${R.endMonth}，家底 ${R.startCash.toPrecision(4)} ${E.CN[R.startCurrency]} → ${R.endWorth.toPrecision(4)} ${E.CN[R.currency]}，削顶 ${R.capHits} 次`);
+    console.log(`  ${R.year}-${R.month} → ${R.endYear}-${R.endMonth}，家底 ${R.startCash.toPrecision(4)} ${E.CN[R.startCurrency]} → ${R.endWorth.toPrecision(4)} ${E.CN[R.currency]}`);
     console.log(`  日志 ${path.relative(process.cwd(), out.logf)}`);
-    rows.push({ year, month, score: R.score, days: out.s.months.length, secs: out.secs, capHits: R.capHits });
+    rows.push({ year, month, score: R.score, days: out.s.months.length, secs: out.secs });
   }
   console.log('\n── 汇总 ──');
   for (const r of rows) console.log(`  ${r.year}-${String(r.month).padStart(2, '0')}  ${r.days} 个月  ${E.fmtScore(r.score)}`);

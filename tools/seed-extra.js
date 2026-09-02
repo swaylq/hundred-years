@@ -28,7 +28,7 @@ function play(s, n) {
     s.months.push({
       n: s.n, year: s.year, month: s.month, list,
       story: out.delta.story, tally: E.tallyLine(r.entries, cur), entries: r.entries,
-      refused: out.delta.refused || [], capped: r.capped, local: true,
+      refused: out.delta.refused || [], local: true,
     });
     if (s.n < E.lastMonthOf(s)) E.advanceTo(s, s.n + 1); else E.closeOut(s);
   }

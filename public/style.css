@@ -408,7 +408,6 @@ details.day .dt { color: var(--ink-2); flex: 1 1 auto; line-height: 1.75; }
 }
 .tabs button:hover { color: var(--ink); border-color: var(--ink); }
 .tabs button.on { border-color: var(--seal); color: var(--seal-ink); background: color-mix(in srgb, var(--seal) 8%, var(--sheet)); }
-.cap { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 2px; font-size: 11px; background: var(--seal); color: var(--on-seal); vertical-align: 1px; }
 table.board { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.board th { text-align: left; font-weight: 400; color: var(--muted); font-size: 12px; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--ink); }
 table.board td { padding: 9px 8px 9px 0; border-bottom: 1px dotted var(--rule); vertical-align: baseline; }

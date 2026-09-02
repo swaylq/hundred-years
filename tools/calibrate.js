@@ -33,7 +33,7 @@ const lazyList = s => P.lazy(s);
 async function playOne(year, month, seed, how = 'careful') {
   const s = E.newRun({ year, month, nick: '标定', seed });
   const r = rng(seed);
-  let capped = 0, localDays = 0;
+  let overTop = 0, localDays = 0;
   for (let i = 1; i <= MONTHS; i++) {
     const c = SIM.card(s.year);                      // 跨年之后换成那一年的年卡
     const list = how === 'lazy' ? lazyList(s) : templateList(s, c, r);
@@ -42,7 +42,7 @@ async function playOne(year, month, seed, how = 'careful') {
     catch (err) { out = SIM.runMonthLocal(s, list); localDays++; }
     const at = { n: s.n, year: s.year, month: s.month };
     const res = E.applyMonth(s, out.delta);
-    if (res.capped) capped++;
+    if (res.gained > E.monthTop(at.year, at.month)) overTop++;
     const tl = E.tallyLine(res.entries, E.currencyOf(at.year, at.month));
     s.months.push({ ...at, tally: tl });
     if (i < MONTHS) E.advanceTo(s, i + 1); else E.closeOut(s);
@@ -50,7 +50,7 @@ async function playOne(year, month, seed, how = 'careful') {
   const R = E.settle(s);
   /* 只走了一部分月份的话，按比例折算成满局，好跟走满的比 */
   const score = MONTHS === E.MONTHS ? R.score : R.score * (E.MONTHS / MONTHS);
-  return { year, month, score, capped, localDays, ceiling: E.yearOf(year).ceiling };
+  return { year, month, score, overTop, localDays, ceiling: E.yearOf(year).ceiling };
 }
 
 const median = a => { const b = [...a].sort((x, y) => x - y); const n = b.length; return n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2; };
@@ -103,9 +103,9 @@ const quart = (a, q) => { const b = [...a].sort((x, y) => x - y); return b[Math.
   else if (spread > SPREAD) off.push({ d: `${hi.d} 对 ${lo.d}`, m: hi.m, ratio: spread, why: '两端差得太开' });
   console.log(`\n全体中位数 ${M.toFixed(2)} 年的收入，${all.length} 局`);
   console.log(`最高的年代 ${hi.d}（${hi.m.toFixed(2)}）是最低的 ${lo.d}（${lo.m.toFixed(2)}）的 ${spread === Infinity ? '∞' : spread.toFixed(1)} 倍，上限 ${SPREAD} 倍`);
-  const capped = out.reduce((t, r) => t + r.capped, 0);
+  const overTop = out.reduce((t, r) => t + r.overTop, 0);
   const loc = out.reduce((t, r) => t + r.localDays, 0);
-  console.log(`削顶 ${capped} 天次，退回本地演算 ${loc} 天次`);
+  console.log(`超过「做到头的一个月」${overTop} 个月次（照记，不削），退回本地演算 ${loc} 天次`);
   console.log(OR.report());
 
   /* 认真 vs 敷衍：四个年代，每个年代**三个种子各来一对**，比中位数。

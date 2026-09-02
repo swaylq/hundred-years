@@ -106,7 +106,7 @@ async function openYear(y) {
      <div class="mood">${esc(c.economy.mood)}（${esc(c.economy.number)}）</div>
      <div class="chips">
        <span class="chip">落在${esc(d.city)}</span>
-       <span class="chip chip-top">一个月的顶：约 ${d.ceiling} 年的收入</span>
+       <span class="chip chip-top">做到头的一个月：约 ${d.ceiling} 年的收入</span>
        ${d.switch ? `<span class="chip chip-sw">${d.switch.month} 月换钱</span>` : ''}
      </div>`;
 
@@ -335,7 +335,7 @@ function renderPlay(last, opts = {}) {
     for (const r of last.refused) ul.appendChild(el('li', '', `${r.what} — ${r.why}`));
     w.appendChild(ul); box.appendChild(w);
   }
-  if (last.capped) box.appendChild(el('div', 'note', '这个月挣得超过了那一年一个月能挣到的顶，多出来的没算进去。'));
+  if (last.overTop) box.appendChild(el('div', 'note', '这个月挣得超过了那一年做到头的一个月——全记进家底了。'));
   if (last.overspent) box.appendChild(el('div', 'note', `兜里的钱不够，有 ${last.overspent} 的开销没花成。`));
   if (last.local) box.appendChild(el('div', 'note', '这个月没经过大模型，是照固定的规矩粗算的' + (last.why ? `（${last.why}）` : '') + '。'));
 
@@ -605,7 +605,6 @@ function scoreKv(r) {
     ['相当于几年的收入', yrs + ' 年'],
     ['换成当年的美元', r.usdThen != null ? fmtUsdCN(r.usdThen) : '—'],
     ['按世界经济折到今天', r.worldUsdText || '—'],
-    ['这一局的上限', (Math.round(r.ceiling * 10) / 10) + ' 年的收入'],
     ['走完的月数', (r.months || 0) + ' 个月'],
   ];
   for (const [k, v] of rows) { const d = el('div'); d.appendChild(el('span', '', k)); d.appendChild(el('b', '', v)); kv.appendChild(d); }
@@ -617,8 +616,6 @@ function renderDone(r, ranks, months, opts = {}) {
   const b = $('#done-body'); b.innerHTML = '';
   b.appendChild(scoreCard(r, ranks, { extra }));
   b.appendChild(scoreKv(r));
-  if (r.capHits > 0) b.appendChild(el('p', 'note', `有 ${r.capHits} 个月挣得超过了那一年一个月能挣到的顶，多出来的没算。`));
-  if (r.cappedTotal) b.appendChild(el('p', 'note', `这一局撞到了整局的上限（${Math.round(r.ceiling * 10) / 10} 年的收入），超出的部分没算进去。`));
 
   const rev = $('#done-review'); rev.innerHTML = '';
   if (opts.review) renderReview(rev, opts.review);
@@ -881,25 +878,23 @@ async function loadBoard() {
     ? '<thead><tr><th></th><th>名号</th><th>开局年月</th><th class="c">落点</th><th class="c">走了多久</th><th style="text-align:right">折成今天</th></tr></thead>'
     : boardYear
     ? '<thead><tr><th></th><th>名号</th><th>月</th><th class="c">落点</th><th style="text-align:right">净赚</th></tr></thead>'
-    : '<thead><tr><th></th><th>名号</th><th>开局年月</th><th class="c">落点</th><th class="c">这一局的顶</th><th style="text-align:right">折成今天</th></tr></thead>';
+    : '<thead><tr><th></th><th>名号</th><th>开局年月</th><th class="c">落点</th><th style="text-align:right">折成今天</th></tr></thead>';
   const tb = el('tbody');
   for (const r of d.rows) {
     const tr = el('tr');
-    const mark = r.capped ? '<span class="cap" title="撞到了这一年的上限">顶</span>' : '';
     tr.innerHTML = boardScope === 'extra'
-      ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}${mark}</td>
+      ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}</td>
          <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
          <td class="c">${esc(r.city || '')}</td>
          <td class="c y">${Math.round((r.months || 0) / 12 * 10) / 10} 年</td>
          <td class="s">${esc(r.worldUsdText || '')}</td>`
       : boardYear
-      ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}${mark}</td>
+      ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}</td>
          <td class="y">${r.month} 月</td><td class="c">${esc(r.city || '')}</td>
          <td class="s">${esc(r.yearEarnedText || '')}</td>`
-      : `<td class="r">${r.rank}</td><td>${esc(r.nick)}${mark}</td>
+      : `<td class="r">${r.rank}</td><td>${esc(r.nick)}</td>
          <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
          <td class="c">${esc(r.city || '')}</td>
-         <td class="c y">${r.ceiling != null ? r.ceiling + ' 年' : ''}</td>
          <td class="s">${esc(r.worldUsdText || '')}</td>`;
     /* 每一行点得进去，读别人那两年是怎么过的 */
     if (r.id) { tr.classList.add('mine-go'); tr.addEventListener('click', () => openDetail(r.id, 'board')); }
@@ -909,8 +904,8 @@ async function loadBoard() {
   box.appendChild(el('p', 'hint', (boardScope === 'extra'
     ? '「走了多久」算上前面那两年。'
     : boardYear
-    ? '「顶」是撞到了这一年现实上限的那些局——那一年最多就能赚这么多。'
-    : '「那一年的顶」是白手起家的人在那一年最多能赚到几年的收入。年份不同，这个数差得很远。') +
+    ? '同一年出发的放在一起比，按当年那种钱净赚多少排。'
+    : '各年的钱不是一种钱，先折成当年的美元，再按世界经济折到今天来比。') +
     '点哪一行，看那一局是怎么过的。'));
 }
 

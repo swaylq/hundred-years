@@ -414,14 +414,15 @@ function buildUser(s, list, extra = {}) {
   const good = income / 6 * (1 + 0.25 * sd.fresh);  // 做顺了的一个月：两个月的收入
   const big = income / 2 * (1 + 0.3 * sd.fresh);    // 谈成一笔：半年的收入
   const wage = income / 12;                     // 老老实实做一个月工
-  const capThis = E.monthCap(s.year, s.month);
+  const topThis = E.monthTop(s.year, s.month);   // 这一年做到头的一个月，一把尺子（2026-09-05 起不再是闸）
   /* 奖励要落在**撞上奇遇的那几个月**，不是每个月的底薪都抬一截：
-   * 底薪抬五成的那一版，1962 那一局二十四个月光靠「做顺了」就顶到了那一年的上限，
-   * 三个月被削顶（正文写了、账上没给，玩家会看见「多出来的没算进去」）。 */
-  /* 奇遇给多少，还要看这一年扛不扛得住：1962 年一个月的顶只有 1.2 年的收入，
-   * 张口就要 0.8 年，模型再往上写一点就撞顶，玩家看到的是「多出来的没算进去」。
-   * 所以按当月的顶收一道，宽年份（2015 年的顶是 108 年）根本碰不到这条线。 */
-  const bigLuck = Math.min(income * (0.45 + 0.35 * sd.fresh), capThis * 0.6);
+   * 底薪抬五成的那一版，1962 那一局二十四个月光靠「做顺了」就摸到了那一年的天花板，
+   * 正文写得像模像样，钱却全是「做顺了」堆出来的，看不出他做成了什么。 */
+  /* 奇遇给多少，按这一年的量级收一道：1962 年做到头的一个月才 1.2 年的收入，
+   * 一次奇遇张口就给 0.8 年，那一年就没有别的事可做了。宽年份（2015 年是 108 年）
+   * 根本碰不到这条线。收的是**奇遇这一项给多大**，不是他这个月能挣多少——
+   * 他自己写出来的买卖照样可以超过这个数。 */
+  const bigLuck = Math.min(income * (0.45 + 0.35 * sd.fresh), topThis * 0.6);
   /* 进度用「相当于几年的收入」说，不用钱数——两年里可能换两次钱，
    * 数目差几百万倍，除以当月的年收入之后两头才比得了。 */
   const yearsNow = E.netWorth(s) / income;
@@ -526,7 +527,8 @@ function buildUser(s, list, extra = {}) {
         ? `**这一把成了。** 落到手的大约是他押进去那笔本钱的 ${bet.mult} 倍——` +
           `本钱多少由他写的和他兜里有多少定，赚的这一笔单独记进 entries。\n` +
           `${bet.mult >= 2 ? '这是他这两年里数得着的一次，正文要写透：在哪儿下的手、经谁的手、行情哪天转的、他什么时候出的手。\n' : ''}` +
-          `赢了也不许超过这个月的顶 ${both(capThis, cur)}。\n`
+          `赢多少记多少：押得大、行情又对上了，这个月的进项超过 ${both(topThis, cur)}` +
+          `（这一年做到头的一个月）也照写，游戏不削。\n`
         : `**这一把砸了。** 押进去的本钱亏掉 ${Math.round(Math.abs(bet.mult) * 100)}%——` +
           `entries 里要有对应的那一笔负数，数目跟正文里写的对得上。\n` +
           `不许写成「他及时收手躲过一劫」，也不许写成「幸好只是小亏」。\n` +
@@ -552,7 +554,7 @@ function buildUser(s, list, extra = {}) {
       `· 一个旧账：有人还了欠他的人情，还的是实在东西\n` +
       `奇遇不是天上掉钱：是**一个具体的人、在具体的地方、给了他一个机会**，` +
       `他还得把这件事做完才拿得到。写清楚这人是谁、怎么碰上的、他做了什么、最后落到手多少。\n` +
-      `这个月的进项因此可以到 ${both(bigLuck, cur)}，但一分都不许超过 ${both(capThis, cur)}。\n` +
+      `这个月的进项因此可以到 ${both(bigLuck, cur)} 上下——他要是把这件事做得更透，超过也照记。\n` +
       `**不许写成他运气好**——正文里不出现「幸运」「机缘」这类字眼，只写发生了什么。\n` +
       `奇遇要留下钩子：碰上的这个人、这批货、这个消息，下个月还用得着，` +
       `写进 memo.people 或者 memo.threads，别写成一锤子买卖。`
@@ -581,7 +583,10 @@ ${refusedBefore.length ? `前两个月已经顶回去过这几件：${refusedBef
 【这个月该走到哪儿】
 做顺了的一个月，连做工带买卖，净进大概 ${both(good, cur)}；谈成一笔像样的买卖，这个月能到 ${both(big, cur)}。
 老老实实做一个月工、扛一个月包，只有 ${both(wage, cur)} 上下——多出来的必须是买卖挣的，写清楚货、买家和价钱。
-这个月无论如何不许超过 ${both(capThis, cur)}——超了游戏会削平，正文和账面就对不上。
+${both(topThis, cur)} 是白手起家的人在${s.year}年做到头的一个月，多数月份到不了这里。
+**这不是上限**：他真做成了那种事，写多少就是多少，游戏一分都不削。
+只有一条——超出这把尺子的每一分都要在正文里有出处：什么货、谁买的、什么价钱、担了什么险、
+钱哪天到手。写不出这些就别给。
 他落地时的家底相当于一个普通人 ${yearsStart.toFixed(2)} 年的收入，现在是 ${yearsNow.toFixed(2)} 年，
 走到第 ${s.n} 个月该在 ${yearsWant.toFixed(2)} 年上下。
 ${behind ? '他落下了：这个月让他抓住点实在的东西，把欠的补回来一些。'
@@ -699,7 +704,7 @@ function runMonthLocal(s, list) {
   /* 押了本钱的月份，兜底这一份也要认账：赢赔照 engine 掷的骰子来，
    * 本钱按他手里钱的一半算（模型那边由模型定，这里没人写正文，只能定死一个）。 */
   const bet = E.speculation(s, list);
-  const stake = bet.bet ? Math.min(s.cash * 0.5, E.monthCap(s.year, s.month) * 0.3) : 0;
+  const stake = bet.bet ? Math.min(s.cash * 0.5, E.monthTop(s.year, s.month) * 0.3) : 0;
   const betGain = bet.bet ? stake * bet.mult : 0;
 
   /* 犯法的那种（banned）不算办不成：有人管，他照样做得成，代价折在钱和麻烦上。
@@ -871,7 +876,7 @@ function reviewUser(s, r) {
 这一年前后的事：${(c.events || []).slice(0, 6).map(e => `${e.month} 月：${e.text}`).join('；')}
 【账】开头手里 ${r.startCashText}，末了家底 ${r.endWorthText}。
 那时候一个普通人一年挣 ${r.incomeText}。这些日子攒下的，抵得上一个普通人 ${r.score.toFixed(2)} 年的收入${r.score < 0.3 ? '——就是说他这一路基本没攒下什么' : (r.score > 4 ? '——在那一年那座城里，这是很少见的' : '')}。
-${r.capHits > 0 ? `有 ${r.capHits} 个月挣得超过了那一年一个月挣得到的顶。\n` : ''}【他后来成了什么】${held.length ? held.join('、') : '什么也没练出来'}${lost.length ? `；丢了的：${lost.join('、')}` : ''}
+【他后来成了什么】${held.length ? held.join('、') : '什么也没练出来'}${lost.length ? `；丢了的：${lost.join('、')}` : ''}
 【路上遇见的人】${people.length ? people.join('、') : '谁也没记住'}
 【这些日子记着的事】
 ${memo || '（没有）'}
