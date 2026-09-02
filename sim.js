@@ -760,4 +760,111 @@ ${(s.memo && (s.memo.traits || []).filter(t => !t.lost).length) ? `他这两年�
   return { options: optionsLocal(s, opts.salt), local: true };
 }
 
-module.exports = { runMonth, runMonthLocal, runOptions, optionsLocal, buildUser, storyPicker, card, SYS, MODEL };
+/* ── 收梢：给走完的这一局写一篇总评 ─────────────────
+ * 一局结束只甩一张成绩单，等于把二十四个月读过的东西当没发生。
+ * 这一段是那一局的收梢：他成了什么人、哪几步是转折、那一年他其实走得通却没走的路。
+ * 一局只调一次，结果存进库里，往后翻旧局读的是同一份，不重复花钱。 */
+const REVIEW_SYS = `你是《这一百年》的记事人。一个人落在中国近一百年里的某一年某一座城，
+白手起家过了一段日子，现在到了收梢的时候。你给这段日子写一篇总评。
+
+【怎么写】
+- 用第二人称「你」，写给他本人看。语气是记事，不是点评，也不是安慰。
+- **只说下面记录里真有的事**：人名、地名、价钱、月份，一个都不许编。
+  记录里没写的转折，不许替他想出来。
+- 把他放回那一年的世道里比：同一年同一座城里的普通人过成什么样，他比他们强在哪、又差在哪。
+  这一年的大事压到他头上的那几下，要点出来。
+- 他做成的事写成事，做砸的也写成事——不许写成教训，不许劝，
+  不许出现「希望」「建议」「下一次」这类话。
+- 不出现游戏用语：分数、排行、榜单、属性、系统、玩家、这一局、存档，一个都不许有。
+
+只输出一个 JSON 对象，不要别的字：
+{"title":"给这段日子起个题，四到八个汉字，不带书名号",
+ "verdict":"总评正文，二百到三百五十个汉字，分两三段，段与段之间用 \\n 隔开",
+ "became":"一句话，二十五字以内：末了他是这座城里的一个什么人",
+ "turns":[{"when":"1948 年 3 月","what":"这一步为什么是转折，一句话，三十字以内"}],
+ "missed":"一句话：那一年真有、他却没走的一条路——是什么路、走通了会是什么光景"}
+
+turns 给两到四条，按时间先后排，只挑真正拐了弯的那几个月。`;
+
+/** 把走过的月份压成给总评看的那一份。月数越多，每个月分到的字越少。 */
+function walkText(s) {
+  const ms = s.months || [];
+  if (!ms.length) return '（没有走过的月份）';
+  const per = Math.max(50, Math.floor(5200 / ms.length));
+  return ms.map(d => {
+    const story = String(d.story || '').replace(/\s+/g, ' ').slice(0, per);
+    const no = (d.refused || []).length ? `｜没办成：${d.refused.map(r => r.what).join('、')}` : '';
+    const mv = d.moved && d.moved.to ? `｜搬去了${d.moved.to}` : '';
+    return `${d.year}.${String(d.month).padStart(2, '0')} ${story}${mv}｜${d.tally || ''}${no}`;
+  }).join('\n');
+}
+
+function reviewUser(s, r) {
+  const c = card(s.startYear || s.year);
+  const memo = E.memoText(s, { limit: 1200 });
+  const traits = ((s.memo || {}).traits || []);
+  const held = traits.filter(t => !t.lost).map(t => t.what);
+  const lost = traits.filter(t => t.lost).map(t => t.what);
+  const people = ((s.memo || {}).people || []).map(x => x.who).slice(0, 12);
+  return `【他是谁】${s.nick}，${s.persona ? `他自己说他是这么个人：「${s.persona}」` : '没写过自己是个什么人'}。
+【落在哪儿】${r.year} 年 ${r.month} 月的${s.city}，一直走到 ${r.endYear} 年 ${r.endMonth} 月，一共 ${r.months} 个月${r.months > E.MONTHS ? `（前二十四个月走完就该收工了，他选了接着往下走）` : ''}。
+【那一年的世道】${c.era}
+挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头一个月约 ${m.ceiling}）`).join('；')}
+这一年前后的事：${(c.events || []).slice(0, 6).map(e => `${e.month} 月：${e.text}`).join('；')}
+【账】开头手里 ${r.startCashText}，末了家底 ${r.endWorthText}。
+那时候一个普通人一年挣 ${r.incomeText}。这些日子攒下的，抵得上一个普通人 ${r.score.toFixed(2)} 年的收入${r.score < 0.3 ? '——就是说他这一路基本没攒下什么' : (r.score > 4 ? '——在那一年那座城里，这是很少见的' : '')}。
+${r.capHits > 0 ? `有 ${r.capHits} 个月挣得超过了那一年一个月挣得到的顶。\n` : ''}【他后来成了什么】${held.length ? held.join('、') : '什么也没练出来'}${lost.length ? `；丢了的：${lost.join('、')}` : ''}
+【路上遇见的人】${people.length ? people.join('、') : '谁也没记住'}
+【这些日子记着的事】
+${memo || '（没有）'}
+【一个月一个月走过来】
+${walkText(s)}`;
+}
+
+async function runReview(s, r, opts = {}) {
+  const OR = require('./tools/or.js');
+  const text = await OR.call(opts.model || MODEL, REVIEW_SYS, reviewUser(s, r), {
+    json: true, maxTokens: 1600, temperature: 0.8, timeout: opts.timeout || 60000, tries: 2,
+  });
+  return cleanReview(OR.parseJson(text), s, r);
+}
+
+/** 模型叫不动的时候也要有一篇。写得干，但每一句都是账上真有的事。 */
+function reviewLocal(s, r) {
+  const ms = s.months || [];
+  const best = ms.slice().sort((a, b) =>
+    (b.entries || []).reduce((t, e) => t + e.amount, 0) - (a.entries || []).reduce((t, e) => t + e.amount, 0))[0];
+  const held = ((s.memo || {}).traits || []).filter(t => !t.lost).map(t => t.what);
+  const yrs = r.score.toFixed(2);
+  return cleanReview({
+    title: r.score >= 3 ? '站住了脚' : r.score >= 0.5 ? '过得去' : '没攒下什么',
+    verdict: `${r.year} 年 ${r.month} 月你落在${s.city}，手里 ${r.startCashText}，谁也不认识。\n` +
+      `${r.months} 个月走下来，家底是 ${r.endWorthText}，抵得上那时候一个普通人 ${yrs} 年的收入。` +
+      (held.length ? `这些日子你练出来的是${held.join('、')}。` : '') +
+      (best ? `\n最好的是 ${best.year} 年 ${best.month} 月：${String(best.story || '').slice(0, 80)}` : ''),
+    became: held.length ? `一个${held[0]}的人` : `${s.city}城里一个普通人`,
+    turns: [], missed: '',
+  }, s, r);
+}
+
+/** 模型偶尔会把游戏用语写进去，或者把 turns 写成一串字符串。这里洗一遍。 */
+const GAMEY = /(分数|得分|排行|榜单|排名|属性|系统|玩家|这一局|本局|存档|通关|副本)/g;
+function cleanReview(o, s, r) {
+  const str = (v, n) => String(v == null ? '' : v).replace(GAMEY, '').replace(/\s*\n\s*/g, '\n').trim().slice(0, n);
+  const turns = (Array.isArray(o && o.turns) ? o.turns : [])
+    .map(t => (typeof t === 'string' ? { when: '', what: t } : t))
+    .filter(t => t && (t.what || t.when))
+    .slice(0, 4)
+    .map(t => ({ when: str(t.when, 24), what: str(t.what, 80) }));
+  return {
+    title: str(o && o.title, 16) || '这些日子',
+    verdict: str(o && o.verdict, 1200),
+    became: str(o && o.became, 60),
+    turns,
+    missed: str(o && o.missed, 160),
+    /* 存下来是哪一段的总评、什么时候写的——往后翻旧局要认得出 */
+    phase: r.phase || 'main', months: r.months, at: Date.now(),
+  };
+}
+
+module.exports = { runMonth, runMonthLocal, runOptions, optionsLocal, runReview, reviewLocal, buildUser, storyPicker, card, SYS, REVIEW_SYS, MODEL };

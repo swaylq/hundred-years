@@ -16,6 +16,7 @@ const WORLD = require(path.join(__dirname, 'data', 'world.json'));
 
 const DAYS = 30;                 // 一个月按三十天算，只在月内物价插值时用得着
 const MONTHS = 24;               // 一局走二十四个月
+const MONTHS_EXTRA = 60;         // 走完两年之后，最多还能再往下走五年（后传）
 const LIST_LIMIT = 500;          // 一个月的清单，汉字上限
 const CN = { SILVER: '银元', FABI: '法币', GOLDYUAN: '金圆券', RMB1: '人民币（旧）', RMB: '人民币' };
 
@@ -617,13 +618,65 @@ function advanceTo(s, n) {
   return events;
 }
 
+/** 这一局最后一个月是第几个月。走完两年选了「接着走下去」的，
+ *  s.extraTo 记着续到第几个月（最多 24+60）；没续过的就是二十四。 */
+function lastMonthOf(s) { return (s && s.extraTo) || MONTHS; }
+
+/** 还能往下走几个月。年卡只写到 SPINE 最后那一年的 12 月，
+ *  从 2024 年附近开局的局收工时已经贴着头，一个月也接不下去。 */
+function extraRoom(s) {
+  const last = SPINE.years[SPINE.years.length - 1];
+  const at = s.preClose || s;                       // closeOut 之后 n 过了头，年月没动
+  const room = (last.year * 12 + 11) - (at.year * 12 + at.month - 1);
+  return Math.max(0, Math.min(MONTHS_EXTRA, room));
+}
+
+/** 两年走完、账也结了，玩家要接着走下去。
+ *
+ *  **两年那一刻的成绩是冻住的**——这里一个字都不碰结算过的那份结果，
+ *  它存在库里的 score / year_earned / world_usd / result 四列上，总榜只认那四列。
+ *  这边只把存档接回「第 24 个月刚过完、还没收工」的样子，再照常推进到第 25 个月。
+ *
+ *  能这么接，是因为 closeOut 动手之前把该动的都存进了 s.preClose：
+ *  少了这一份，收工那个月正好换币的局（1949 年 5 月那种）会把那笔折算算两遍。 */
+function reopen(s) {
+  if (s.phase === 'extra') return { ok: false, say: '这一局已经接着往下走过了，后传只接得上一次。' };
+  const room = extraRoom(s);
+  const lastYear = SPINE.years[SPINE.years.length - 1].year;
+  if (!room) return { ok: false, say: `年卡只写到 ${lastYear} 年 12 月，这一局已经走到头了，接不下去。` };
+  const p = s.preClose;
+  if (!p) {
+    /* 这个功能之前收的工，没存下那一份。收工那个月没换钱的话，closeOut 只改了 s.n，
+     * 把它退回去就够了；真赶上换钱的那几局（1935-11、1948-08、1949-05、1955-03）
+     * 没法原样退，只能顶回去——硬接的话那笔折算会算两遍。 */
+    if (s.endSwitched) return { ok: false, say: '这一局收工那个月正好赶上换钱，接不回去了。' };
+    s.n = MONTHS;
+  } else {
+    s.cash = p.cash; s.assets = p.assets; s.debts = p.debts; s.currency = p.currency;
+    s.n = p.n; s.year = p.year; s.month = p.month;
+  }
+  delete s.preClose; delete s.endSwitched;
+  s.extraTo = MONTHS + room;
+  s.phase = 'extra';
+  s.status = 'extra';
+  const events = advanceTo(s, MONTHS + 1);
+  return { ok: true, room, to: s.extraTo, events };
+}
+
 /** 走完最后一个月，收工。最后一个月要是换币的月份，这里补折一次——
  *  不折的话，从 1947 年 6 月开局、正好停在 1949 年 5 月的人，
  *  攥着一堆该作废的钱走人，别人却被清了个干净。
  *  折过之后这个月的钱、年收入、购买力都改用新钱那一套（endSwitched 记着这件事）。 */
 function closeOut(s) {
+  /* 动手之前先把这里会改到的都存一份。玩家选了「接着走下去」的时候，
+   * reopen 拿它原样还原、再照常 advanceTo——等于 closeOut 从没跑过。 */
+  s.preClose = {
+    n: s.n, year: s.year, month: s.month, currency: s.currency, cash: s.cash,
+    assets: JSON.parse(JSON.stringify(s.assets || [])),
+    debts: JSON.parse(JSON.stringify(s.debts || [])),
+  };
   const sw = switchDueAfter(s.year, s.month);
-  s.n = MONTHS + 1;
+  s.n = lastMonthOf(s) + 1;
   if (!sw) return null;
   /* 实物也要按「换币之后」的标价重算，尺子跟 reprice 一样是中位收入：
    * incomeOf 是这个月 1 号（旧钱）的年收入，spine 整月记的那个是新钱的。 */
@@ -685,7 +738,12 @@ function settle(s) {
    * 走过这些月份的平均上限 × 6。真打起来一局也就几年的收入，够不着这条线。 */
   const walked = (s.months && s.months.length) ? s.months : [{ year: startYear }];
   const meanCeiling = walked.reduce((t, m) => t + yearOf(m.year).ceiling, 0) / walked.length;
-  const capYears = meanCeiling * 6;
+  /* 二十四个月按六个满月封顶（24 ÷ 4）。接着往下走的局按走过的月数同比例放大，
+   * 所以两年那一局的口径一点没变。
+   * **月数取「这一局要走多久」（lastMonthOf），不是「已经记了几个月」**。
+   * 照记了几个月算的话，只推一个月进 months 就当场结算的用例会退化成
+   * 「四分之一个满月」，封顶从 3 年掉到 0.75 年——check-engine 第 2 条 96 个组合全红。 */
+  const capYears = meanCeiling * (lastMonthOf(s) / 4);
   const cappedTotal = years > capYears;
   if (cappedTotal) years = capYears;
 
@@ -732,6 +790,9 @@ function settle(s) {
     ceiling: capYears,                          // 这一局的上限：平均每月上限 × 6
     yearCeiling: yearOf(startYear).ceiling,     // 开局那一年一个月的上限
     months: walked.length,
+    /* 这份结果是两年那一刻的，还是接着走下去之后的总账 */
+    phase: walked.length > MONTHS ? 'extra' : 'main',
+    extraMonths: Math.max(0, walked.length - MONTHS),
     capHits: s.capHits,
   };
 }
@@ -1092,7 +1153,8 @@ function checkPersona(text) {
 
 module.exports = {
   cleanOptions, cleanRefused, applyMove, offScript, serendipity,
-  DAYS, MONTHS, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
+  DAYS, MONTHS, MONTHS_EXTRA, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
+  lastMonthOf, extraRoom, reopen,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,
   money, moneyIn, unitOf, fixScale, fixSigns, unpairedBuys,
   currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchDueAfter, switchOnEntry, reprice, closeOut,

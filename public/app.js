@@ -285,7 +285,7 @@ function renderPlay(last, opts = {}) {
        <div class="cal-num${opts.flip ? ' flip' : ''}">${MONTHS[s.month - 1]}</div>
        <div class="cal-foot"><span class="of">第 ${now} / ${s.months} 个月</span> · ${esc(s.city)}</div>
      </div>
-     <div class="ticks">${ticks}</div>
+     <div class="ticks" style="grid-template-columns:repeat(${Math.min(s.months, 30)},1fr)">${ticks}</div>
      <div class="money"><span class="lab">家底</span><b class="cash">${esc(s.netWorthText)}</b><div class="sub">${subs.join('<br>')}</div></div>
      <div class="meters">${meter('体力', 'm-body')}${meter('名声', 'm-name')}${meter('关系', 'm-ties')}${st.麻烦 > 0 ? meter('麻烦', 'm-trouble') : ''}</div>` +
     /* 他这两年练出来、挣下来的——这一栏是自由度看得见的地方，比四条杠更该占位置 */
@@ -297,9 +297,9 @@ function renderPlay(last, opts = {}) {
   const box = $('#play-story'); box.innerHTML = '';
   box.classList.toggle('fresh', !!opts.flip);
   const at = last.at || prevMonthOf(s);
-  box.appendChild(el('div', 'day-head', last.first
+  box.appendChild(el('div', 'day-head', last.head || (last.first
     ? `你落在了 ${s.year} 年 ${s.month} 月的${s.city}`
-    : `第 ${at.n} 个月 · ${at.year} 年 ${at.month} 月`));
+    : `第 ${at.n} 个月 · ${at.year} 年 ${at.month} 月`)));
   box.appendChild(el('p', '', last.story || ''));
   if (last.entries && last.entries.length) {
     const t = el('div', 'tally');
@@ -345,7 +345,7 @@ function renderPlay(last, opts = {}) {
     ? `${s.months} 个月过完了。`
     : `第 ${s.n} 个月 · ${s.year} 年 ${s.month} 月。这个月打算做什么？`;
   const send = $('#send'); send.classList.remove('busy');
-  if (done) { send.disabled = false; send.textContent = '两年到了，去算账'; send.onclick = settle; }
+  if (done) { send.disabled = false; send.textContent = s.phase === 'extra' ? '这些年走完了，去算总账' : '两年到了，去算账'; send.onclick = settle; }
   else { send.disabled = countHan($('#list').value) === 0; send.textContent = '就这么过这一个月'; send.onclick = sendMonth; }
 
   renderPicks(done ? [] : (last.options || s.options || []));
@@ -542,7 +542,7 @@ async function sendMonth() {
     $('#list').value = ''; $('#count').textContent = `0 / ${d.state.listLimit} 字`; $('#count').classList.remove('over');
     renderPlay(d, { flip: true });
     goTop();
-    if (d.done) toast('两年到了，去算账');
+    if (d.done) toast(d.state.phase === 'extra' ? '这些年走完了，去算总账' : '两年到了，去算账');
   } catch (e) {
     toast(e.message);
     /* 出错了别把半截正文留在屏幕上——把上个月那一屏重画回来 */
@@ -557,29 +557,45 @@ async function settle() {
   send.disabled = true; send.textContent = '算账中'; send.classList.add('busy');
   try {
     const d = await post('/api/settle', { id: run.id, token });
-    renderDone(d.result, d, d.months);
+    const phase = d.phase || d.result.phase || 'main';
+    renderDone(d.result, d, d.months, { review: d.review, extraRoom: d.extraRoom, phase, main: d.main });
     localStorage.removeItem(RUN_KEY);
     go('done');
-  } catch (e) { toast(e.message); send.disabled = false; send.textContent = '两年到了，去算账'; send.classList.remove('busy'); }
+    /* 总评是另一次调用：账先出来，收梢的那一篇边等边写 */
+    if (!d.review) fetchReview(run.id, phase === 'extra');
+  } catch (e) {
+    toast(e.message);
+    send.disabled = false;
+    send.textContent = run.state.phase === 'extra' ? '这些年走完了，去算总账' : '两年到了，去算账';
+    send.classList.remove('busy');
+  }
 }
 
-function renderDone(r, ranks, months) {
-  const b = $('#done-body'); b.innerHTML = '';
+/* 成绩单那张卡。结算页和详情页共用一张。 */
+function scoreCard(r, ranks, opts = {}) {
   const yrs = (r.score < 0 ? '−' : '') + Math.abs(r.score).toFixed(2);
-  const card = el('div', 'score-card');
+  const card = el('div', 'score-card' + (opts.extra ? ' extra' : ''));
   card.appendChild(el('div', 'who', `${r.nick} · ${r.year} 年 ${r.month} 月 → ${r.endYear} 年 ${r.endMonth} 月 · ${r.city}`));
   card.appendChild(el('div', 'num' + (r.yearEarned < 0 ? ' neg' : ''), r.yearEarnedText));
-  card.appendChild(el('div', 'unit', `两年净赚，用 ${r.year} 年那时候的钱算`));
+  card.appendChild(el('div', 'unit', `${opts.extra ? `这 ${(r.months / 12).toFixed(0)} 年` : '两年'}净赚，用 ${r.year} 年那时候的钱算`));
   const yearsEl = el('div', 'years');
   yearsEl.innerHTML = `抵得上那时候一个普通人 <b>${yrs}</b> 年的收入`;
   card.appendChild(yearsEl);
   const rank = el('div', 'rank');
-  rank.innerHTML = `${r.year} 年榜第 <b>${ranks.rankYear ?? '—'}</b> 名（共 ${ranks.ofYear ?? '—'} 局）<br>总榜第 <b>${ranks.rankWorld ?? '—'}</b> 名（共 ${ranks.ofWorld ?? '—'} 局）`;
+  if (opts.extra) {
+    rank.innerHTML = `后传榜第 <b>${ranks?.rankExtra ?? '—'}</b> 名（共 ${ranks?.ofExtra ?? '—'} 局）<br><span class="rk-note">接着走下去的局单独排一张榜，不进总榜</span>`;
+  } else {
+    rank.innerHTML = `${r.year} 年榜第 <b>${ranks?.rankYear ?? '—'}</b> 名（共 ${ranks?.ofYear ?? '—'} 局）<br>总榜第 <b>${ranks?.rankWorld ?? '—'}</b> 名（共 ${ranks?.ofWorld ?? '—'} 局）`;
+  }
   card.appendChild(rank);
-  const stamp = el('div', 'stamp', '账已结'); stamp.setAttribute('aria-hidden', 'true');
+  const stamp = el('div', 'stamp', opts.extra ? '后传' : '账已结'); stamp.setAttribute('aria-hidden', 'true');
   card.appendChild(stamp);
-  b.appendChild(card);
+  return card;
+}
 
+/* 成绩单下面那张明细表 */
+function scoreKv(r) {
+  const yrs = (r.score < 0 ? '−' : '') + Math.abs(r.score).toFixed(2);
   const kv = el('div', 'kv');
   const rows = [
     ['开局本钱', r.startCashText || fmtMoney(r.startCash, r.currencyName)],
@@ -592,38 +608,221 @@ function renderDone(r, ranks, months) {
     ['走完的月数', (r.months || 0) + ' 个月'],
   ];
   for (const [k, v] of rows) { const d = el('div'); d.appendChild(el('span', '', k)); d.appendChild(el('b', '', v)); kv.appendChild(d); }
-  b.appendChild(kv);
+  return kv;
+}
+
+function renderDone(r, ranks, months, opts = {}) {
+  const extra = opts.phase === 'extra';
+  const b = $('#done-body'); b.innerHTML = '';
+  b.appendChild(scoreCard(r, ranks, { extra }));
+  b.appendChild(scoreKv(r));
   if (r.capHits > 0) b.appendChild(el('p', 'note', `有 ${r.capHits} 个月挣得超过了那一年一个月能挣到的顶，多出来的没算。`));
   if (r.cappedTotal) b.appendChild(el('p', 'note', `这一局撞到了整局的上限（${Math.round(r.ceiling * 10) / 10} 年的收入），超出的部分没算进去。`));
 
-  /* 回头看这两年。一个文字游戏打完不给人读一遍，等于没写过。
-     放在「再来一局」下面——二十四条列表压在按钮上头的话，按钮就跑到屏幕外去了。 */
+  const rev = $('#done-review'); rev.innerHTML = '';
+  if (opts.review) renderReview(rev, opts.review);
+
+  renderExtendBox(r, opts);
+
+  /* 回头看走过的日子。一个文字游戏打完不给人读一遍，等于没写过。
+     放在「再来一局」下面——二十几条列表压在按钮上头的话，按钮就跑到屏幕外去了。 */
   const dbox = $('#done-days'); dbox.innerHTML = '';
   if (months && months.length) {
-    dbox.appendChild(el('h3', 'mh', '这两年'));
+    dbox.appendChild(el('h3', 'mh', extra ? '这些年' : '这两年'));
     dbox.appendChild(el('p', 'hint', '点开哪个月，看那个月写了什么、发生了什么。'));
-    for (const d of months) {
-      const det = el('details', 'day');
-      const sum = el('summary');
-      sum.appendChild(el('b', 'dn', `${d.year} 年 ${d.month} 月`));
-      sum.appendChild(el('span', 'dt', d.tally || ''));
-      det.appendChild(sum);
-      const box = el('div', 'daybox');
-      box.appendChild(el('div', 'mylist', '你写的：' + (d.list || '')));
-      box.appendChild(el('p', '', d.story || ''));
-      if (d.moved && d.moved.to) box.appendChild(el('div', 'note', `这个月你从${d.moved.from}到了${d.moved.to}。`));
-      if (d.refused && d.refused.length) {
-        const w = el('div', 'refused');
-        w.appendChild(el('b', '', '没办成'));
-        const ul = el('ul');
-        for (const x of d.refused) ul.appendChild(el('li', '', `${x.what} — ${x.why}`));
-        w.appendChild(ul); box.appendChild(w);
-      }
-      det.appendChild(box);
-      dbox.appendChild(det);
-    }
+    monthCards(dbox, months, { mainMonths: 24 });
   }
 }
+
+/* 一个月一张折叠卡。结算页和详情页共用。 */
+function monthCards(box, months, opts = {}) {
+  const cut = opts.mainMonths || 24;
+  months.forEach((d, i) => {
+    if (d.n === cut + 1) {
+      const line = el('div', 'extra-cut');
+      line.appendChild(el('b', '', '往下这些是后传'));
+      line.appendChild(el('span', '', '两年的账在上面那一刻就结了，后面走多久都不改它。'));
+      box.appendChild(line);
+    }
+    const det = el('details', 'day' + (d.n > cut ? ' is-extra' : ''));
+    const sum = el('summary');
+    sum.appendChild(el('b', 'dn', `${d.year} 年 ${d.month} 月`));
+    sum.appendChild(el('span', 'dt', d.tally || ''));
+    det.appendChild(sum);
+    const dbx = el('div', 'daybox');
+    dbx.appendChild(el('div', 'mylist', '你写的：' + (d.list || '')));
+    dbx.appendChild(el('p', '', d.story || ''));
+    if (d.moved && d.moved.to) dbx.appendChild(el('div', 'note', `这个月你从${d.moved.from}到了${d.moved.to}。`));
+    if (d.refused && d.refused.length) {
+      const w = el('div', 'refused');
+      w.appendChild(el('b', '', '没办成'));
+      const ul = el('ul');
+      for (const x of d.refused) ul.appendChild(el('li', '', `${x.what} — ${x.why}`));
+      w.appendChild(ul); dbx.appendChild(w);
+    }
+    det.appendChild(dbx);
+    box.appendChild(det);
+  });
+}
+
+/* ── 收梢的那一篇 ──────────────────────── */
+function renderReview(box, rv) {
+  box.innerHTML = '';
+  if (!rv) return;
+  box.appendChild(el('div', 'rev-cap', '收梢'));
+  box.appendChild(el('h3', 'rev-title', rv.title || '这些日子'));
+  if (rv.became) box.appendChild(el('p', 'rev-became', rv.became));
+  const v = el('div', 'rev-text');
+  for (const seg of String(rv.verdict || '').split('\n')) if (seg.trim()) v.appendChild(el('p', '', seg.trim()));
+  box.appendChild(v);
+  if (rv.turns && rv.turns.length) {
+    const t = el('div', 'rev-turns');
+    t.appendChild(el('b', '', '拐弯的那几个月'));
+    const ul = el('ul');
+    for (const x of rv.turns) {
+      const li = el('li');
+      if (x.when) li.appendChild(el('i', '', x.when));
+      li.appendChild(document.createTextNode(x.what || ''));
+      ul.appendChild(li);
+    }
+    t.appendChild(ul); box.appendChild(t);
+  }
+  if (rv.missed) {
+    const m = el('div', 'rev-missed');
+    m.appendChild(el('b', '', '那一年你没走的一条路'));
+    m.appendChild(el('p', '', rv.missed));
+    box.appendChild(m);
+  }
+  if (rv.local) box.appendChild(el('p', 'note', '这一篇没经过大模型，是照账上的数拼的。'));
+}
+
+async function fetchReview(id, extra, into) {
+  const box = into || $('#done-review');
+  box.innerHTML = '';
+  box.appendChild(el('div', 'rev-wait', extra ? '正在给这些年写一篇收梢…' : '正在给这两年写一篇收梢…'));
+  try {
+    const d = await post('/api/review', { id, token, extra: !!extra });
+    renderReview(box, d.review);
+  } catch (e) {
+    box.innerHTML = '';
+    box.appendChild(el('p', 'note', '收梢没写出来：' + e.message));
+    const again = el('button', 'ghost-btn', '再试一次');
+    again.addEventListener('click', () => fetchReview(id, extra, box));
+    box.appendChild(again);
+  }
+}
+
+/* ── 接着走下去 ────────────────────────── */
+const roomText = n => n >= 12
+  ? `${Math.floor(n / 12)} 年${n % 12 ? `零 ${n % 12} 个月` : ''}`
+  : `${n} 个月`;
+
+function renderExtendBox(r, opts) {
+  const box = opts.into || $('#done-more');
+  box.innerHTML = ''; box.hidden = false;
+  box.className = 'more-box';
+  if (opts.phase === 'extra') {
+    const m = opts.main;
+    box.appendChild(el('h3', 'mh', '两年那一刻的成绩'));
+    box.appendChild(el('p', 'hint', m
+      ? `${m.yearEarnedText}，抵得上一个普通人 ${m.score.toFixed(2)} 年的收入。那一份封在两年结账的那一刻，总榜和年榜上的名次没有跟着后面这几年动过。`
+      : '两年那一刻的成绩封在结账的那一刻，总榜和年榜上的名次没有跟着后面这几年动过。'));
+    return;
+  }
+  const id = opts.id || (run && run.id);
+  if (!id) { box.hidden = true; return; }
+  const room = Number(opts.extraRoom || 0);
+  box.appendChild(el('h3', 'mh', '还想接着走下去？'));
+  if (!room) {
+    box.appendChild(el('p', 'hint', '年卡只写到 2025 年 12 月，这一局已经走到那儿了，接不下去。'));
+    return;
+  }
+  box.appendChild(el('p', 'hint', `两年的账已经结了，${r.year} 年榜和总榜上的名次就定在这儿，往后再走多少年都不会变。` +
+    `你可以接着往下走 ${roomText(room)}，走完另算一笔总账，上后传榜。`));
+  const btn = el('button', 'primary', `接着走下去（还能走 ${roomText(room)}）`);
+  btn.addEventListener('click', () => extendRun(btn, room, id));
+  box.appendChild(btn);
+}
+
+async function extendRun(btn, room, id) {
+  btn.disabled = true; btn.classList.add('busy'); btn.textContent = '接上…';
+  try {
+    const d = await post('/api/extend', { id, token });
+    run = { id, state: d.state };
+    localStorage.setItem(RUN_KEY, id);
+    renderPlay({
+      head: '接着走下去',
+      story: `两年的账结过了，那一笔谁也改不了。你没走，接着在${d.state.city}过下去——往后还有 ${roomText(d.room)}。`,
+      switched: d.switched, options: d.state.options,
+    }, { flip: true });
+    go('play');
+  } catch (e) {
+    toast(e.message);
+    btn.disabled = false; btn.classList.remove('busy'); btn.textContent = `接着走下去（还能走 ${roomText(room)}）`;
+  }
+}
+
+/* ── 一局的详情 ────────────────────────── */
+let detailBack = 'mine', detailMine = false;
+async function openDetail(id, back, mine) {
+  detailBack = back || 'mine';
+  detailMine = !!mine;
+  const box = $('#detail-body');
+  box.innerHTML = '<p class="wait">正在翻这一局…</p>';
+  go('detail');
+  try {
+    renderDetail(await api('/api/detail?id=' + encodeURIComponent(id)), id);
+  } catch (e) {
+    box.innerHTML = '';
+    box.appendChild(el('p', 'empty', '看不了这一局：' + e.message));
+  }
+}
+
+function renderDetail(d, id) {
+  const box = $('#detail-body'); box.innerHTML = '';
+  const r = d.result;
+  box.appendChild(el('h2', 'det-h', `${d.nick} 的 ${r.year} 年`));
+  if (d.persona) box.appendChild(el('p', 'det-who', `他是这么个人：${d.persona}`));
+
+  box.appendChild(scoreCard(r, d.rank, {}));
+  box.appendChild(scoreKv(r));
+
+  if (d.review) { const w = el('div', 'review'); renderReview(w, d.review); box.appendChild(w); }
+  else if (detailMine) {
+    /* 自己的局、还没写过收梢——补写一篇 */
+    const w = el('div', 'review'); box.appendChild(w);
+    const b = el('button', 'ghost-btn', '写一篇收梢');
+    b.addEventListener('click', () => { b.remove(); fetchReview(id, false, w); });
+    box.appendChild(b);
+  }
+
+  /* 后传：接着走下去的那一段，另算一笔账 */
+  if (d.extraStatus === 'done' && d.extraResult) {
+    box.appendChild(el('h3', 'mh', '后传'));
+    box.appendChild(el('p', 'hint', '两年结完账之后接着走的那些年。上面那份成绩是封住的，这一份单独上后传榜。'));
+    box.appendChild(scoreCard(d.extraResult, d.extraRank, { extra: true }));
+    box.appendChild(scoreKv(d.extraResult));
+    if (d.extraReview) { const w = el('div', 'review'); renderReview(w, d.extraReview); box.appendChild(w); }
+  } else if (d.extraStatus === 'playing') {
+    box.appendChild(el('p', 'note', `这一局还在走后传——两年之后又接着走了 ${Math.max(0, d.months.length - d.mainMonths)} 个月，还没收工。`));
+    if (detailMine) {
+      const b = el('button', 'primary', '接着往下走');
+      b.addEventListener('click', () => resume(id));
+      box.appendChild(b);
+    }
+  } else if (detailMine && !d.extraStatus) {
+    /* 结过账、还没接后传，而且是自己的局：在这儿也能接下去 */
+    const w = el('div', 'more-box'); box.appendChild(w);
+    renderExtendBox(r, { into: w, id, extraRoom: d.extraRoom });
+  }
+
+  if (d.months && d.months.length) {
+    box.appendChild(el('h3', 'mh', d.months.length > d.mainMonths ? '一个月一个月走过来' : '这两年'));
+    monthCards(box, d.months, { mainMonths: d.mainMonths });
+  }
+}
+$('#detail-back').addEventListener('click', () => go(detailBack));
+
 const fmtUsdCN = n => {
   const a = Math.abs(n), s = n < 0 ? '−' : '';
   if (a >= 1e8) return `${s}${(a / 1e8).toFixed(2)} 亿美元`;
@@ -634,11 +833,16 @@ const fmtUsdCN = n => {
 
 /* ── 排行榜 ──────────────────────────────
    两层：总榜按「折成今天的美元」排，年榜只跟同一年的人比。 */
-let boardYear = null;
+let boardYear = null, boardScope = 'world';
 async function loadBoard() {
-  const d = await api('/api/board?limit=50' + (boardYear ? '&year=' + boardYear : ''));
+  const qs = boardScope === 'extra' ? '&scope=extra' : (boardYear ? '&year=' + boardYear : '');
+  const d = await api('/api/board?limit=50' + qs);
 
-  $('#board-note').innerHTML = boardYear
+  $('#board-note').innerHTML = boardScope === 'extra'
+    ? `后传榜。两年的账结完之后又接着往下走的那些局，最多再走五年，走完另算一笔总账。` +
+      `<b>他们不在总榜里</b>——多走几年的人跟只走两年的人比不到一块儿去。` +
+      `每个人两年那一刻的成绩仍旧封在总榜上，没有跟着后面这几年变。`
+    : boardYear
     ? `${boardYear} 年的榜。只跟这一年的人比。` +
       `排序按<b>当年那种钱净赚多少</b>——一年之内用的是同一种钱，比得干净。`
     : `总榜。先按<b>当年的汇率</b>把钱换成当年的美元。` +
@@ -647,30 +851,42 @@ async function loadBoard() {
       `折过来就是两万多。想跟同一年的人比，点下面的年份。`;
 
   const tabs = $('#board-tabs'); tabs.innerHTML = '';
-  const mk = (label, y) => {
-    const b = el('button', y === boardYear ? 'on' : '', label);
-    b.addEventListener('click', () => { boardYear = y; loadBoard(); });
+  const mk = (label, y, scope) => {
+    const on = (scope || 'world') === boardScope && (scope === 'extra' || y === boardYear);
+    const b = el('button', on ? 'on' : '', label);
+    b.addEventListener('click', () => { boardScope = scope || 'world'; boardYear = y; loadBoard(); });
     return b;
   };
   tabs.appendChild(mk('总榜', null));
+  tabs.appendChild(mk('后传榜', null, 'extra'));
   for (const r of (d.yearsWithRuns || [])) tabs.appendChild(mk(`${r.year} 年（${r.n}）`, r.year));
 
   const box = $('#board-body'); box.innerHTML = '';
   if (!d.rows.length) {
-    box.appendChild(el('p', 'empty', boardYear ? `${boardYear} 年还没人打完过。` : '还没有人打完过一局。你来当第一个。'));
+    box.appendChild(el('p', 'empty', boardScope === 'extra'
+      ? '还没有人走完过后传。打完两年之后，在结算页点「接着走下去」。'
+      : boardYear ? `${boardYear} 年还没人打完过。` : '还没有人打完过一局。你来当第一个。'));
     const act = el('div', 'empty-act'); const btn = el('button', 'ghost-btn', '去挑一年');
     btn.addEventListener('click', () => go('pick')); act.appendChild(btn); box.appendChild(act);
     return;
   }
   const t = el('table', 'board');
-  t.innerHTML = boardYear
+  t.innerHTML = boardScope === 'extra'
+    ? '<thead><tr><th></th><th>名号</th><th>开局年月</th><th class="c">落点</th><th class="c">走了多久</th><th style="text-align:right">折成今天</th></tr></thead>'
+    : boardYear
     ? '<thead><tr><th></th><th>名号</th><th>月</th><th class="c">落点</th><th style="text-align:right">净赚</th></tr></thead>'
     : '<thead><tr><th></th><th>名号</th><th>开局年月</th><th class="c">落点</th><th class="c">这一局的顶</th><th style="text-align:right">折成今天</th></tr></thead>';
   const tb = el('tbody');
   for (const r of d.rows) {
     const tr = el('tr');
     const mark = r.capped ? '<span class="cap" title="撞到了这一年的上限">顶</span>' : '';
-    tr.innerHTML = boardYear
+    tr.innerHTML = boardScope === 'extra'
+      ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}${mark}</td>
+         <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
+         <td class="c">${esc(r.city || '')}</td>
+         <td class="c y">${Math.round((r.months || 0) / 12 * 10) / 10} 年</td>
+         <td class="s">${esc(r.worldUsdText || '')}</td>`
+      : boardYear
       ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}${mark}</td>
          <td class="y">${r.month} 月</td><td class="c">${esc(r.city || '')}</td>
          <td class="s">${esc(r.yearEarnedText || '')}</td>`
@@ -679,12 +895,17 @@ async function loadBoard() {
          <td class="c">${esc(r.city || '')}</td>
          <td class="c y">${r.ceiling != null ? r.ceiling + ' 年' : ''}</td>
          <td class="s">${esc(r.worldUsdText || '')}</td>`;
+    /* 每一行点得进去，读别人那两年是怎么过的 */
+    if (r.id) { tr.classList.add('mine-go'); tr.addEventListener('click', () => openDetail(r.id, 'board')); }
     tb.appendChild(tr);
   }
   t.appendChild(tb); box.appendChild(t);
-  box.appendChild(el('p', 'hint', boardYear
+  box.appendChild(el('p', 'hint', (boardScope === 'extra'
+    ? '「走了多久」算上前面那两年。'
+    : boardYear
     ? '「顶」是撞到了这一年现实上限的那些局——那一年最多就能赚这么多。'
-    : '「那一年的顶」是白手起家的人在那一年最多能赚到几年的收入。年份不同，这个数差得很远。'));
+    : '「那一年的顶」是白手起家的人在那一年最多能赚到几年的收入。年份不同，这个数差得很远。') +
+    '点哪一行，看那一局是怎么过的。'));
 }
 
 /* ── 我的局 ────────────────────────────── */
@@ -705,14 +926,23 @@ async function loadMine() {
     const tr = el('tr');
     /* 按天走三十天的老局接不上新规矩了，标一下，也别让人点进去 */
     const old = r.mode && r.mode !== 'months24';
+    const done = r.status === 'done';
+    /* 三种下场：还在过前两年、结完账了、结完账又接着走后传 */
+    const where = old ? '按天走的老局'
+      : r.extra_status === 'playing' ? '在走后传'
+      : r.extra_status === 'done' ? '后传也走完了'
+      : done ? '算过账了' : '还在过';
+    const sc = r.extra_status === 'done' && r.extra_score != null ? r.extra_score : r.score;
     tr.innerHTML = `<td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td><td>${esc(r.nick)}</td>
-      <td>${old ? '按天走的老局' : (r.status === 'done' ? '算过账了' : '还在过')}</td>
-      <td class="s">${r.score == null ? '—' : (Math.abs(r.score) < 10 ? r.score.toFixed(2) : r.score.toFixed(1))}</td>`;
-    if (!old && r.status !== 'done') { tr.classList.add('mine-go'); tr.addEventListener('click', () => resume(r.id)); }
+      <td>${where}${done && !old ? '<span class="go-in">看详情 ›</span>' : ''}</td>
+      <td class="s">${sc == null ? '—' : (Math.abs(sc) < 10 ? sc.toFixed(2) : sc.toFixed(1))}</td>`;
+    if (!old && r.extra_status === 'playing') { tr.classList.add('mine-go'); tr.addEventListener('click', () => resume(r.id)); }
+    else if (!old && done) { tr.classList.add('mine-go'); tr.addEventListener('click', () => openDetail(r.id, 'mine', true)); }
+    else if (!old) { tr.classList.add('mine-go'); tr.addEventListener('click', () => resume(r.id)); }
     tb.appendChild(tr);
   }
   t.appendChild(tb); box.appendChild(t);
-  box.appendChild(el('p', 'hint', '点还在过的那一局，接着走。'));
+  box.appendChild(el('p', 'hint', '还在过的那一局，点一下接着走；结过账的点进去看详情，也能在那儿接着往下走。'));
 }
 
 function lastOf(state) {

@@ -235,7 +235,9 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .cal-foot { color: var(--muted); font-size: 12.5px; padding: 0 8px 12px; }
 .cal-foot .of { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 
-.ticks { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; }
+/* 列数由 app.js 按这一局的月数写在 style 上：两年是一行 24 格，
+   接着走下去的局最多 84 格，折成三行。 */
+.ticks { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
 .ticks i { display: block; height: 6px; background: var(--rule); border-radius: 1px; }
 .ticks i.on { background: var(--seal); }
 .ticks i.now { background: var(--ink); }
@@ -480,4 +482,69 @@ table.board tr.mine-go:hover td { background: color-mix(in srgb, var(--ink) 4%, 
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+
+/* ── 收梢：一局走完之后那一篇总评 ───────────────────
+   摆成一张单独的纸，跟上面的成绩单分开——成绩是数目，这一篇是话。 */
+.review:empty { display: none; }
+.review {
+  position: relative;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--seal);
+  border-radius: 3px;
+  padding: 26px 28px 24px;
+  margin: 26px 0 8px;
+  box-shadow: var(--shadow);
+}
+.rev-cap {
+  font: 500 11px/1 var(--sans); letter-spacing: .34em; text-transform: none;
+  color: var(--seal-ink); margin-bottom: 10px;
+}
+.rev-title { font: 500 26px/1.35 var(--serif); margin: 0 0 6px; letter-spacing: .06em; }
+.rev-became { font: 400 15px/1.7 var(--serif); color: var(--ink-2); margin: 0 0 16px; }
+.rev-became::before { content: '——'; color: var(--muted); margin-right: 4px; }
+.rev-text p { font: 16px/2.05 var(--serif); margin: 0 0 14px; text-indent: 2em; }
+.rev-text p:last-child { margin-bottom: 0; }
+.rev-turns { margin-top: 20px; padding-top: 16px; border-top: 1px dotted var(--rule-2); }
+.rev-turns > b { display: block; font: 500 13px/1 var(--sans); letter-spacing: .1em; color: var(--muted); margin-bottom: 10px; }
+.rev-turns ul { margin: 0; padding: 0; list-style: none; }
+.rev-turns li { font-size: 14px; line-height: 1.9; padding-left: 1em; text-indent: -1em; }
+.rev-turns li::before { content: '·'; color: var(--seal); margin-right: .5em; }
+.rev-turns li i { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; margin-right: .6em; }
+.rev-missed { margin-top: 18px; padding: 12px 14px; background: color-mix(in srgb, var(--seal) 5%, transparent); border-radius: 3px; }
+.rev-missed > b { display: block; font: 500 13px/1 var(--sans); letter-spacing: .08em; color: var(--seal-ink); margin-bottom: 6px; }
+.rev-missed p { margin: 0; font: 14.5px/1.85 var(--serif); }
+.rev-wait { color: var(--muted); font: 15px/1.8 var(--serif); }
+.rev-wait::after { content: ''; display: inline-block; width: 1ch; text-align: left; animation: rev-dots 1.2s steps(4) infinite; }
+@keyframes rev-dots { 0% { content: ''; } 25% { content: '·'; } 50% { content: '··'; } 75% { content: '···'; } }
+
+/* ── 接着走下去 ─────────────────────────────────── */
+.more-box { margin: 26px 0 22px; padding: 18px 20px; border: 1px dashed var(--rule-2); border-radius: 3px; }
+.more-box h3.mh { margin-top: 0; }
+.more-box .hint { margin-bottom: 14px; }
+
+/* 后传的成绩单：跟两年那张分得开 */
+.score-card.extra { border-left: 3px solid var(--indigo); }
+.score-card.extra .years b, .score-card.extra .rank b { color: var(--indigo); }
+.score-card .rk-note { font-size: 12px; color: var(--muted); }
+
+/* 回看里，后传从哪一个月起 */
+.extra-cut { display: flex; align-items: baseline; gap: 10px; margin: 22px 0 6px; padding-top: 14px; border-top: 1px solid var(--rule-2); flex-wrap: wrap; }
+.extra-cut b { font: 500 14px/1.4 var(--serif); color: var(--indigo); letter-spacing: .04em; }
+.extra-cut span { font-size: 12.5px; color: var(--muted); }
+details.day.is-extra .dn { color: var(--indigo); }
+
+/* ── 一局的详情页 ───────────────────────────────── */
+.det-h { font: 500 22px/1.4 var(--serif); margin: 4px 0 2px; letter-spacing: .04em; }
+.det-who { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+#s-detail .review { margin-top: 20px; }
+.go-in { color: var(--muted); font-size: 12px; margin-left: 8px; white-space: nowrap; }
+table.board tr.mine-go:hover .go-in { color: var(--seal-ink); }
+
+@media (max-width: 720px) {
+  .review { padding: 20px 16px; }
+  .rev-title { font-size: 22px; }
+  .rev-text p { font-size: 15.5px; line-height: 1.95; }
 }

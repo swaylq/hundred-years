@@ -104,9 +104,12 @@
 
 ## 跑起来
 
+**按改了哪儿挑一条跑，别一上来就整串。** 改一个 CSS 值、一句文案：一条都不用跑。
+
 ```bash
-node tools/check-engine.js          # 算账部分的检查，几秒钟，不花钱
-node tools/check-years.js           # 一百张年卡的硬闸，不花钱
+node tools/check-engine.js          # 算账 / 结算 / 换币 / 家当，3 秒，不花钱
+node tools/check-extra.js           # 后传 / 成绩冻结 / 收梢，1 秒，不花钱
+node tools/check-years.js           # 一百张年卡的硬闸，20 秒，不花钱
 
 secret exec OPENROUTER_API_KEY -- node server.js       # 前台，127.0.0.1:8801
 open http://127.0.0.1:8801
@@ -145,7 +148,7 @@ sway 2026-09-04 点名要保住的一套。承重的是四件事，缺一件「�
 | `engine.js` | 算账：时间（按月走）、货币、家底、上限、结算。纯函数，不碰网络 |
 | `sim.js` | 一个月怎么算：提示词、流式吐字、没密钥时的本地兜底 |
 | `db.js` | 存档和排行榜，用 Node 自带的 `node:sqlite`，零依赖 |
-| `server.js` | HTTP。限流、静态文件、八个接口 |
+| `server.js` | HTTP。限流、静态文件、十一个接口 |
 | `public/` | 网页。没有打包器，三个文件 |
 | `tools/` | 生成、检查、机器人、标定、截图 |
 
@@ -157,6 +160,29 @@ sway 2026-09-04 点名要保住的一套。承重的是四件事，缺一件「�
 | 每个月的演算（一局 24 次） | `google/gemini-3.1-flash-lite` | 量出来一个月四秒出头，第一句话一秒就到（流式） |
 
 换模型：`HY_MODEL=... node server.js`；年卡那边是 `tools/gen-years.js --model`。
+
+## 走完两年之后：收梢、接着走下去、后传榜
+
+两年走完点「去算账」，出来三样东西：
+
+1. **成绩单** —— 净赚多少、抵得上几年的收入、总榜和年榜上第几。
+   **这一份写进库里就冻住了**：`runs` 的 `score` / `year_earned` / `world_usd` / `result`
+   四列，闸在 `db.js` 里 `q.fin` 的 `WHERE id = ? AND status <> 'done'`——
+   结过一次账，再调 `finishRun` 只会影响 0 行。不是靠调用方记得别调。
+2. **收梢** —— 模型给这两年写的一篇总评：他成了什么人、哪几个月拐了弯、
+   那一年真有、他却没走的一条路。一局只写一次，存进 `runs.review`，
+   往后翻旧局读的是同一份，不重复花钱（`POST /api/review`）。
+3. **接着走下去** —— 最多再走五年（`MONTHS_EXTRA = 60`，走到年卡尽头 2025-12 为止）。
+   走完另算一笔总账，**只上后传榜**（`/api/board?scope=extra`），
+   记在 `extra_*` 那一套列上，总榜和年榜一个字都不改。
+
+接得回去，是因为 `closeOut` 动手之前把它会改的都存进了 `s.preClose`：
+`reopen` 拿它原样还原、再照常 `advanceTo`，等于 `closeOut` 从没跑过。
+**没有这一份，收工那个月正好换钱的局（1947-06 开局那种，第 24 个月是 1949 年 5 月）
+会把那笔十万比一的折算算两遍。** `check-extra.js` 第 2 条盯着这件事。
+
+结过账的局谁都点得进去看（`GET /api/detail?id=`，不带 token 也不外泄存档原文）：
+两张成绩单、两篇收梢、一个月一个月的回看，第 25 个月起标着「往下这些是后传」。
 
 ## 分数怎么算
 

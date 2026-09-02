@@ -85,14 +85,22 @@
   </div>
 </section>
 
-<!-- 结算 -->
+<!-- 结算 + 收梢的总评 -->
 <section id="s-done" class="screen">
   <div id="done-body"></div>
+  <div id="done-review" class="review"></div>
+  <div id="done-more" class="more-box" hidden></div>
   <div class="done-acts">
     <button class="primary" data-go="pick">再来一局</button>
     <button class="ghost-btn" data-go="board">看排行榜</button>
   </div>
   <div id="done-days"></div>
+</section>
+
+<!-- 一局的详情：从「我的局」和排行榜点进来 -->
+<section id="s-detail" class="screen">
+  <button class="back" id="detail-back">← 回去</button>
+  <div id="detail-body"></div>
 </section>
 
 <!-- 排行榜 -->

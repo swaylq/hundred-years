@@ -7,3 +7,4 @@ data/.gen-cache.json
 data/years/_failed/
 goal/shots/
 node_modules/
+goal/shots-extra/
