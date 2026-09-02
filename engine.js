@@ -513,6 +513,42 @@ function cleanOptions(list) {
     .filter(o => o.what);
 }
 
+/* 模型偶尔会越过记事人的位置，替玩家把一件事否掉：
+ * 「该类任务属于犯罪活动」「风险远大于收益」。这个游戏里那都不是理由——
+ * 犯法的事他做得成，只是有人管、抓着要出事，代价记在钱和麻烦上。
+ * 顶回去的理由只有一个：那一年根本没有这样东西。
+ * 提示词是主闸，这里是兜底：说不出「哪一年才有」的拒绝，一律扔掉。 */
+const LECTURE = /(犯罪|违法|非法|不合法|违反|道德|伦理|风险|危险|不划算|得不偿失|不值得|建议|劝|后果|坐牢|判刑|牢狱|三思|谨慎|不明智|代价太大|收益)/;
+
+/** 把这个月的 refused 洗一遍：只留「那一年没有这东西」那种，别的扔掉。
+ *  留下来的要么带年份（1976 年才有 / 1958 年以后就没了），
+ *  要么是关键词表真扫出来的那几样（hits，banned 的不算——那是犯法不是没有）。 */
+function cleanRefused(list, hits) {
+  const words = (hits || []).filter(h => h.kind !== 'banned').map(h => h.word);
+  return (Array.isArray(list) ? list : [])
+    .filter(r => r && (r.what || r.why))
+    .map(r => ({ what: String(r.what || '').replace(/\s+/g, ' ').trim().slice(0, 40), why: String(r.why || '').replace(/\s+/g, ' ').trim().slice(0, 60) }))
+    .filter(r => r.what)
+    .filter(r => {
+      const both = r.what + ' ' + r.why;
+      if (words.some(w => both.includes(w))) return true;   // 关键词表点过名的，留
+      if (LECTURE.test(both)) return false;                 // 讲道理、掂量划不划算的，扔
+      return /\d{3,4}\s*年/.test(r.why);                    // 说得出哪一年的，留
+    })
+    .slice(0, 3);
+}
+
+/** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话就不动。
+ *  年卡还是原来那座城的（物价、政策、时局照用），提示词里会说明人不在那儿。 */
+function applyMove(s, to) {
+  const name = String(to || '').replace(/\s+/g, '').replace(/[。，,.、；;：:！!？?"'「」『』（）()]/g, '').slice(0, 8);
+  if (!name || name === s.city) return null;
+  if (/[a-zA-Z0-9]/.test(name)) return null;
+  const from = s.city;
+  s.city = name;
+  return { from, to: name };
+}
+
 /** 走到第 n 个月。跨过换币的月份就自动换钱，并把这件事报回去。
  *  服务端和检查脚本都必须走这个口子推进月份——
  *  自己改 s.n / s.month 会漏掉换币，账面上会凭空多出几十万倍的钱。 */
@@ -991,7 +1027,7 @@ function checkPersona(text) {
 }
 
 module.exports = {
-  cleanOptions,
+  cleanOptions, cleanRefused, applyMove,
   DAYS, MONTHS, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,
   money, moneyIn, unitOf, fixScale, fixSigns, unpairedBuys,

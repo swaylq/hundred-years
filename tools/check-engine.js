@@ -719,5 +719,41 @@ console.log('21. 家当：进货的钱不算花掉');
   else ok(`applyMonth 报出来了：${res.missedGoods.items[0].what}，下个月提示词里会摆到模型眼前`);
 }
 
+/* 22. 顶回去的理由只能是「那一年没有这东西」。
+ *     玩家写「去国外接一单暗杀的活」，回来一句「该类任务属于犯罪活动，风险远大于收益」——
+ *     那是模型站到了顾问的位置上，这个游戏里犯法的事做得成，只是有人管。
+ *     提示词是主闸，cleanRefused 是兜底。 */
+console.log('22. 替玩家把事否掉的那种拒绝，落不了地');
+{
+  const 扔掉 = [
+    ['讲犯罪', { what: '前往国外接暗杀任务', why: '该类任务属于犯罪活动，风险远大于收益。' }],
+    ['讲危险', { what: '走私烟土', why: '太危险了，抓到要坐牢' }],
+    ['讲划算', { what: '盘下这间铺子', why: '本钱压得太多，得不偿失' }],
+    ['讲道德', { what: '放印子钱', why: '有违道德，不建议这么做' }],
+  ];
+  const 留下 = [
+    ['说得出年份', { what: '骑共享单车', why: '共享单车 2016 年才出现，街上没有这种东西' }],
+    ['关键词表点过名', { what: '开网约车', why: '那时候按非法营运查' }, [{ word: '网约车', kind: 'early' }]],
+  ];
+  const 漏 = 扔掉.filter(([, r]) => E.cleanRefused([r], []).length).map(([n]) => n);
+  const 误伤 = 留下.filter(([, r, hits]) => !E.cleanRefused([r], hits || []).length).map(([n]) => n);
+  if (漏.length) fail(`该扔的留下了：${漏.join('、')}`);
+  else if (误伤.length) fail(`真的顶回去被误伤：${误伤.join('、')}`);
+  else ok(`${扔掉.length} 种劝告全扔掉，${留下.length} 种真顶回去全留住`);
+
+  /* banned（有这东西，但这几年干这个犯法）不是顶回去的依据 */
+  const r2 = E.cleanRefused([{ what: '摆摊', why: '这几年干这个犯法' }], [{ word: '摆摊', kind: 'banned' }]);
+  if (r2.length) fail('犯法的那种被当成了「办不成」');
+  else ok('「有这东西但干这个犯法」不算顶回去——让他做，代价记在钱和麻烦上');
+
+  /* 他要走就让他走：moveTo 落到存档上，废话不动他 */
+  const s = E.newRun({ year: 2015, month: 6, nick: 'x', seed: 1 });
+  const 原来 = s.city;
+  const mv = E.applyMove(s, '香港');
+  if (!mv || s.city !== '香港') fail('moveTo 没把人搬过去');
+  else if (E.applyMove(s, '香港') || E.applyMove(s, ' ')) fail('没搬也报了一次搬家');
+  else ok(`他这个月走了：${原来} → ${s.city}，年卡照旧用${原来}那一份`);
+}
+
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');
 process.exit(bad ? 1 : 0);

@@ -325,6 +325,9 @@ function renderPlay(last, opts = {}) {
       w.appendChild(ul); box.appendChild(w);
     }
   }
+  if (last.moved && last.moved.to) {
+    box.appendChild(el('div', 'note', `这个月你从${last.moved.from}到了${last.moved.to}，往后的日子在那儿过。`));
+  }
   if (last.refused && last.refused.length) {
     const w = el('div', 'refused');
     w.appendChild(el('b', '', '这几件事没办成'));
@@ -608,6 +611,7 @@ function renderDone(r, ranks, months) {
       const box = el('div', 'daybox');
       box.appendChild(el('div', 'mylist', '你写的：' + (d.list || '')));
       box.appendChild(el('p', '', d.story || ''));
+      if (d.moved && d.moved.to) box.appendChild(el('div', 'note', `这个月你从${d.moved.from}到了${d.moved.to}。`));
       if (d.refused && d.refused.length) {
         const w = el('div', 'refused');
         w.appendChild(el('b', '', '没办成'));

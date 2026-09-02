@@ -377,7 +377,13 @@ async function runOneMonthInner(req, res, b, s) {
     } else { out = SIM.runMonthLocal(s, b.list); usedLocal = true; }
 
     const curNow = E.currencyOf(s.year, s.month);
+    /* 顶回去的理由只能是「那一年没有这东西」。模型偶尔会替玩家把事否掉
+     * （「属于犯罪活动」「风险大于收益」），那种拒绝在这儿扔掉——
+     * 留着它，下个月的提示词还会拿它当「上个月顶回去过」接着顶。 */
+    out.delta.refused = E.cleanRefused(out.delta.refused, E.scanAnachronism(b.list, s.year));
     const res1 = E.applyMonth(s, out.delta);
+    /* 他这个月要是走了（换城、出海），人跟着搬——年卡照旧用原来那座城的。 */
+    const moved = E.applyMove(s, out.delta.moveTo);
     /* 把这个月压成的那几行并进记忆。**要在 advanceTo 之前**——
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month });
@@ -386,6 +392,7 @@ async function runOneMonthInner(req, res, b, s) {
       n: s.n, year: s.year, month: s.month, list: String(b.list).slice(0, 2000),
       story: out.delta.story, tally, entries: res1.entries,
       refused: out.delta.refused || [], capped: res1.capped, local: usedLocal,
+      moved: moved || null,
       /* 进了货却没记下东西——下个月的提示词里要拿它提醒模型自己补上 */
       missedGoods: res1.missedGoods || null,
     });
@@ -414,6 +421,7 @@ async function runOneMonthInner(req, res, b, s) {
         return res1.entries.map(e => ({ what: e.what, amount: e.amount, text: E.moneyIn(e.amount, unit, curNow) }));
       })(),
       refused: out.delta.refused || [],
+      moved: moved || null,
       capped: res1.capped,
       overspent: res1.overspent > 0 ? E.money(res1.overspent, curNow) : null,
       /* 换之前那种钱的名字，直接用 applySwitch 返回的 from。

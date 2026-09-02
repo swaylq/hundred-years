@@ -8,8 +8,13 @@
  * 两层都要过：
  *   一、本地关键词表当场认出来（engine.scanAnachronism）——这层是确定性的，
  *       不指望模型自己想起 1930 年没有手机。
- *   二、模型收到裁定之后，refused 里要有这一条，正文里要写出他撞的那堵墙。
- * 十二个场景，一个不过就退出码非 0。
+ *   二、模型收到裁定之后的下场。**分两种，下场是相反的**：
+ *       · 那一年**根本没有**这东西（early/gone）：refused 里要有这一条，正文里写他撞的那堵墙。
+ *       · 那一年**有，但干这个犯法**（banned，摆摊、私人办厂）：**不许顶回去**——
+ *         让他做成，正文里要写他做了，并且要有代价（有人管、罚没、打点，或者麻烦涨）。
+ *         2026-09-03 之前这两种混在一起验，逼着模型把犯法的事也否掉，
+ *         玩家写「去接一单杀人的活」，回来的是一句「该类任务属于犯罪活动」。
+ * 十三个场景，一个不过就退出码非 0。
  */
 const path = require('path');
 const fs = require('fs');
@@ -33,12 +38,12 @@ const CASES = [
   { year: 1958, month: 9,  list: '去银行办一张信用卡，先刷五百块进货。', want: '信用卡',
     alsoOk: ['刷卡', '银行卡', '透支'] },
   { year: 1962, month: 5,  list: '注册一家私营企业，招十个工人做服装。', want: '私营企业',
-    alsoOk: ['私营', '私人办厂', '私人经营', '公私合营', '雇工', '雇佣劳动'] },
+    alsoOk: ['私营', '私人办厂', '私人经营', '公私合营', '雇工', '雇佣劳动'], didIt: ['服装', '缝', '衣', '布'] },
   { year: 1934, month: 6,  list: '去交易所做标金，再看看纱布期货，本钱两百块大洋。', want: null },
   { year: 1968, month: 4,  list: '在街口摆个摊卖凉粉，一天卖两百碗。', want: '摆摊',
-    alsoOk: ['摆个摊', '个体户', '个体经营', '投机倒把', '私自买卖'] },
+    alsoOk: ['摆个摊', '个体户', '个体经营', '投机倒把', '私自买卖'], didIt: ['凉粉', '摊'] },
   { year: 1975, month: 7,  list: '按揭买一套商品房，等它涨价再卖掉。', want: '商品房',
-    alsoOk: ['房屋买卖', '买卖房', '房产交易', '按揭', '私有房产'] },
+    alsoOk: ['房屋买卖', '买卖房', '房产交易', '按揭', '私有房产'], didIt: ['房'] },
   { year: 1980, month: 6,  list: '开个网店，把这边的衣服卖到南方去。', want: '网店',
     alsoOk: ['网上', '互联网', '因特网', '电子商务', '上网'] },
   { year: 1986, month: 2,  list: '用微信联系几个客户，把货款打过来。', want: '微信',
@@ -79,7 +84,27 @@ async function one(c, i) {
 
   const refused = (r.delta.refused || []).map(x => `${x.what}${x.why}`).join(' ');
   const story = String(r.delta.story || '');
-  if (c.want === null) {
+  /* 这一条是「没有这东西」还是「有、但犯法」，照关键词表自己说的算，不手写死。 */
+  const wantHit = hits.find(h => [h.word, norm(h.word), h.name].some(w => w.includes(norm(c.want || '\u0000')) || norm(c.want || '\u0000').includes(norm(w))));
+  const isBanned = !!wantHit && wantHit.kind === 'banned';
+  if (c.want !== null && isBanned) {
+    /* 犯法的那种：做得成，只是有人管。验三件事——没被顶回去、正文里真做了、代价出现了。 */
+    /* 同一份清单里可能既有犯法的（商品房）又有那时候没有的（按揭）。
+     * 拒绝的是后者就不算数——那一条本来就该顶回去。 */
+    const goneWords = hits.filter(h => h.kind !== 'banned').flatMap(h => [h.word, h.name]);
+    const inRefused = !goneWords.some(w => refused.includes(w))
+      && [c.want, ...(c.alsoOk || [])].some(w => refused.includes(w));
+    /* 「他到底干没干」不能拿 want 那几个词判：模型写「支起个摊子卖凉粉」，
+     * 一个「摆摊」也没出现，事情却办得明明白白。didIt 是这件事的实物证据词。 */
+    const inStory = [c.want, ...(c.alsoOk || []), ...(c.didIt || [])].some(w => story.includes(w));
+    const 代价 = Number((r.delta.standing || {}).麻烦) > 0
+      || /(抓|查|罚|没收|扣|撵|举报|风声|盯|打点|门包|投机倒把|市管|工商|派出所|治安|拘)/.test(story);
+    out.modelOk = !inRefused && inStory && 代价;
+    out.why = inRefused ? `犯法的事被当成办不成顶回去了：${refused.slice(0, 60)}`
+      : !inStory ? `正文里没写他到底干没干「${c.want}」`
+        : !代价 ? '做成了却一点代价都没有：没人管、麻烦也没涨' : '';
+    out.tag = '犯法但做得成';
+  } else if (c.want === null) {
     /* 对照组：只查一件事——**有没有说「这东西那时候还没有」**。
      * 别拿词表判语义：模型说「开网店缺少模特和专业修图，且尚未交付保证金进货」
      * 是一条完全合理的生意理由，里面那个「尚未」跟年代无关，
@@ -126,7 +151,7 @@ async function one(c, i) {
 
   let bad = 0;
   for (const r of rows) {
-    const tag = r.want === null ? '对照' : '该拦';
+    const tag = r.want === null ? '对照' : (r.tag || '该拦');
     const ok = r.localOk && (r.modelOk === null || r.modelOk);
     if (!ok) bad++;
     console.log(`${ok ? '✓' : '✗'} ${String(r.n).padStart(2)}. ${r.year}-${String(r.month).padStart(2, '0')} [${tag}] ${r.list.slice(0, 26)}…`);
