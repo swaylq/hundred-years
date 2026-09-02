@@ -121,6 +121,7 @@ function view(s) {
     income: E.incomeAtDay(s.year, s.month, Math.min(s.day, E.DAYS)),
     incomeText: E.money(E.incomeAtDay(s.year, s.month, Math.min(s.day, E.DAYS)), cur),
     listLimit: E.LIST_LIMIT,
+    options: s.options || [],
     recent: s.days.slice(-3),
   };
 }
@@ -171,6 +172,7 @@ const routes = {
     if (!(month >= 1 && month <= 12)) return oops(res, 400, '月份要在 1 到 12 之间');
     const nick = String(b.nick || '').trim().slice(0, 16) || '无名';
     const s = E.newRun({ year, month, nick });
+    s.options = SIM.optionsLocal(s);
     const { id, token } = DB.createRun(s, nick);
     json(res, 200, { id, token, state: view(s), flavor: SIM.card(year).flavor });
   },
@@ -193,6 +195,28 @@ const routes = {
       if (s.day > E.DAYS) return oops(res, 400, '三十天走完了，去结算吧');
       return await runOneDay(req, res, b, s);
     } finally { busy.delete(lockKey); }
+  },
+
+  /* 明天能走的哪几条路。平常是跟正文同一次调用带回来的，不额外花钱；
+   * 这个口子只在头一天和玩家点「换三条」时走，会真调一次模型。 */
+  'POST /api/options': async (req, res) => {
+    const b = await readBody(req);
+    const id = String(b.id || '');
+    if (busy.has(id)) return oops(res, 409, '这一天正在算，等它出来再说');
+    const found = DB.loadRun(id, String(b.token || ''));
+    if (!found) return oops(res, 404, '找不到这一局，或者认领的串对不上');
+    const s = found.state;
+    if (s.status !== 'playing' || s.day > E.DAYS) return json(res, 200, { options: [], done: true });
+
+    let out;
+    /* 点一次换一份：没密钥的时候也得换得动，所以给本地那份加一个随机的引子 */
+    const salt = Math.floor(Math.random() * 1e6);
+    if (HAS_KEY && rateOk(clientIp(req)).ok) out = await SIM.runOptions(s, { salt });
+    else out = { options: SIM.optionsLocal(s, salt), local: true };
+    s.options = E.cleanOptions(out.options);
+    if (!s.options.length) s.options = SIM.optionsLocal(s);
+    DB.saveRun(id, s);
+    json(res, 200, { options: s.options, local: !!out.local });
   },
 
   'POST /api/settle': async (req, res) => {
@@ -282,6 +306,11 @@ async function runOneDay(req, res, b, s) {
     const res1 = E.applyDay(s, out.delta);
     const tally = E.tallyLine(res1.entries, curNow);
     const switched = E.advanceTo(s, s.day + 1);
+    /* 三条路跟正文是同一次调用回来的：不多花一次钱，也不让他多等。
+     * 模型没给或者给了空的，就退回照年卡拼的那份——界面上永远有三条。
+     * 放在 advanceTo 之后：这三条说的是明天，本地那份也该照明天的日子拼。 */
+    s.options = E.cleanOptions(out.delta.options);
+    if (!s.options.length) s.options = SIM.optionsLocal(s);
     s.days.push({
       day: s.day - 1, list: String(b.list).slice(0, 2000),
       story: out.delta.story, tally, entries: res1.entries,
@@ -303,6 +332,7 @@ async function runOneDay(req, res, b, s) {
        * 1949 年印成「人民币（旧）换成了人民币（旧）」。 */
       switched: switched.map(x => ({ say: x.say, before: E.money(x.before, x.from), after: E.money(x.after, x.cur) })),
       local: usedLocal, why: out.why || null,
+      options: s.options,
       state: view(s),
       done: s.day > E.DAYS,
     });

@@ -44,18 +44,27 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
 你不是在编故事，你是在按那一年真实的条件算账。
 玩家写「去银行贷款开厂」，1962 年就贷不到、也开不了厂——你要写他撞在哪堵墙上，
 写得具体：谁跟他说的、原话怎么说、他在哪站了多久。
-玩家写得靠谱，就让他挣到钱；写得离谱，就让他碰壁；写得含糊，就让他白跑一趟。
-不要因为他写得长就多给钱，也不要因为他没写就替他决定。
+他写下的事，你先想「怎么才办得成」，再想「什么真的挡得住他」。
+写得靠谱就让他挣到钱；写得含糊，就替他挑那一年最合理的做法走一遍，别让他空手回来；
+真撞上那一年过不去的坎，才让他碰壁——碰了壁就当场告诉他绕过去的路。
+不要因为他写得长就多给钱，也不要替他决定他没写的大事（辞工、搬家、跟人翻脸）。
 
 【钱】
 这是玩家最在乎的事。每一天你都要算清楚今天进了多少出了多少，
 数目要跟那一年的物价对得上——资料里给了当年的工钱和物价，照着来。
 
-**他是白手起家的那一个。** 开局本钱只有一成年收入，没有背景，没有关系，
-在这座城里谁也不认识。年卡里那些路子写的「做到头约多少」，
-说的是**这一行做熟了的人**能挣多少——不是他头一个月就能挣到的。
-一个刚落地的人，头几天能摸到边就不错了；能做到那个数的零头，已经是很能干。
-别把大商号的进项算到他头上。
+**他是白手起家的那一个，可他不笨，也肯下力气。** 开局本钱只有一成年收入，
+没有背景，在这座城里谁也不认识：头两三天是找门路的，进项少，甚至倒贴。
+门路一摸着，就该按他写的清单往上走。年卡里那些路子写的「做到头约多少」，
+说的是这一行做熟了的人能挣多少。他头一个月站得住的是靠力气那几条；
+要挣到最上头那个数，得真做成买卖，也得担点风险。
+三十天下来，一个天天认真写、也肯冒点险的人，家底该翻到
+「一个普通人三个月到半年的收入」那个量级；写得特别好又敢赌的，才够得着年卡上那个上限。
+他天天写得像模像样却只挣到几块钱，那是这一天算坏了，不是他不行。
+别把大商号的进项算到他头上，也别把他按在最底下不动。
+
+**年卡里「做到头约多少」写的是一个月的数**，不是一天的：
+一个月 42 元的活，一天该给一块四上下，不是四十二。
 
 **付出去换回东西的钱，不算花掉。** 这条也常漏：
 预付的货款、交的押金、屯的货、买的家伙什、盘下的摊位——
@@ -76,6 +85,25 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
 或者他今天压根没去干。原因必须写进正文，不能默不作声地不给。
 东西也算钱：一辆自行车、三十斤全国粮票、一张调令、一间分到的房，
 都要折成当年的钱记进家底。凭空冒出来的钱不算数。
+
+【他想做的事，尽量让他做成】
+这一段跟算账一样要紧。他写下来的事，**默认是办成了**——
+你要写的是他怎么办成的：找了谁、说了哪句话、花了多少、绕了多远。
+
+1. **一天最多有一件事办不成。** 清单上其余的照他写的往下走。
+   一天里样样碰壁，是这一天算坏了，不是那一年难。
+   （下面「他提到的这几样」里列出来的除外——那些是这一年真没有的，列几条就顶几条。）
+2. **同一件事不许连着两天顶回去。** 他今天还写它，就让他找到路子——
+   托人、加钱、换个说法、走后门、绕到别处去办。路子要具体到人名和价钱。
+3. **犯法不等于办不成。** 那几年干这个犯法，说的是有人管、抓着要出事，
+   不是他做不了。他要做就让他做成，钱照挣，代价记在「麻烦」上：
+   **他今天只要沾了那几年犯法的事（私自雇人、倒买倒卖、投机、黑市换钱），
+   麻烦就必须涨 5 到 15，一次都不许漏**，正文里还要有人看见他、有人提醒他。
+   麻烦攒到 80 以上才真栽，栽那天再让他栽，栽得具体。
+4. **只有这一年根本没有的东西才顶回去。** 顶回去的同时必须给他那一年的替代：
+   没有快递就有信局和脚夫，没有银行贷款就有当铺、印子钱和会钱。
+   写进正文里，别只丢一句「办不到」。
+5. refused 里只写第 4 条那一种。**多数日子 refused 是空的。**
 
 【怎么写】
 第二人称，「你」就是玩家。叙述里不出现「我」，人物对话里的「我」不算。
@@ -123,7 +151,24 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
   "debtsClear": ["还清了谁的债"],
   "standing": {"名声":变化,"关系":变化,"体力":变化,"麻烦":变化},
   "refused": [{"what":"他想做但做不成的事","why":"为什么做不成，一句话"}],
+  "options": [{"what":"明天能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]
 }
+refused 多数时候是空数组；options 每天都要给满三条。
+
+【给他三条明天能走的路 —— 写进 options】
+· 一条是稳的：今天这条路接着做，或者今天碰上的那个人让他明天再去。
+· 一条是搏一把的：本钱要多押些、担点风险，成了能顶好几天。
+· 一条是新路子：这一年这座城里另有的一条道，跟他今天做的不一样。
+每条都要有具体的人、地方、价钱：「去码头找活」不算，
+「一早去十六铺找工头老周，扛包按件算，一件八分」才算。
+今天正文里出现过的人和事，优先写进去。
+
+【进项的形状】
+凭力气和跑腿挣的（做工、扛包、拉车、跑腿、糊纸盒），一天封顶在那一行当月工钱的三十分之一上下，
+多干一点、干得好一点，最多再多一半。要比这个多，必须是**真做成了一笔买卖**：
+有货、有买家、有价钱、有人名，三样缺一样就不算，钱也不许给。
+「奖励」「补贴」「协调费」这种含糊的名目，一天最多一笔，而且不许一天比一天涨上去——
+同一个名目连着给、数目还越给越大，是这一局算坏了的头号症状。
 
 【钱怎么记 —— 这条最要紧】
 今天每一笔进出都**单独**写进 entries，一笔一条，能拆多细就拆多细：
@@ -165,6 +210,22 @@ function buildUser(s, list, extra = {}) {
     : '什么都没有';
   const debts = s.debts.length ? s.debts.map(d => `欠${d.who} ${E.money(d.amount, cur)}`).join('、') : '不欠人钱';
 
+  /* 给模型一把尺子。光说「别把大商号的进项算到他头上」，它会一天只给一块钱：
+   * 三局机器人实测三十天净赚 0.04 / −0.09 / −0.46 年的收入，两局是亏的。
+   * 尺子按当天那种钱算，换币之后自动跟着变。 */
+  const income = E.incomeAtDay(s.year, s.month, Math.min(s.day, E.DAYS));
+  const good = income / 70;                     // 做顺了的一天：半个月的收入
+  const big = income / 10;                      // 谈成一笔：一个多月的收入
+  const capToday = E.dayCap(s.year, s.month, Math.min(s.day, E.DAYS));
+  /* 进度用「相当于几个月的收入」来说，不用钱数——换币那天钱数会差几百万倍，
+   * 除以当天的年收入之后两头才比得了。 */
+  const monthsNow = E.netWorth(s) / income * 12;
+  const monthsStart = s.startWorth / E.incomeAtDay(s.year, s.month, 1) * 12;
+  const monthsWant = monthsStart + 4.2 * (s.day - 1) / E.DAYS;   // 三十天攒够 0.35 年 = 4.2 个月
+  const behind = s.day > 3 && monthsNow < monthsWant * 0.75;
+
+  const refusedBefore = s.days.slice(-2).flatMap(d => (d.refused || []).map(r => r.what)).filter(Boolean);
+
   const monthEvents = (c.events || []).filter(e => e.month === s.month);
   const sw = sy.switch;
   /* 换过钱之后的每一天都要再说一遍钱的量级。只在换币当天提醒一次不够——
@@ -200,6 +261,18 @@ ${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).j
 
 【前几天】
 ${recent}
+${refusedBefore.length ? `前两天已经顶回去过这几件：${refusedBefore.join('、')}。
+他今天要是还写同一件，就让他找到路子办成——托人、加钱、换个地方办，不许再顶一次。` : ''}
+
+【今天这一天该走到哪儿】
+做顺了的一天，连做工带买卖，净进大概 ${E.money(good, cur)}；谈成一笔像样的买卖，那一天能到 ${E.money(big, cur)}。
+光靠做工、扛包、跑腿的一天，只有 ${E.money(income / 360, cur)} 上下——多出来的必须是买卖挣的，写清楚货、买家和价钱。
+今天无论如何不许超过 ${E.money(capToday, cur)}——超了游戏会削平，正文和账面就对不上。
+他落地那天的家底相当于一个普通人 ${monthsStart.toFixed(1)} 个月的收入，现在是 ${monthsNow.toFixed(1)} 个月，
+走到第 ${s.day} 天该在 ${monthsWant.toFixed(1)} 个月上下。
+${behind ? '他落下了：今天让他抓住点实在的东西，把欠的补回来一些。'
+  : monthsNow > monthsWant * 1.4 ? '他已经跑在前头了：今天把进项收紧，只给他做实了的那一份，含糊的名目一笔都不给。'
+  : '他走在道上：接着按他写的算，别忽然塞给他一座金山。'}
 
 【他今天写的清单】
 ${String(list).trim()}
@@ -245,17 +318,21 @@ function runDayLocal(s, list) {
    * 而那时候的年收入是 1.84 亿法币——差三百万倍，等于前半个月白过。 */
   const inc = E.incomeAtDay(s.year, s.month, s.day);
 
-  /* 写得越具体给得越多，但封顶在「一年收入的百分之二」——兜底就是兜底，不该刷分 */
-  const effort = Math.min(1, E.countHan(list) / 200);
-  const luck = 0.4 + r() * 1.2;
-  const gain = hits.length ? -inc / 365 : inc / 365 * effort * luck * 2;
+  /* 写得越具体给得越多。尺子跟提示词里给模型的那把一样：做顺了的一天
+   * 约合半个月的收入（inc/70）。原来是 inc/365 那一档，一天挣一顿饭钱，
+   * 三十天下来跟没玩一样。 */
+  const effort = 0.5 + Math.min(1, E.countHan(list) / 160);
+  const luck = 0.5 + r() * 0.9;
+  /* 撞上这一年没有的东西：只废掉那一件，剩下的时间照旧干活，
+   * 拿平常的一半。整天清零是旧写法，跟现在「一天最多一件事办不成」对不上。 */
+  const gain = inc / 70 * effort * luck * (hits.length ? 0.5 : 1);
 
   const story = hits.length
     ? (hits[0].kind === 'banned'
         ? `你把想做的事说给一个熟人听。说到「${hits[0].word}」，他往门口看了一眼，压低声音让你别再提。` +
-          `「这两年抓得紧。」他说完就走了。这一天什么也没办成。`
+          `「这两年抓得紧。」这一件只好搁下。后半天你去做了${way.way}，天黑前收了工。`
         : `你把想做的事跟街上的人说了一遍。说到「${hits[0].word}」的时候，对方停下来看着你，问那是什么。` +
-          `你解释了两句，他摇摇头走了。这一天就这么过去了，什么也没办成。`)
+          `你解释了两句，他摇摇头走了。这一件办不成，你转头去做${way.way}，日头偏西才回来。`)
     : `你按写下的去做了。${way.way}这条路，${way.who}。` +
       `跑了大半天，鞋底沾了一层灰。到日头偏西的时候，事情算是有了个着落。`;
 
@@ -265,10 +342,80 @@ function runDayLocal(s, list) {
       entries: [{ what: hits.length ? '白跑一天的开销' : (way.way || '打零工'), amount: Math.round(gain * 100) / 100 }],
       assetsAdd: [], assetsDrop: [], debtsAdd: [], debtsClear: [],
       standing: { 名声: hits.length ? 0 : 1, 关系: 0, 体力: -(6 + Math.floor(r() * 8)), 麻烦: hits.length ? 1 : 0 },
-      refused: hits.map(h => ({ what: h.word, why: E.sayAnachronism(h) })),
+      refused: hits.slice(0, 1).map(h => ({ what: h.word, why: E.sayAnachronism(h) })),
+      options: optionsLocal(s),
     },
     local: true, problems: [],
   };
 }
 
-module.exports = { runDay, runDayLocal, buildUser, card, SYS, MODEL };
+/* ── 明天能走的三条路 ──────────────────────────────
+ * 每天算完自动带回来一份（跟正文同一次调用，不额外花钱也不多等），
+ * 头一天和玩家点「换三条」的时候才单独调一次模型。
+ * 断网、没密钥、模型没给，都退回 optionsLocal——照年卡里的路子拼，
+ * 一分钱不花，也永远有三条。 */
+
+/** 照年卡里的挣钱路子拼三条：稳的、来钱最快的、另一条 */
+function optionsLocal(s, salt) {
+  const c = card(s.year);
+  const r = rng((s.seed || 1) * 31 + s.day * 7919 + (salt || 0));
+  const ways = (c.money || []).slice();
+  if (!ways.length) return [];
+  const byMoney = ways.slice().sort((a, b) => (b.ceilingYears || 0) - (a.ceilingYears || 0));
+  const rich = byMoney[0];
+  const steady = byMoney[byMoney.length - 1];
+  const rest = ways.filter(w => w !== rich && w !== steady);
+  const other = rest.length ? rest[Math.floor(r() * rest.length)] : ways[Math.floor(r() * ways.length)];
+  /* 年卡里的句子有的自带句号，接上「。谁在做」会变成两个点 */
+  /* 年卡里的句子有的自带句号，也常带一句「（估算，非直接调查数）」这样的注脚——
+   * 那是写年卡时给自己看的，摆到屏幕上只会占地方。 */
+  const tail = x => String(x || '').replace(/[（(][^）)]*[）)]/g, '').replace(/[。；，、\s]+$/, '');
+  /* 年卡里的「做到头约多少」常是两三句，取头一句就够，剩下的塞不进一张纸条 */
+  const money1 = w => tail(String(w.ceiling || '').split(/[；;]/)[0]).slice(0, 24);
+  const one = (w, label) => w && { what: tail(w.way).slice(0, 40), why: (label + (money1(w) ? `。做到头约${money1(w)}` : '')).slice(0, 46) };
+  return [
+    one(steady, '稳当'),
+    one(rich, '来钱最快，也最容易出事'),
+    one(other, '换个方向试试'),
+  ].filter(Boolean);
+}
+
+const OPT_SYS = `你是《这一百年》的记事人。玩家落在中国近一百年里的某一年某一个月，
+在一座城里过三十天，每天写一份要做的事。现在给他三条明天能走的路。
+
+三条各有各的用处：一条是稳的（今天这条路接着做，或者今天碰上的那个人明天再去找），
+一条是搏一把的（本钱押得多、担点风险，成了能顶好几天），
+一条是新路子（这一年这座城里另有的一条道）。
+
+每条都要有具体的人、地方、价钱：「去码头找活」不算，
+「一早去十六铺找工头老周，扛包按件算，一件八分」才算。
+只写那一年真有的事，不写那时候还没有的东西。不出现游戏用语。
+
+只输出一个 JSON 对象：
+{"options":[{"what":"明天能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]}`;
+
+async function runOptions(s, opts = {}) {
+  const OR = require('./tools/or.js');
+  const c = card(s.year);
+  const cur = E.currencyAt(s.year, s.month, Math.min(s.day, E.DAYS));
+  const last = s.days[s.days.length - 1];
+  const user = `【${s.year} 年 ${s.month} 月 ${s.day} 日 · ${s.city}】${c.era}
+物价：${(c.prices || []).slice(0, 6).map(p => `${p.item} ${p.price}`).join('，')}
+挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头约 ${m.ceiling}）`).join('；')}
+干不了的事：${(c.forbidden || []).map(f => f.what).join('；')}
+他手里 ${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(E.incomeAtDay(s.year, s.month, Math.min(s.day, E.DAYS)), cur)}），
+东西：${s.assets.map(a => a.name).join('、') || '什么都没有'}，体力 ${s.standing.体力}，麻烦 ${s.standing.麻烦}。
+${last ? `昨天：${String(last.story || '').slice(0, 200)}` : '今天是头一天，他刚落地，谁也不认识。'}`;
+
+  try {
+    const text = await OR.call(opts.model || MODEL, OPT_SYS, user, {
+      json: true, maxTokens: 600, temperature: 0.9, timeout: opts.timeout || 15000, tries: 2,
+    });
+    const out = OR.parseJson(text);
+    const list = Array.isArray(out.options) ? out.options : [];
+    if (list.length) return { options: list, local: false };
+  } catch (err) { /* 掉下去走本地那份 */ }
+  return { options: optionsLocal(s, opts.salt), local: true };
+}
+
+module.exports = { runDay, runDayLocal, runOptions, optionsLocal, buildUser, card, SYS, MODEL };

@@ -200,6 +200,11 @@ $('#start').addEventListener('click', async () => {
     refFor = null; $('#ref').open = false; $('#ref-body').innerHTML = '';
     renderPlay({ story: d.flavor, tally: '', refused: [], first: true });
     go('play');
+    /* 落地那三条是照年卡拼的，先摆上去不让他等；接着换一份模型写的，
+       上面有他落地这座城当下的人和价钱。换不来就还是那三条。 */
+    post('/api/options', { id: d.id, token }).then(r => {
+      if (run && run.id === d.id && r.options && r.options.length) { run.state.options = r.options; renderPicks(r.options); }
+    }).catch(() => {});
   } catch (e) { toast(e.message); }
   btn.disabled = false; btn.textContent = was;
 });
@@ -298,6 +303,8 @@ function renderPlay(last, opts = {}) {
   if (done) { send.disabled = false; send.textContent = '三十天到了，去算账'; send.onclick = settle; }
   else { send.disabled = countHan($('#list').value) === 0; send.textContent = '就这么过这一天'; send.onclick = sendDay; }
 
+  renderPicks(done ? [] : (last.options || s.options || []));
+
   const lb = $('#ledger-body'); lb.innerHTML = '';
   for (const d of (s.recent || []).slice().reverse()) {
     const r = el('div', 'row');
@@ -307,6 +314,45 @@ function renderPlay(last, opts = {}) {
   }
   $('#ledger').hidden = !(s.recent && s.recent.length);
 }
+
+/* 三条路。点一条就写进下面的格子里，还能接着改、接着添——
+   写什么仍旧是自己说了算，这三条只是免得对着空格子发呆。 */
+function renderPicks(list) {
+  const box = $('#picks'), body = $('#picks-list');
+  body.innerHTML = '';
+  box.hidden = !(list && list.length);
+  if (box.hidden) return;
+  for (const o of list) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'p';
+    b.appendChild(el('b', '', o.what || ''));
+    if (o.why) b.appendChild(el('em', '', o.why));
+    b.onclick = () => { writeIn(o.what || ''); b.classList.add('used'); };
+    body.appendChild(b);
+  }
+}
+
+/* 填进格子：接在已经写的后面另起一行，光标留在末尾，字数当场重算 */
+function writeIn(text) {
+  const t = $('#list');
+  if (t.disabled) return;
+  const had = t.value.replace(/\s+$/, '');
+  t.value = had ? had + '\n' + text : text;
+  t.dispatchEvent(new Event('input'));
+  t.focus();
+  t.setSelectionRange(t.value.length, t.value.length);
+}
+
+$('#picks-more').addEventListener('click', async () => {
+  if (!run) return;
+  const btn = $('#picks-more');
+  btn.disabled = true; btn.textContent = '换…';
+  try {
+    const d = await post('/api/options', { id: run.id, token });
+    if (d.options && d.options.length) { run.state.options = d.options; renderPicks(d.options); }
+  } catch (e) { toast(e.message); }
+  btn.disabled = false; btn.textContent = '换三条';
+});
 
 const countHan = s => (String(s).match(/[一-鿿]/g) || []).length;
 $('#list').addEventListener('input', () => {

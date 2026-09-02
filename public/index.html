@@ -63,6 +63,10 @@
       <div id="play-story" class="story"></div>
       <div id="play-write" class="write">
         <label for="list" id="write-label">今天打算做什么</label>
+        <div id="picks" class="picks" hidden>
+          <div class="picks-head"><span id="picks-say">今天可以这么走，点一条填进去</span><button id="picks-more" type="button" class="more">换三条</button></div>
+          <div id="picks-list"></div>
+        </div>
         <textarea id="list" rows="6" placeholder="写下来，越具体越管用。&#10;比如：早上去码头等活，问工头能不能预支半天工钱；&#10;中午去当铺问问那块表能当多少；&#10;晚上找同乡打听哪里招人。"></textarea>
         <div class="write-foot">
           <span id="count" class="count">0 / 500 字</span>

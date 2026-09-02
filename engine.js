@@ -310,6 +310,17 @@ function applyDay(s, delta) {
   return { capped, gained: Math.min(gained, cap), cash, entries, overspent, debtRefused };
 }
 
+/** 明天能走的那几条路，落库和上屏之前先修一遍。
+ *  模型给的东西不能直接进存档：条数不封顶、句子不封长，
+ *  界面上会被一条三百字的「路」撑破。 */
+function cleanOptions(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter(o => o && (o.what || o.why))
+    .slice(0, 4)
+    .map(o => ({ what: String(o.what || '').replace(/\s+/g, ' ').trim().slice(0, 46), why: String(o.why || '').replace(/\s+/g, ' ').trim().slice(0, 64) }))
+    .filter(o => o.what);
+}
+
 /** 走到第 n 天。跨过换币那天就自动换钱，并把这件事报回去。
  *  服务端和检查脚本都必须走这个口子推进天数——
  *  自己改 s.day 会漏掉换币，账面上会凭空多出几十万倍的钱。 */
@@ -448,6 +459,7 @@ function checkList(text) {
 }
 
 module.exports = {
+  cleanOptions,
   DAYS, LIST_LIMIT, CN, SPINE, TL,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay, money,
   startingCash, newRun, netWorth, dayCap, applySwitch, advanceTo, applyDay, tallyLine, settle, fmtScore, fmtUsd, WORLD,

@@ -286,6 +286,30 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .write textarea::placeholder { color: var(--muted); opacity: 1; }
 .write textarea:focus { outline: 2px solid var(--indigo); outline-offset: -1px; }
 .write textarea:disabled { color: var(--muted); background-image: none; }
+/* 明天能走的那几条路：夹在日历页里的三张纸条 */
+.picks { margin: 0 0 12px; }
+.picks-head { display: flex; align-items: baseline; gap: 10px; font-size: 12.5px; color: var(--muted); margin-bottom: 7px; }
+.picks-head .more {
+  margin-left: auto; border: 0; background: none; padding: 2px 0; cursor: pointer;
+  font: 12.5px var(--sans); color: var(--indigo); border-bottom: 1px dotted currentColor;
+}
+.picks-head .more:disabled { color: var(--muted); cursor: default; }
+.picks .p {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  border: 1px dashed var(--rule-2); border-radius: 3px; background: var(--sheet);
+  padding: 7px 11px; margin-bottom: 5px; font: 14px/1.45 var(--sans); color: var(--ink);
+}
+/* 说明最多两行，超了就省略号——手机上三张纸条要是各占五行，
+   写字的格子就被挤到屏幕外面去了 */
+.picks .p em {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  font-style: normal; font-size: 12.5px; line-height: 1.4; color: var(--muted); margin-top: 2px;
+}
+.picks .p:hover { border-color: var(--indigo); }
+.picks .p.used { border-style: solid; border-color: var(--rule); color: var(--muted); }
+.picks .p.used b::before { content: '✓ '; color: var(--green); }
+.picks .p b { font-weight: 400; }
+
 .write-foot { display: flex; align-items: center; gap: 14px; margin-top: 11px; }
 .count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .count.over { color: var(--seal-ink); }
@@ -391,6 +415,9 @@ table.board tr.mine-go:hover td { background: color-mix(in srgb, var(--ink) 4%, 
 
 /* ── 窄屏 ───────────────────────────────── */
 @media (max-width: 640px) {
+  .picks .p { font-size: 13.5px; padding: 6px 10px; }
+  .picks .p em { -webkit-line-clamp: 1; }
+
   main { padding: 18px 14px 60px; }
   #top { padding: 8px 12px; }
   .pick { grid-template-columns: 1fr; gap: 18px; }
