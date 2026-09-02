@@ -744,45 +744,106 @@ function applyMemo(s, delta, at) {
   return added;
 }
 
-/** 把记忆渲染成提示词里的那一段。**这里才是压缩发生的地方**——
- *  存档里是全的，装不进提示词的时候缩的是这一份。
- *  `budget` 是各段给多少条，改它不动存档。 */
-function memoText(s, budget = {}) {
-  const m = (s && s.memo) || newMemo();
-  const B = { people: 24, notes: 2, closed: 8, ...budget };
+/** 把记忆渲染成提示词里的那一段。**这里是唯一会削减的地方**——存档里那份始终是全的。
+ *
+ *  规矩是 sway 2026-09-03 定的：**上下文可以多一点，但记忆的连贯性不许断。**
+ *  所以削减分六档，一档一档来，能不削就不削；而且四条底线任何一档都不破：
+ *
+ *    ① 每一个月都还在。最狠那一档也只是把早先几个月并成一段，一句话都不删。
+ *    ② 每一个人的名字都还在。折的只是他名下的记录，人不会消失。
+ *    ③ 还没了结的事一条不少，原样给——办不成的事不许悄悄不见。
+ *    ④ 凡是折过的地方留一句记号（「中间第 2–17 个月还有 13 次来往」）。
+ *       这条最要紧：模型得知道这儿有段没给它，而不是以为那几个月什么也没发生——
+ *       缺口不说出来，它就会自己编一段去填。
+ *
+ *  六档都削完还超预算，**就让它超**。宁可多花几个 token，不许把记忆削断。
+ */
+/* 汉字预算。超了才开始折。
+ * 实测走满二十四个月（10 个人、62 条来往记录、24 条月记）峰值 2399 字，一路一档没折过；
+ * 留到 4000 是给「人特别多的那一局」留的余量——用不上就一个 token 都不花。 */
+const MEMO_LIMIT = 4000;
+
+/** 一条记录后面缀上月份——模型得知道这件事发生在什么时候，才接得上 */
+const noteAt = x => `${x.note}（第 ${x.n} 个月）`;
+
+/** 把一个人名下的记录按档位折。lv 越大留得越少，但**中间折掉多少、从哪到哪，一定写出来**。 */
+function foldNotes(p, keepTail) {
+  const ns = p.notes || [];
+  if (!ns.length) return '打过照面';
+  if (ns.length <= keepTail + 1) return ns.map(noteAt).join('；');
+  const head = ns[0], tail = ns.slice(-keepTail);
+  const mid = ns.slice(1, ns.length - keepTail);
+  return [noteAt(head),
+    `…中间第 ${mid[0].n}–${mid[mid.length - 1].n} 个月还有 ${mid.length} 次来往，没写在这儿…`,
+    ...tail.map(noteAt)].join('；');
+}
+
+function renderAt(m, lv) {
   const part = [];
+  const now = m.trail.length ? m.trail[m.trail.length - 1].n
+    : Math.max(0, ...m.people.map(p => p.last), ...m.threads.map(t => t.opened));
 
+  /* 一、走过的路。lv<6 一个月一行；lv=6 把早先的并成段——只去掉每行前面那个抬头，
+   *    句子一句不动，所以「每个月都还在」这条底线不破。 */
   if (m.trail.length) {
-    part.push('走过的路（一个月一句，从头到现在一条不少）：\n' +
-      m.trail.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}`).join('\n'));
-  }
-
-  if (m.people.length) {
-    /* 人多了先给最近打过交道的——老交情靠 folded 那一行留个名字 */
-    const ps = [...m.people].sort((a, b) => b.last - a.last).slice(0, B.people)
-      .sort((a, b) => a.first - b.first);
-    /* 头一条是「怎么认识的」，最近两条是「现在什么交情」——中间那些进不了提示词，
-     * 但存档里一条不少，界面上那一折翻得到。 */
-    part.push('认识的人：\n' + ps.map(p => {
-      const pick = [...new Set([...p.notes.slice(0, 1), ...p.notes.slice(-B.notes)].map(x => x.note))];
-      return `  ${p.who}：${pick.join('；') || '打过照面'}`;
-    }).join('\n'));
-    if (m.people.length > ps.length) {
-      part.push(`  还有 ${m.people.length - ps.length} 个早先认识的：` +
-        [...m.people].sort((a, b) => a.last - b.last).slice(0, m.people.length - ps.length).map(p => p.who).join('、'));
+    if (lv < 6) {
+      part.push('走过的路（一个月一句，从头到现在一条不少）：\n' +
+        m.trail.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}`).join('\n'));
+    } else {
+      const keep = m.trail.slice(-6), early = m.trail.slice(0, -6);
+      const segs = [];
+      for (let i = 0; i < early.length; i += 6) {
+        const g = early.slice(i, i + 6);
+        segs.push(`  第 ${g[0].n}–${g[g.length - 1].n} 个月：${g.map(t => t.say).join(' ')}`);
+      }
+      part.push('走过的路（早先几个月并成了段，句子一句没删）：\n' +
+        [...segs, ...keep.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}`)].join('\n'));
     }
   }
 
+  /* 二、认识的人。名字任何一档都留着，折的只是他名下的记录。 */
+  if (m.people.length) {
+    const ps = [...m.people].sort((a, b) => a.first - b.first);
+    part.push('认识的人（括号里是第几个月的事）：\n' + ps.map(p => {
+      const 冷 = p.last <= now - 6;                       // 半年没再打过交道的
+      const keep = lv >= 5 ? 1 : (lv >= 4 || (lv >= 3 && 冷)) ? 2 : Infinity;
+      return `  ${p.who}：${keep === Infinity ? (p.notes || []).map(noteAt).join('；') || '打过照面' : foldNotes(p, keep)}`;
+    }).join('\n'));
+  }
+
+  /* 三、还没了结的事。一条不少，一个档位都不折。 */
   const open = m.threads.filter(t => !t.done);
   if (open.length) {
     part.push('还没了结的事（这个月正文里该有个交代，办成了就写进 memo.done）：\n' +
       open.map(t => `  · ${t.what}${t.note ? `——${t.note}` : ''}（第 ${t.opened} 个月起）`).join('\n'));
   }
-  const closed = m.threads.filter(t => t.done).slice(-B.closed);
-  if (closed.length) part.push('了结过的：' + closed.map(t => t.what).join('、'));
-  if (m.folded.length) part.push('更早还有：' + m.folded.slice(-12).join('、'));
 
+  /* 四、了结过的。头一档就从这儿削——它对往后接得上接不上影响最小。 */
+  const closed = m.threads.filter(t => t.done);
+  if (closed.length) {
+    part.push(lv < 1
+      ? '了结过的：' + closed.map(t => `${t.what}（第 ${t.opened}→${t.done} 个月）`).join('、')
+      : `了结过 ${closed.length} 件，最近三件：` + closed.slice(-3).map(t => t.what).join('、'));
+  }
+
+  /* 五、挤出存档的那些，名字永远留着 */
+  if (m.folded.length) {
+    part.push('更早还打过交道的：' + (lv < 2 ? m.folded : m.folded.map(x => x.replace(/（[^）]*）/g, ''))).join('、'));
+  }
   return part.join('\n');
+}
+
+/** 渲染。`opts.limit` 是汉字预算，不给就用 MEMO_LIMIT。 */
+function memoText(s, opts = {}) {
+  const m = (s && s.memo) || newMemo();
+  if (!m.trail.length && !m.people.length && !m.threads.length) return '';
+  const limit = opts.limit || MEMO_LIMIT;
+  let txt = '';
+  for (let lv = 0; lv <= 6; lv++) {
+    txt = renderAt(m, lv);
+    if (countHan(txt) <= limit) return txt;      // 够用就停在这一档
+  }
+  return txt;                                    // 六档削完还超：就让它超，不许再削
 }
 
 /* ── 主角是个什么人 ──────────────────────────────────
@@ -826,5 +887,5 @@ module.exports = {
   currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchDueAfter, switchOnEntry, reprice, closeOut,
   startingCash, newRun, netWorth, applySwitch, advanceTo, applyMonth, tallyLine, settle, fmtScore, fmtUsd, WORLD,
   countHan, hasContent, checkList, checkPersona,
-  newMemo, applyMemo, memoText, MEMO_CAP,
+  newMemo, applyMemo, memoText, MEMO_CAP, MEMO_LIMIT,
 };

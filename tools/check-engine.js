@@ -537,16 +537,65 @@ console.log('18. 换个叫法还是同一个人');
   if (s.memo.people.filter(p => p.who.includes('阿强')).length !== 2) fail('阿强和他的学徒被并成一个人了');
   else ok('「阿强」和「阿强的学徒」还是两个人');
 
-  /* 一个人攒二十条记录也不许删，提示词里只挑头一条和最近两条 */
+  /* 一个人攒二十条记录：不超预算就全给，超了才折，而且折过的地方必须留记号 */
   const s2 = E.newRun({ year: 1948, month: 1, nick: 'x' });
   for (let n = 1; n <= 20; n++) E.applyMemo(s2, { memo: { people: [{ who: '老周', note: `第 ${n} 个月的事` }] } }, { n });
   const 周 = s2.memo.people[0];
-  const txt = E.memoText(s2);
+  const 全给 = E.memoText(s2);
   if (周.notes.length !== 20) fail(`老周名下该有 20 条，实际 ${周.notes.length}`);
-  else if (!txt.includes('第 1 个月的事')) fail('提示词里丢了「头一回怎么认识的」那一条');
-  else if (!txt.includes('第 20 个月的事')) fail('提示词里丢了最近那一条');
-  else if (txt.includes('第 10 个月的事')) fail('提示词里不该塞中间那些，太占地方');
-  else ok('存档留 20 条，提示词只给头一条和最近两条——中间的翻界面看得到');
+  else if ([...Array(20)].some((_, i) => !全给.includes(`第 ${i + 1} 个月的事`)))
+    fail('没超预算就该二十条全给，现在少了几条');
+  else ok('二十条记录不超预算，一条不折全给到提示词里');
+
+  const 挤过 = E.memoText(s2, { limit: 60 });          // 预算卡到很小，逼它折
+  if (!挤过.includes('第 1 个月的事')) fail('折过之后丢了「头一回怎么认识的」');
+  else if (!挤过.includes('第 20 个月的事')) fail('折过之后丢了最近那一条');
+  else if (!/中间第 2–\d+ 个月还有 \d+ 次来往/.test(挤过))
+    fail(`折了却没留记号，模型会以为中间那些月份什么也没发生：${挤过.slice(-90)}`);
+  else ok(`预算卡死时折中间那些，但写明缺口：「${/中间第[^；]*/.exec(挤过)[0]}」`);
+}
+
+/* 19. 削减的四条底线：六个档位挨个跑一遍，一档都不许破 */
+console.log('19. 越削越狠，四条底线一档都不破');
+{
+  /* 造一份很大的记忆：24 个月、18 个人各 12 条记录、6 条挂着的、20 条了结的 */
+  const s = E.newRun({ year: 1948, month: 1, nick: 'x' });
+  for (let n = 1; n <= 24; n++) {
+    const d = { memo: { line: `第 ${n} 个月做成了一笔买卖，进项还算稳当`, people: [], threads: [], done: [] } };
+    for (let k = 0; k < 18; k++) d.memo.people.push({ who: `熟人${k}`, note: `第 ${n} 个月跟熟人${k}又打了一次交道` });
+    if (n <= 6) d.memo.threads.push({ what: `挂着的第 ${n} 件`, note: '说好下月再来' });
+    if (n > 6) { d.memo.threads.push({ what: `办完的第 ${n} 件` }); d.memo.done.push(`办完的第 ${n} 件`); }
+    E.applyMemo(s, d, { n, year: 1948, month: (n - 1) % 12 + 1 });
+  }
+  const 人名 = s.memo.people.map(p => p.who);
+  const 挂着 = s.memo.threads.filter(t => !t.done);
+  let 破 = [];
+  for (let lv = 0; lv <= 6; lv++) {
+    /* limit 卡成 1 就一路降到第 6 档，每一档都验一遍 */
+    const txt = E.memoText(s, { limit: lv === 0 ? 1e9 : 1 });
+    const 档 = lv === 0 ? '一档不折' : '削到底';
+    for (let n = 1; n <= 24; n++) {
+      if (!txt.includes(`第 ${n} 个月做成了一笔买卖`)) { 破.push(`${档}：第 ${n} 个月那句没了`); break; }
+    }
+    for (const w of 人名) if (!txt.includes(w)) { 破.push(`${档}：${w} 这个名字没了`); break; }
+    for (const t of 挂着) if (!txt.includes(t.what)) { 破.push(`${档}：挂着的「${t.what}」没了`); break; }
+    if (lv > 0 && !txt.includes('没写在这儿')) 破.push(`${档}：折了却没留记号`);
+    if (lv === 0) break;                       // limit 给足就是第 0 档，剩下的都用 limit=1 跑
+  }
+  /* 再单跑一遍最狠那一档，确认它确实降到了第 6 档（走过的路并成了段） */
+  const 最狠 = E.memoText(s, { limit: 1 });
+  if (!最狠.includes('早先几个月并成了段')) 破.push('limit 卡到 1 都没降到最后一档，档位没接上');
+  if (破.length) 破.forEach(fail);
+  else ok('第 0 档到第 6 档：24 个月一句不少、18 个人名一个不缺、6 条挂着的一条不折、折过的都留了记号');
+
+  const 全 = E.countHan(E.memoText(s, { limit: 1e9 })), 狠 = E.countHan(最狠);
+  ok(`同一份记忆：一档不折 ${全} 个汉字，削到底 ${狠} 个（省了 ${Math.round((1 - 狠 / 全) * 100)}%），两头都没破底线`);
+
+  /* 预算够用的时候不许乱折——真实规模（走满二十四个月）应当一档都不动 */
+  const 真实 = E.memoText(s);
+  if (真实 !== E.memoText(s, { limit: 1e9 }) && E.countHan(E.memoText(s, { limit: 1e9 })) <= E.MEMO_LIMIT)
+    fail('没超预算却折了');
+  else ok(`预算 ${E.MEMO_LIMIT} 个汉字：够用就一档不折，超了才一档一档往下降`);
 }
 
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');
