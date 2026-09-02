@@ -287,5 +287,95 @@ console.log('8. 跨时代判定');
   ok(`${cases.length} 个例子全对`);
 }
 
+/* 9. 一整个月的账写小了几个数量级，要被认出来补回去。
+ *    真事：1948 年 3 月那一局，正文写「交了五百万的保护费」，账上记的是 −500。
+ *    提示词的尺子写成「3266.00 万法币」，模型照着写下 3500 当成完整数目。 */
+console.log('9. 整月的账塌了一个数量级，要补回来');
+{
+  const slipped = { entries: [
+    { what: '购买三十石大米货款', amount: -1800 }, { what: '巡捕房保护费', amount: -500 },
+    { what: '大米分销所得货款', amount: 3500 }, { what: '雇佣卸货工人劳务费', amount: -80 },
+  ], assetsAdd: [{ name: '仓里的米', worth: 1800 }], debtsAdd: [{ who: '老黄', amount: 200 }] };
+  const r = E.fixScale({ year: 1948, month: 3 }, slipped);
+  if (!r || r.k !== 1e4) fail(`1948-3 该补四个零，实际 ${r ? r.k : '一个没补'}`);
+  else if (slipped.entries[1].amount !== -5000000) fail(`保护费补完该是 −5000000，实际 ${slipped.entries[1].amount}`);
+  else if (slipped.assetsAdd[0].worth !== 18000000 || slipped.debtsAdd[0].amount !== 2000000)
+    fail('东西和欠债跟分录是一次写出来的，得一起补');
+  else ok('1948-3 那一屏：正文的「五百万」跟账上的 500 对不上，补四个零之后对上了');
+
+  /* 量级本来就对的月份，一分钱都不许动 */
+  let moved = 0;
+  for (const [y, m, amts] of [[1948, 3, [12000000, -1500000]], [1962, 5, [42, -3]],
+                              [1930, 10, [30, -12]], [1995, 7, [1800, -600]]]) {
+    const d = { entries: amts.map((a, i) => ({ what: 'x' + i, amount: a })) };
+    if (E.fixScale({ year: y, month: m }, d)) moved++;
+  }
+  if (moved) fail(`${moved} 个量级正常的月份被误改了`);
+  else ok('四个量级正常的月份一分钱没动（1962 年月薪 42 元这种小数目也没被当成写错）');
+}
+
+/* 10. 一张账单上只许有一个单位 */
+console.log('10. 整张账单一个单位');
+{
+  /* 判据挑写法，不挑数值：把每个钱数的「小数位数 + 单位词」抽出来，全账单必须只有一种。
+     光比单位词是漏的——「1800 法币」和「80.00 法币」单位一样，写法还是两种。 */
+  const shapes = line => [...String(line).matchAll(/(-?\d+)(\.(\d+))? ((?:万亿|亿|万)?法币)/g)]
+    .map(m => `${m[3] ? m[3].length : 0} 位小数的${m[4]}`);
+  const oneShape = (name, ents) => {
+    const line = E.tallyLine(ents, 'FABI');
+    const kinds = [...new Set(shapes(line))];
+    if (kinds.length !== 1) fail(`${name}：同一张账单上出现了 ${kinds.join(' / ')} —— ${line}`);
+    else ok(`${name}：整张写成「${kinds[0]}」 —— ${line.slice(0, 30)}…`);
+  };
+  oneShape('截图那一屏（1800 / 80 / 3500）', [{ what: 'a', amount: -1800 }, { what: 'b', amount: -80 }, { what: 'c', amount: 3500 }]);
+  oneShape('6.8 亿跟 800 万排在一起', [{ what: 'a', amount: 680000000 }, { what: 'b', amount: -8000000 }]);
+  oneShape('几十块的小月份', [{ what: 'a', amount: 42 }, { what: 'b', amount: -3.5 }]);
+}
+
+/* 11. 一整个月一笔出账都没有 —— 房租和伙食被记成了进账 */
+console.log('11. 一笔出账都没有的月份，负号要补回去');
+{
+  /* 1926 年 11 月那一屏的原样：六笔全绿，连房租都是收的 */
+  const d = { entries: [
+    { what: '码头扛包工钱', amount: 12 }, { what: '协助客商整理库存抽成', amount: 4 },
+    { what: '一个月伙食费', amount: 3.8 }, { what: '一个月房租', amount: 3 },
+    { what: '买煤油及火柴', amount: 0.5 }, { what: '给码头管事的小茶钱', amount: 0.5 },
+  ] };
+  const r = E.fixSigns(d);
+  const sum = d.entries.reduce((t, e) => t + e.amount, 0);
+  const 挣 = d.entries.filter(e => e.amount > 0).map(e => e.what);
+  if (!r || r.flipped.length !== 4) fail(`该翻四笔，实际翻了 ${r ? r.flipped.length : 0} 笔`);
+  else if (挣.length !== 2) fail(`工钱和抽成不该被翻：还剩 ${挣.join('、')}`);
+  else if (Math.abs(sum - 8.2) > 1e-9) fail(`翻完净进该是 8.2，实际 ${sum}`);
+  else ok(`伙食、房租、买煤油、茶钱翻成出账，工钱和抽成不动；净进从 23.8 变成 ${sum.toFixed(2)}`);
+
+  /* 只要这个月已经有一笔出账，就说明模型知道规矩，一笔都不许动 */
+  const 有出账 = { entries: [
+    { what: '卖布所得', amount: 100 }, { what: '一个月房租', amount: -3 }, { what: '一个月伙食费', amount: 4 },
+  ] };
+  if (E.fixSigns(有出账)) fail('这个月已经记了出账，不该再翻别的');
+  else ok('月里已经有出账的，一笔都不动（模型知道规矩，那笔多半真是收回来的）');
+
+  /* 名字看不出在花钱的，不许瞎翻 */
+  const 看不出 = { entries: [
+    { what: '维修水泵的酬劳', amount: 30 }, { what: '收回押金', amount: 20 }, { what: '卖废铜', amount: 8 },
+  ] };
+  if (E.fixSigns(看不出)) fail('三笔都是进账，不该翻');
+  else ok('名字里看不出在花钱的，一笔不翻');
+}
+
+/* 12. 印在页面上的「为什么这个月没经过大模型」只能是写死的中文句子。
+ *     静态扫源码，不开浏览器：这句话挂在「调模型失败」那条分支上，
+ *     走查跑的那条路根本不走它，扫渲染出来的页面永远是绿的。 */
+console.log('12. 服务商回的原话不许印到页面上');
+{
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
+  const 赋值 = [...src.matchAll(/out\.why\s*=\s*([^;\n]+)/g)].map(m => m[1].trim());
+  if (!赋值.length) fail('没找到 out.why 的赋值，这条检查是不是失效了');
+  const 带变量 = 赋值.filter(v => /\b(err|error|e)\b|String\(/.test(v));
+  if (带变量.length) fail(`out.why 里掺了服务商回的原话：${带变量.join(' / ').slice(0, 120)}`);
+  else ok(`${赋值.length} 处 out.why 全是写死的中文句子，异常原话只进服务端日志`);
+}
+
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');
 process.exit(bad ? 1 : 0);

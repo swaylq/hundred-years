@@ -81,13 +81,16 @@ async function playOne(year, month, seed) {
       n: at.n, year: at.year, month: at.month, list, story: out.delta.story,
       cash: res.cash, entries: res.entries, tally,
       refused: out.delta.refused || [], capped: res.capped, local: !!out.local,
+      /* 模型这个月的账写小了几个数量级、被引擎补回来了：回头查日志时要看得见 */
+      rescaled: res.rescaled ? res.rescaled.zeros : 0,
+      flipped: res.flipped ? res.flipped.flipped : [],
       options: out.delta.options || [],
       switched: switched.map(x => x.say),
       netWorth: E.netWorth(s), standing: { ...s.standing },
     }) + '\n');
 
     if (!QUIET) {
-      console.log(`  ${at.year} 年 ${String(at.month).padStart(2)} 月  家底 ${E.money(E.netWorth(s), curNow).padStart(16)}  ${tally.slice(0, 46)}${res.capped ? '  [削顶]' : ''}${out.local ? '  [本地]' : ''}`);
+      console.log(`  ${at.year} 年 ${String(at.month).padStart(2)} 月  家底 ${E.money(E.netWorth(s), curNow).padStart(16)}  ${tally.slice(0, 46)}${res.capped ? '  [削顶]' : ''}${res.rescaled ? `  [补了${res.rescaled.zeros}个零]` : ''}${res.flipped ? `  [翻了${res.flipped.flipped.length}个负号]` : ''}${out.local ? '  [本地]' : ''}`);
     }
     if (switched.length) console.log(`         ※ ${switched[0].say}`);
   }

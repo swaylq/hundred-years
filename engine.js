@@ -145,16 +145,32 @@ function startable(year, month) {
   return (year * 12 + month - 1) + (MONTHS - 1) <= last.year * 12 + 11;
 }
 
-/** 界面上把钱写成人看得懂的样子 */
-function money(n, cur) {
-  const u = CN[cur] || '元';
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return `${(n / 1e12).toFixed(2)} 万亿${u}`;
-  if (abs >= 1e8) return `${(n / 1e8).toFixed(2)} 亿${u}`;
-  if (abs >= 1e4) return `${(n / 1e4).toFixed(2)} 万${u}`;
-  if (abs >= 100) return `${Math.round(n)} ${u}`;
-  return `${n.toFixed(2)} ${u}`;
+/** 一张账单上只许有一个单位。
+ *  原先每一笔各挑各的，于是同一个月的账里「−1800 法币」「−80.00 法币」
+ *  「1.54 亿法币」三种写法排在一起，读的人得先在心里换算才知道哪笔大。
+ *  单位由这一组数里最大的那个定，整组一起用它。 */
+const UNITS = [
+  { min: 1e12, div: 1e12, name: '万亿' },
+  { min: 1e8, div: 1e8, name: '亿' },
+  { min: 1e4, div: 1e4, name: '万' },
+  { min: 0, div: 1, name: '' },
+];
+/** 小数位也是单位的一部分，一起由最大那个数定。
+ *  少了这一句，同一张账单上会并排出现「1800 法币」和「80.00 法币」——
+ *  单位是一样的，写法还是两种。 */
+function unitOf(nums) {
+  const big = Math.max(0, ...[].concat(nums).map(n => Math.abs(Number(n)) || 0));
+  const u = UNITS.find(x => big >= x.min);
+  return { ...u, dp: u.div > 1 || big < 100 ? 2 : 0 };
 }
+
+/** 按指定的单位写一个数。 */
+function moneyIn(n, unit, cur) {
+  return `${(n / unit.div).toFixed(unit.dp)} ${unit.name}${CN[cur] || '元'}`;
+}
+
+/** 界面上把钱写成人看得懂的样子。单独一个数，自己定单位。 */
+function money(n, cur) { return moneyIn(n, unitOf(n), cur); }
 
 /* ── 开局 ──────────────────────────────────────────── */
 
@@ -298,9 +314,56 @@ function applySwitch(s, sw) {
  *  让模型既写正文又心算总账，两边必然对不上：实测过一次，
  *  正文里写着「净亏一块六角」，它报的 cash 却是 +0.60，房租忘了减。
  */
+/** 一整个月一笔出账都没有，账目名字里却明摆着有花出去的钱——模型把负号忘了。
+ *
+ *  1926 年 11 月那一屏是这样的：扛包工钱 +12、抽成 +4，然后伙食费 +3.8、
+ *  房租 +3、买煤油 +0.5、给管事的茶钱 +0.5，六笔全绿，净进 23.8。
+ *  他连房租都是收的。
+ *
+ *  判据卡得很死：**这个月一笔负数都没有**才管。人总要吃饭住店，
+ *  一个月零开销的月份不存在。156 个有账的月份里符合这条的只有 2 个，两个都是真错。
+ *  真到了一笔出账都没有的月份，翻的也只是名字里明说了在花钱的那几笔。 */
+const SPEND = /伙食|房租|房钱|租金|路费|车钱|打点|门包|茶钱|保护费|开销|购置|采买|买|支出|费用|水电|煤球|工本|手续/;
+const EARN = /卖出|售出|所得|收回|讨回|退还|报酬|工钱|工资|奖励|提成|抽成|酬劳|利润|差价|收益|溢价|赚/;
+function fixSigns(delta) {
+  const ents = (delta.entries || []).filter(e => e && e.what != null && isFinite(Number(e.amount)));
+  if (ents.length < 3 || ents.some(e => Number(e.amount) < 0)) return null;
+  const out = ents.filter(e => SPEND.test(e.what) && !EARN.test(e.what));
+  if (!out.length) return null;
+  for (const e of out) e.amount = -Math.abs(Number(e.amount));
+  return { flipped: out.map(e => String(e.what)) };
+}
+
+/** 模型偶尔把一整个月的账写小几个数量级，正文却还是对的。
+ *
+ *  提示词里的尺子写成「做顺了的一个月净进 3266.00 万法币」——带着「万」字，
+ *  而 entries 里的 amount 要的是完整的数目。它照着尺子写下 3500，心里想的是
+ *  三千五百万，落到账上却是三千五百。1948 年 3 月那一局就是这样：
+ *  正文写「交了五百万的保护费」，同一屏的账上记着 −500。
+ *
+ *  判据挑得很松：这个月最大的一笔还不到一个月工钱的百分之一。
+ *  人总要吃饭住店，正常月份到不了这么小，所以它只会打在真写错的月份上。
+ *  差几个零，由「最大那笔该在一个月工钱上下」倒推，四舍五入到整数个零。 */
+function fixScale(s, delta) {
+  const ents = (delta.entries || []).filter(e => e && isFinite(Number(e.amount)));
+  const big = Math.max(0, ...ents.map(e => Math.abs(Number(e.amount))));
+  const wage = incomeOf(s.year, s.month) / 12;
+  if (!(big > 0) || !(wage > 0) || big * 100 > wage) return null;
+  const zeros = Math.round(Math.log10(wage / big));
+  if (zeros < 2) return null;
+  const k = Math.pow(10, zeros);
+  /* 东西和欠债跟分录是同一次写出来的，错的是同一个单位，一起补 */
+  for (const e of ents) e.amount = Number(e.amount) * k;
+  for (const a of (delta.assetsAdd || [])) if (a) a.worth = (Number(a.worth) || 0) * k;
+  for (const d of (delta.debtsAdd || [])) if (d) d.amount = (Number(d.amount) || 0) * k;
+  return { zeros, k };
+}
+
 function applyMonth(s, delta) {
   const cap = monthCap(s.year, s.month);
   const before = netWorth(s);
+  const flipped = fixSigns(delta);       // 一笔出账都没有？先把忘掉的负号补回去
+  const rescaled = fixScale(s, delta);   // 整个月的账写小了几个数量级？补上再算
 
   const entries = (delta.entries || [])
     .filter(e => e && e.what != null && isFinite(Number(e.amount)))
@@ -387,7 +450,7 @@ function applyMonth(s, delta) {
     capped = true;
   }
 
-  return { capped, gained: Math.min(gained, cap), cash, entries, overspent, debtRefused };
+  return { capped, gained: Math.min(gained, cap), cash, entries, overspent, debtRefused, rescaled, flipped };
 }
 
 /** 明天能走的那几条路，落库和上屏之前先修一遍。
@@ -447,10 +510,11 @@ function tallyLine(entries, cur) {
   const ins = entries.filter(e => e.amount > 0);
   const outs = entries.filter(e => e.amount < 0);
   const sum = entries.reduce((t, e) => t + e.amount, 0);
+  const unit = unitOf([...entries.map(e => e.amount), sum]);   // 整张账单一个单位
   const part = [];
-  if (ins.length) part.push('进：' + ins.map(e => `${e.what} ${money(e.amount, cur)}`).join('，'));
-  if (outs.length) part.push('出：' + outs.map(e => `${e.what} ${money(-e.amount, cur)}`).join('，'));
-  part.push(sum >= 0 ? `净进 ${money(sum, cur)}` : `净出 ${money(-sum, cur)}`);
+  if (ins.length) part.push('进：' + ins.map(e => `${e.what} ${moneyIn(e.amount, unit, cur)}`).join('，'));
+  if (outs.length) part.push('出：' + outs.map(e => `${e.what} ${moneyIn(-e.amount, unit, cur)}`).join('，'));
+  part.push(sum >= 0 ? `净进 ${moneyIn(sum, unit, cur)}` : `净出 ${moneyIn(-sum, unit, cur)}`);
   return part.join('；');
 }
 
@@ -577,7 +641,8 @@ function checkList(text) {
 module.exports = {
   cleanOptions,
   DAYS, MONTHS, LIST_LIMIT, CN, SPINE, TL,
-  yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay, money,
+  yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,
+  money, moneyIn, unitOf, fixScale, fixSigns,
   currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchDueAfter, switchOnEntry, reprice, closeOut,
   startingCash, newRun, netWorth, applySwitch, advanceTo, applyMonth, tallyLine, settle, fmtScore, fmtUsd, WORLD,
   countHan, hasContent, checkList,

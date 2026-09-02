@@ -172,6 +172,18 @@ refused 多数时候是空数组；options 每个月都要给满三条。
 同一个名目连着给、数目还越给越大，是这一局算坏了的头号症状。
 
 【钱怎么记 —— 这条最要紧】
+**amount 写完整的数目，不带「万」「亿」。** 上面给你的尺子写成「3266.00 万法币」
+这种带单位的说法，entries 里不许照抄那串数字：三千二百六十六万要写成 32660000，
+写成 3266 就差了一万倍。尺子后面都用括号附了完整的数目，照那个写。
+**正文里出现的每一个钱数，entries 里都要有对得上的那一笔**：
+正文写「交了五百万的保护费」，账上那一笔就得是 5000000，不能是 500。
+一个月的账里所有数目必须是同一个量级——上个月记到千万，这个月忽然只有几百块，
+那是漏了几个零，不是他这个月赔了。
+
+**花出去的钱写负数，一个都不能漏。** 房钱、伙食、路费、打点、进货款——
+这些是往外掏的，amount 前面必须有负号。一个月里一笔出账都没有是不可能的：
+他总要吃饭住店。整月的账全是正数，那是负号忘了写，不是他这个月没花钱。
+
 这个月每一笔进出都**单独**写进 entries，一笔一条，能拆多细就拆多细：
 挣的那几笔、送出去的门包、房租、伙食、路费、被人抽的头，
 一条都不能少。正文里提到花了钱或收了钱，entries 里就必须有对应的一条。
@@ -206,6 +218,14 @@ function compactCard(c, sy, month, city) {
 /** 上一个月是几年几月 */
 function prevMonth(year, month) { return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }; }
 
+/** 尺子上带着「万」「亿」，而 entries 里的 amount 要的是完整的数目。
+ *  只给带单位的说法，模型会照着上面的数字往账里写：给它「3266.00 万法币」，
+ *  它记一笔 3500，心里想的是三千五百万——1948 年 3 月那一局的账就这么塌了一万倍。
+ *  所以凡是它要照着写回来的数，把完整的数目一起括在后面。 */
+const both = (n, cur) => Math.abs(n) >= 1e4
+  ? `${E.money(n, cur)}（写成数目是 ${Math.round(n)}）`
+  : E.money(n, cur);
+
 function buildUser(s, list, extra = {}) {
   const c = card(s.year);                       // 当前这个月所在**那一年**的年卡，不是开局那年的
   const sy = E.yearOf(s.year);
@@ -216,9 +236,9 @@ function buildUser(s, list, extra = {}) {
     `${d.year} 年 ${d.month} 月：${(d.story || '').slice(0, 110)}…（${d.tally || ''}）`).join('\n') || '（这是头一个月，他刚落地）';
 
   const assets = s.assets.length
-    ? s.assets.map(a => `${a.name}（${a.kind}，约值 ${E.money(a.worth, cur)}）`).join('、')
+    ? s.assets.map(a => `${a.name}（${a.kind}，约值 ${both(a.worth, cur)}）`).join('、')
     : '什么都没有';
-  const debts = s.debts.length ? s.debts.map(d => `欠${d.who} ${E.money(d.amount, cur)}`).join('、') : '不欠人钱';
+  const debts = s.debts.length ? s.debts.map(d => `欠${d.who} ${both(d.amount, cur)}`).join('、') : '不欠人钱';
 
   /* 给模型一把尺子。光说「别把大商号的进项算到他头上」，它会一个月只给几块钱：
    * 按天走的那一版实测三十天净赚 0.04 / −0.09 / −0.46 年的收入，两局是亏的。
@@ -256,7 +276,7 @@ function buildUser(s, list, extra = {}) {
       `手里那叠钞票从买得起什么变成买不起什么。这是他这两年里最要紧的一个月之一。` : '';
   const swPast = swLast
     ? `\n**钱刚换过，现在用的是${E.CN[swLast.to]}，不是${E.CN[swLast.from]}。**\n` +
-      `一个普通人一年挣 ${E.money(income, cur)}，一顿饭、一次车钱都是个位数或者几十。` +
+      `一个普通人一年挣 ${both(income, cur)}，一顿饭、一次车钱都是个位数或者几十。` +
       `前几个月那些${E.CN[swLast.from]}的数目不要再照着写。` : '';
 
   /* 跨年：物价、能干的事、犯不犯法全变了，得让他知道。 */
@@ -279,7 +299,7 @@ function buildUser(s, list, extra = {}) {
 ${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).join('；')}` : ''}${crossed}${swThis}${swPast}
 
 【他现在的家底】
-手里的钱：${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(income, cur)}）
+手里的钱：${both(s.cash, cur)}（这一年一个普通人一年挣 ${both(income, cur)}）
 东西：${assets}
 欠债：${debts}
 名声 ${s.standing.名声} · 关系 ${s.standing.关系} · 体力 ${s.standing.体力} · 麻烦 ${s.standing.麻烦}
@@ -290,9 +310,9 @@ ${refusedBefore.length ? `前两个月已经顶回去过这几件：${refusedBef
 他这个月要是还写同一件，就让他找到路子办成——托人、加钱、换个地方办，不许再顶一次。` : ''}
 
 【这个月该走到哪儿】
-做顺了的一个月，连做工带买卖，净进大概 ${E.money(good, cur)}；谈成一笔像样的买卖，这个月能到 ${E.money(big, cur)}。
-老老实实做一个月工、扛一个月包，只有 ${E.money(wage, cur)} 上下——多出来的必须是买卖挣的，写清楚货、买家和价钱。
-这个月无论如何不许超过 ${E.money(capThis, cur)}——超了游戏会削平，正文和账面就对不上。
+做顺了的一个月，连做工带买卖，净进大概 ${both(good, cur)}；谈成一笔像样的买卖，这个月能到 ${both(big, cur)}。
+老老实实做一个月工、扛一个月包，只有 ${both(wage, cur)} 上下——多出来的必须是买卖挣的，写清楚货、买家和价钱。
+这个月无论如何不许超过 ${both(capThis, cur)}——超了游戏会削平，正文和账面就对不上。
 他落地时的家底相当于一个普通人 ${yearsStart.toFixed(2)} 年的收入，现在是 ${yearsNow.toFixed(2)} 年，
 走到第 ${s.n} 个月该在 ${yearsWant.toFixed(2)} 年上下。
 ${behind ? '他落下了：这个月让他抓住点实在的东西，把欠的补回来一些。'

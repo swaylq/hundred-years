@@ -357,7 +357,12 @@ async function runOneMonthInner(req, res, b, s) {
         try {
           out = await SIM.runMonth(s, b.list, sse ? { onStory: t => sse.send('story', { t }) } : {});
         } catch (err) {
-          out = SIM.runMonthLocal(s, b.list); usedLocal = true; out.why = String(err.message).slice(0, 120);
+          /* 原话只进服务端日志。它是服务商回的英文 JSON，直接印到页面上，
+             玩家读到的是「HTTP 402 {"error":{"message":"This request would exceed
+             your available credits…」——既看不懂，又把内部情况摊开了。 */
+          console.error('这个月退回本地演算：', String(err.message).slice(0, 300));
+          out = SIM.runMonthLocal(s, b.list); usedLocal = true;
+          out.why = '模型这会儿叫不动，这个月先由本地算';
           /* 流到一半断了：让前端把已经吐出去的半截正文擦掉，换成兜底的那份，
              不然屏幕上会剩着一段没头没尾的话。 */
           if (sse) sse.send('redo', {});
@@ -390,7 +395,13 @@ async function runOneMonthInner(req, res, b, s) {
       at: { n: played.n, year: played.year, month: played.month },
       story: out.delta.story,
       tally,
-      entries: res1.entries.map(e => ({ what: e.what, amount: e.amount, text: E.money(e.amount, curNow) })),
+      /* 整张账单共用一个单位（`tallyLine` 里那句话也是同一把尺子），
+       * 不然同一屏上会挤着「−1800 法币」「−80.00 法币」「1.54 亿法币」三种写法。 */
+      entries: (() => {
+        const sum = res1.entries.reduce((t, e) => t + e.amount, 0);
+        const unit = E.unitOf([...res1.entries.map(e => e.amount), sum]);
+        return res1.entries.map(e => ({ what: e.what, amount: e.amount, text: E.moneyIn(e.amount, unit, curNow) }));
+      })(),
       refused: out.delta.refused || [],
       capped: res1.capped,
       overspent: res1.overspent > 0 ? E.money(res1.overspent, curNow) : null,

@@ -54,7 +54,7 @@ async function noHScroll(page, where) {
   const errors = [];
   page.on('pageerror', e => errors.push(String(e.message)));
   const failed = [];
-  page.on('requestfailed', r => failed.push(r.url()));
+  page.on('requestfailed', r => failed.push(`${r.url()} ${(r.failure() || {}).errorText || ''}`.trim()));
   page.on('response', r => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url()}`); });
 
   console.log('一、挑一年');
@@ -205,7 +205,11 @@ async function noHScroll(page, where) {
 
   console.log('\n八、页面本身');
   check(errors.length === 0, errors.length ? `控制台报错 ${errors.length} 条：${errors[0].slice(0, 90)}` : '没有 JS 报错');
-  const realFail = failed.filter(u => !/favicon/.test(u));
+  /* /api/month 是条 SSE 长连接：正文读完、服务端 res.end() 之后，浏览器仍把这条
+     请求记成 ERR_ABORTED，Playwright 就报一次 requestfailed。这是流式的正常收尾，
+     不是加载失败——在 HEAD 上就一直红着（2026-09-02 拿旧代码跑过一遍确认）。
+     只放行「api/month + 中止」这一种组合，别的一律照旧当失败。 */
+  const realFail = failed.filter(u => !/favicon/.test(u) && !/\/api\/month .*ERR_ABORTED/.test(u));
   check(realFail.length === 0, realFail.length ? `资源加载失败：${realFail.join(' , ').slice(0, 200)}` : '资源一个不缺');
 
   await browser.close();

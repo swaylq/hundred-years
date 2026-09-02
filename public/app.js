@@ -248,8 +248,12 @@ async function loadRef(year) {
 $('#ref').addEventListener('toggle', () => { if ($('#ref').open && run) loadRef(run.state.year); });
 
 /* ── 玩 ────────────────────────────────── */
-/* 跟 engine.js 的 money() 一个写法，只在读档时给没带 text 的分录用 */
-const fmtMoney = (n, unit) => { const u = unit || '元', a = Math.abs(n); return a >= 1e12 ? `${(n / 1e12).toFixed(2)} 万亿${u}` : a >= 1e8 ? `${(n / 1e8).toFixed(2)} 亿${u}` : a >= 1e4 ? `${(n / 1e4).toFixed(2)} 万${u}` : a >= 100 ? `${Math.round(n)} ${u}` : `${n.toFixed(2)} ${u}`; };
+/* 跟 engine.js 的 unitOf() / moneyIn() 一个写法，只在读档时给没带 text 的分录用。
+   一组数共用一个单位，同一张账单上不许一行写「万」下一行写光数目。 */
+const UNITS = [{ min: 1e12, div: 1e12, name: '万亿' }, { min: 1e8, div: 1e8, name: '亿' }, { min: 1e4, div: 1e4, name: '万' }, { min: 0, div: 1, name: '' }];
+const unitOf = nums => { const big = Math.max(0, ...[].concat(nums).map(n => Math.abs(Number(n)) || 0)); const u = UNITS.find(x => big >= x.min); return { ...u, dp: u.div > 1 || big < 100 ? 2 : 0 }; };
+const moneyIn = (n, unit, cur) => `${(n / unit.div).toFixed(unit.dp)} ${unit.name}${cur || '元'}`;
+const fmtMoney = (n, cur) => moneyIn(n, unitOf(n), cur);
 
 function renderPlay(last, opts = {}) {
   const s = run.state;
@@ -284,11 +288,12 @@ function renderPlay(last, opts = {}) {
   box.appendChild(el('p', '', last.story || ''));
   if (last.entries && last.entries.length) {
     const t = el('div', 'tally');
+    const unit = unitOf(last.entries.map(e => e.amount));   // 读老档时也是整张账单一个单位
     for (const e of last.entries) {
       const r = el('div', 'e' + (e.amount < 0 ? ' out' : ''));
       r.appendChild(el('span', '', e.what));
       r.appendChild(el('i', 'lead'));
-      const text = e.text || fmtMoney(e.amount, s.currencyName);
+      const text = e.text || moneyIn(e.amount, unit, s.currencyName);
       r.appendChild(el('b', '', (e.amount >= 0 ? '+' : '−') + text.replace('-', '')));
       t.appendChild(r);
     }
