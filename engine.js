@@ -588,6 +588,91 @@ function serendipity(s, list) {
   return { fresh, p, luck: hash32((s.seed || 1) * 7919 + (s.n || 1) * 104729) / 2 ** 32 < p };
 }
 
+/* ── 投机：这一把成不成，掷骰子，不由模型的胆量决定 ────────
+ * 玩家的原话：「我想炒股投机就一直亏亏亏」。模型天生怕事，
+ * 一写到押本钱、加杠杆、囤货，它十次有九次让人赔——
+ * 于是这个游戏只剩一条路：老老实实打工。
+ *
+ * 所以胜负从模型手里拿走：**engine 掷骰子定成败和倍数，模型只负责写这件事怎么发生的。**
+ * 胜率不是纯随机，看他押的方向对不对得上那几年真实的行情（data/markets.json）：
+ * 顺着走六成八赢，逆着走两成二赢，表上没写的年份对半开。
+ * 1948 年 8 月囤货的赔、1945 到 1948 年 7 月囤货的赚，都是那张表说了算——
+ * 这样赌赢赌输都能在正文里说出个所以然，玩家也能从中学到那一百年真实的样子。 */
+const MARKETS = require('./data/markets.json').windows.map(w => {
+  const at = s => { const [y, m] = String(s).split('-').map(Number); return y * 12 + (m - 1); };
+  return { ...w, a: at(w.from), b: at(w.to) };
+});
+
+/** 这一年这个月，某个场子正在走什么行情。**必须对上场子**——
+ *  2015 年的股灾管不着倒卖球鞋，2013 年股票在跌而房子在涨。
+ *  表上没写这个场子就返回 null，胜率对半开。 */
+function marketAt(year, month, venue) {
+  const k = year * 12 + (month - 1);
+  return MARKETS.find(w => k >= w.a && k <= w.b && (!venue || w.venues.includes(venue))) || null;
+}
+
+/* 他押的是哪个场子。顺序有讲究：先认最具体的（币、房、股），
+ * 「囤」放在最后兜底——「囤股票」该算股，不该算囤货。 */
+const VENUES = [
+  ['币', /(比特币|虚拟货币|数字货币|炒币|以太|挖矿|币圈)/],
+  ['房', /(房子|房产|楼盘|炒房|地皮|地产|商铺|买房|房源)/],
+  ['股', /(炒股|股票|证券|交易所|大盘|指数|基金|建仓|加仓|满仓|抄底|追高|期货|公债|国债|券商|认购证|标金|配资)/],
+  ['金', /(黄金|金条|金子|美钞|美元|外汇|银元|大洋|袁大头|银子)/],
+  ['赌', /(赌场|赌局|赌钱|押注|下注|彩票|番摊|牌九|轮盘|盘口)/],
+  ['囤', /(囤|倒卖|倒腾|压货|进一批|吃下这批|收货|屯)/],
+];
+function venueOf(text) {
+  for (const [name, re] of VENUES) if (re.test(text)) return name;
+  return null;
+}
+
+/* 押本钱的说法。囤货也算——1948 年 8 月囤货砸手里、1946 年囤货发财，
+ * 都该由行情表说了算，而不是由模型的胆子说了算。 */
+const BET = /(炒股|股票|证券|交易所|大盘|基金|建仓|加仓|满仓|抄底|追高|期货|标金|公债|国债|外汇|美钞|黄金|金条|银元|比特币|虚拟货币|炒房|炒币|认购证|倒卖|倒腾|投机|囤|押|下注|赌|梭哈|杠杆|配资|借钱买|抵押)/;
+/* 反着做：这几个词出现就算他在往下押（清仓、换现钱、做空） */
+const BET_SHORT = /(做空|卖空|清仓|空仓|离场|割肉|抛掉|全卖|换成现钱|换成现金|落袋)/;
+/* 借来的钱押进去，输光了还欠着 */
+const BET_DEBT = /(杠杆|配资|借钱|借的钱|抵押|当掉|高利贷|印子钱)/;
+
+/** 这个月他押了没有、押的方向对不对得上行情、这一把成不成、几倍。
+ *  骰子只认存档种子和第几个月，同一局重算结果不变。 */
+function speculation(s, list) {
+  const text = String(list || '');
+  const venue = venueOf(text);
+  /* 两条路认「他在押本钱」：说法本身就是押（炒股、加杠杆、梭哈），
+   * 或者认得出场子又带着一个下手的动词（「凑首付买一套房子」——
+   * BET 里没有「买房」，但场子是房、动词是买，那就是押）。 */
+  if (!BET.test(text) && !(venue && /(买|押|囤|屯|炒|赌|全仓|满仓|杠杆|配资|抵押|倒|收|吃下|投|下注|梭哈|盘下)/.test(text))) {
+    return { bet: false };
+  }
+  /* 赌场没有行情可循，永远对半开；别的场子查表 */
+  const market = venue && venue !== '赌' ? marketAt(s.year, s.month, venue) : null;
+  const mine = BET_SHORT.test(text) ? -1 : 1;              // 默认是买进、囤着
+  const align = market ? market.dir * mine : 0;
+  const winP = align > 0 ? 0.68 : align < 0 ? 0.22 : 0.45;
+  const seed = (s.seed || 1) * 31337 + (s.n || 1) * 2654435761;
+  const r1 = hash32(seed) / 2 ** 32;
+  const r2 = hash32(seed ^ 0x9e3779b9) / 2 ** 32;
+  const r3 = hash32(seed ^ 0x85ebca6b) / 2 ** 32;
+  const win = r1 < winP;
+  /* 买进／囤着：赢是多数时候小胜、偶尔一把顶好几年（大赢那一档留一成二），
+   *              输是本钱亏掉三成半到全没。
+   * 清仓／换现钱：赌的是「躲开」——赢了是躲过一刀、低位接回来（顶多小赚），
+   *              输了只是踏空加上一点手续和折价，不该按本钱亏三成算。 */
+  let mult;
+  if (mine < 0) mult = win ? 0.15 + 0.6 * r2 * r2 : -(0.05 + 0.2 * r2);
+  else {
+    mult = win ? 0.5 + 2.5 * r2 * r2 : -(0.35 + 0.65 * Math.pow(r2, 1.5));
+    if (win && r3 < 0.12) mult *= 2;
+  }
+  const debt = mine > 0 && !win && mult <= -0.9 && BET_DEBT.test(text);
+  return {
+    bet: true, market, venue, mine, align, win,
+    mult: Math.round(mult * 100) / 100,
+    debt,                                                  // 借钱押的，输光了还欠着
+  };
+}
+
 /** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话就不动。
  *  年卡还是原来那座城的（物价、政策、时局照用），提示词里会说明人不在那儿。 */
 function applyMove(s, to) {
@@ -1152,7 +1237,7 @@ function checkPersona(text) {
 }
 
 module.exports = {
-  cleanOptions, cleanRefused, applyMove, offScript, serendipity,
+  cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,
   DAYS, MONTHS, MONTHS_EXTRA, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   lastMonthOf, extraRoom, reopen,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,

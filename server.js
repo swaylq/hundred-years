@@ -534,6 +534,7 @@ async function runOneMonthInner(req, res, b, s) {
     /* 这个月有几成是他自己写的、撞没撞上奇遇。跟 sim.buildUser 里算的是同一个函数、
      * 同一份存档（还没 push、还没 advanceTo），所以结果一定一样；记下来是为了回头能查。 */
     const sd = E.serendipity(s, b.list);
+    const bt = E.speculation(s, b.list);
     /* 把这个月压成的那几行并进记忆。**要在 advanceTo 之前**——
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
@@ -544,6 +545,8 @@ async function runOneMonthInner(req, res, b, s) {
       refused: out.delta.refused || [], capped: res1.capped, local: usedLocal,
       moved: moved || null,
       luck: sd.luck, fresh: Math.round(sd.fresh * 100) / 100,
+      /* 押了本钱的月份：赢没赢、几倍、押的是哪一段行情——回头查「投机是不是又一直亏」用 */
+      bet: bt.bet ? { win: bt.win, mult: bt.mult, market: bt.market ? bt.market.what : null, align: bt.align } : null,
       /* 进了货却没记下东西——下个月的提示词里要拿它提醒模型自己补上 */
       missedGoods: res1.missedGoods || null,
     });
