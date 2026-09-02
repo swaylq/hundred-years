@@ -386,8 +386,8 @@ async function runOneMonthInner(req, res, b, s) {
     const moved = E.applyMove(s, out.delta.moveTo);
     /* 把这个月压成的那几行并进记忆。**要在 advanceTo 之前**——
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
-    const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month });
     const tally = E.tallyLine(res1.entries, curNow);
+    const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month, tally });
     s.months.push({
       n: s.n, year: s.year, month: s.month, list: String(b.list).slice(0, 2000),
       story: out.delta.story, tally, entries: res1.entries,

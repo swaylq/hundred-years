@@ -75,8 +75,8 @@ async function playOne(year, month, seed) {
     const curNow = E.currencyOf(s.year, s.month);
     const at = { n: s.n, year: s.year, month: s.month };
     const res = E.applyMonth(s, out.delta);
-    const memoAdd = E.applyMemo(s, out.delta, at);
     const tally = E.tallyLine(res.entries, curNow);
+    const memoAdd = E.applyMemo(s, out.delta, { ...at, tally });
     s.months.push({ ...at, list, story: out.delta.story, tally, refused: out.delta.refused || [], capped: res.capped, missedGoods: res.missedGoods || null });
     const switched = i < E.MONTHS ? E.advanceTo(s, i + 1) : [E.closeOut(s)].filter(Boolean);
     log.write(JSON.stringify({

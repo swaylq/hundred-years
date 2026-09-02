@@ -473,6 +473,17 @@ console.log('15. 二十四个月走下来，一件都没丢');
     E.applyMemo(s, d, at);
   }
   const m = s.memo;
+  /* 月记 2026-09-04 从四十字放到一百五十字，并由引擎白送一行硬数字 */
+  const 长句 = '月初去十六铺找工头老周，交两块押金买了护具，排上扛包的班，一件八分，二十天挣了七块六。月中听老黄说闸北缺盐，凑六块收了两袋，月底卖一袋得七块五，另一袋说好下月八块收走。房钱三块、伙食三块八。';
+  const s9 = E.newRun({ year: 1926, month: 10, nick: 'x' });
+  E.applyMemo(s9, { memo: { line: 长句 } }, { n: 1, year: 1926, month: 10, tally: '进：扛包 7.60 银元；出：房钱 3.00 银元；净进 0.30 银元' });
+  const t9 = s9.memo.trail[0];
+  if (t9.say !== 长句) fail(`一百字出头的月记被截了：留下 ${E.countHan(t9.say)} 个汉字`);
+  else if (!/净进 0\.30 银元/.test(t9.tally || '')) fail('引擎该白送这个月的净进，没送上');
+  else if (!t9.worth) fail('引擎该白送收工家底，没送上');
+  else if (!E.memoText(s9).includes('收工家底')) fail('硬数字没渲染进提示词');
+  else ok(`月记装得下 ${E.countHan(长句)} 个汉字，后面自动缀上「${t9.tally}，收工家底 ${t9.worth}」——钱的总数不用模型算`);
+
   if (m.trail.length !== E.MONTHS) fail(`走过的路该有 ${E.MONTHS} 条，实际 ${m.trail.length}`);
   else if (m.trail[0].say !== '第 1 个月的事') fail(`第 1 个月被挤掉了：现在头一条是「${m.trail[0].say}」`);
   else if (m.trail.some((t, i) => t.n !== i + 1)) fail('走过的路的月份不连续，有缺格或者重了');

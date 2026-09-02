@@ -763,10 +763,21 @@ function applyMemo(s, delta, at) {
   const n = at && at.n != null ? at.n : s.n;
   const added = { trail: 0, people: 0, notes: 0, threads: 0, done: 0, traits: 0, traitNotes: 0, lost: 0, folded: 0 };
 
-  /* 一、这个月压成的那一句。一个月一条，写下就不再改——这是「一件都没丢」的骨干。 */
-  const line = oneLine(d.line, 60);
+  /* 一、这个月压成的那一段。一个月一条，写下就不再改——这是「一件都没丢」的骨干。
+   *
+   *    2026-09-04 从「一句话四十字」放到「一百五十字，写全」：sway 说压得太少了。
+   *    四十个字装不下「跟谁说定了什么、什么价钱、月底停在哪一步」，
+   *    第十个月回头看只剩「三月账面稳步增长」这种等于没说的话。
+   *
+   *    另外白送一行硬数字（净进多少、收工家底多少）——这两个数引擎自己就有，
+   *    不花模型一个字，还正好是模型自己最容易算错的东西。
+   *    有了它，模型看得见这二十四个月的家底是怎么爬上来的。 */
+  const line = oneLine(d.line, 200);
   if (line) {
-    m.trail.push({ n, year: at ? at.year : s.year, month: at ? at.month : s.month, say: line });
+    const t = { n, year: at ? at.year : s.year, month: at ? at.month : s.month, say: line };
+    if (at && at.tally) t.tally = oneLine(String(at.tally).match(/净[进出][^；]*$/) || at.tally, 40);
+    t.worth = money(netWorth(s), s.currency);
+    m.trail.push(t);
     added.trail++;
   }
 
@@ -885,9 +896,10 @@ function applyMemo(s, delta, at) {
  *  六档都削完还超预算，**就让它超**。宁可多花几个 token，不许把记忆削断。
  */
 /* 汉字预算。超了才开始折。
- * 实测走满二十四个月（10 个人、62 条来往记录、24 条月记）峰值 2399 字，一路一档没折过；
- * 留到 4000 是给「人特别多的那一局」留的余量——用不上就一个 token 都不花。 */
-const MEMO_LIMIT = 4000;
+ * 2026-09-04 月记从四十字放到一百五十字（sway：压得太少了），预算跟着从 4000 抬到 8000。
+ * 二十四条月记本身约 4000 字，加上人、本事、头绪，走满两年落在六千上下，一档不用折。
+ * 抬预算不等于每局都多花钱——够用就不折，用不上的余量一个 token 都不花。 */
+const MEMO_LIMIT = 8000;
 
 /** 一条记录后面缀上月份——模型得知道这件事发生在什么时候，才接得上 */
 const noteAt = x => `${x.note}（第 ${x.n} 个月）`;
@@ -913,17 +925,20 @@ function renderAt(m, lv) {
    *    句子一句不动，所以「每个月都还在」这条底线不破。 */
   if (m.trail.length) {
     if (lv < 6) {
-      part.push('走过的路（一个月一句，从头到现在一条不少）：\n' +
-        m.trail.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}`).join('\n'));
+      part.push('走过的路（一个月一段，从头到现在一条不少）：\n' +
+        m.trail.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}` +
+          (t.tally || t.worth ? `【${[t.tally, t.worth ? `收工家底 ${t.worth}` : ''].filter(Boolean).join('，')}】` : '')).join('\n'));
     } else {
       const keep = m.trail.slice(-6), early = m.trail.slice(0, -6);
       const segs = [];
       for (let i = 0; i < early.length; i += 6) {
         const g = early.slice(i, i + 6);
-        segs.push(`  第 ${g[0].n}–${g[g.length - 1].n} 个月：${g.map(t => t.say).join(' ')}`);
+        segs.push(`  第 ${g[0].n}–${g[g.length - 1].n} 个月：${g.map(t => t.say).join(' ')}` +
+          `【这几个月收工家底：${g.map(t => t.worth).filter(Boolean).join(' → ') || '不详'}】`);
       }
       part.push('走过的路（早先几个月并成了段，句子一句没删）：\n' +
-        [...segs, ...keep.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}`)].join('\n'));
+        [...segs, ...keep.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}` +
+          (t.tally || t.worth ? `【${[t.tally, t.worth ? `收工家底 ${t.worth}` : ''].filter(Boolean).join('，')}】` : ''))].join('\n'));
     }
   }
 
