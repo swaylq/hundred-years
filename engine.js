@@ -201,6 +201,10 @@ function newRun({ year, month, nick, seed, persona }) {
     cash,
     assets: [],
     debts: [],
+    /* 这一局的记忆。每过一个月，模型把刚发生的事压成几行短的，
+     * 由 applyMemo 并进来；**引擎只添不删**，压缩发生在往提示词里渲染那一步。
+     * 少了它，模型只看得见最近两个月的正文，第三个月起认识的人和谈了一半的买卖就没了。 */
+    memo: newMemo(),
     /* 玩家自己写的一句话：他是个什么人。整局不变，每个月都拼进提示词。
      * 除了钱，这一局再没有别的槽——名声、关系、体力、麻烦四条杠 2026-09-02 撤了，
      * 它们的作用改由钱和正文里的事承担（罚款、货被没收、被关几天挣不到钱）。 */
@@ -636,6 +640,151 @@ function checkList(text) {
   return { ok: true, n };
 }
 
+/* ── 这一局的记忆 ────────────────────────────────────
+ * sway 2026-09-03：「每次玩家决策之后，把生成的结果和之前的记忆压缩一下，
+ * 转移到下一幕。不要丢失任何记忆。」
+ *
+ * 分工是这样的：**压缩由模型做，保管由引擎做。**
+ * 模型每个月把刚写完的那一个月压成几行短的（这个月一句话、新认识的人、
+ * 新起的头绪、了结了哪条），引擎把它们并进 s.memo —— 只添不删，一条都不丢。
+ * 提示词装不下全部的时候，缩的是**渲染出来的那一份**（memoText），
+ * 存档里那份始终是全的，界面上也翻得到。
+ *
+ * 为什么不让模型每个月重写一整段记忆：二十四个月连着重写二十四次，
+ * 每次丢一点，走到后半程就只剩最近几个月了——而这正是要修的毛病。
+ * 让它只写增量，旧的由引擎原样留着，丢失就不可能发生。 */
+const MEMO_CAP = { people: 60, threads: 40 };
+
+function newMemo() { return { trail: [], people: [], threads: [], folded: [] }; }
+
+const oneLine = (x, n) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, n);
+
+/* 「工头老张（自来水厂）」和「老张（自来水厂工头）」是同一个人，模型换个说法就写成两个，
+ * 于是同一个人的记忆裂成两半（1948 那一局真跑出来过）。
+ * 归一化两步：括号里的身份去掉，再去掉打头的那个称谓词——剩下的得一模一样才算同一个人。
+ * 只做到这儿：再宽就会把「阿强」和「阿强的学徒」并成一个。 */
+const ROLE = /^(工头|老板|掌柜|经理|主管|师傅|账房|巡捕|保长|伙计|学徒|队长|组长|厂长|站长|社长|书记|干事|老大|头儿)/;
+function whoKey(who) {
+  let k = String(who || '').replace(/[（(][^）)]*[）)]/g, '').replace(/\s+/g, '');
+  const m = ROLE.exec(k);
+  if (m && k.length - m[0].length >= 2) k = k.slice(m[0].length);
+  return k;
+}
+
+/** 把模型这个月给的记忆增量并进存档。返回这次添了些什么，好让界面和日志看得见。 */
+function applyMemo(s, delta, at) {
+  if (!s.memo || !Array.isArray(s.memo.trail)) s.memo = newMemo();      // 老档没有这一块，补上
+  const m = s.memo;
+  const d = (delta && delta.memo) || {};
+  const n = at && at.n != null ? at.n : s.n;
+  const added = { trail: 0, people: 0, notes: 0, threads: 0, done: 0, folded: 0 };
+
+  /* 一、这个月压成的那一句。一个月一条，写下就不再改——这是「一件都没丢」的骨干。 */
+  const line = oneLine(d.line, 60);
+  if (line) {
+    m.trail.push({ n, year: at ? at.year : s.year, month: at ? at.month : s.month, say: line });
+    added.trail++;
+  }
+
+  /* 二、认识的人。同一个人再出现就往他名下**再记一条**，不覆盖旧的——
+   *    「头一回收了他两块押金」和「第四个月起肯给他派活」是两件事，都要留着。 */
+  for (const p of (Array.isArray(d.people) ? d.people : []).slice(0, 6)) {
+    const who = oneLine(p && p.who, 20);
+    const note = oneLine(p && p.note, 60);
+    if (!who) continue;
+    const key = whoKey(who);
+    let rec = m.people.find(x => (x.key || whoKey(x.who)) === key);
+    if (!rec) { rec = { who, key, notes: [], first: n, last: n }; m.people.push(rec); added.people++; }
+    if (!rec.key) rec.key = key;
+    /* 带身份的那个叫法信息更多，留长的那个当显示名 */
+    if (who.length > rec.who.length) rec.who = who;
+    rec.last = n;
+    /* 一条都不删——二十四个月最多也就攒二十来条，存得下。
+     * 挤不进提示词是渲染那一步的事（memoText 只挑头一条和最近两条）。 */
+    if (note && !rec.notes.some(x => x.note === note)) { rec.notes.push({ n, note }); added.notes++; }
+  }
+
+  /* 三、没了结的事。了结了不删，盖个戳——「上个月answered过什么」本身也是记忆。 */
+  for (const t of (Array.isArray(d.threads) ? d.threads : []).slice(0, 5)) {
+    const what = oneLine(t && t.what, 40);
+    if (!what) continue;
+    if (m.threads.some(x => x.what === what)) continue;
+    m.threads.push({ what, note: oneLine(t && t.note, 60), opened: n, done: null });
+    added.threads++;
+  }
+  for (const w of (Array.isArray(d.done) ? d.done : []).slice(0, 5)) {
+    const what = oneLine(w, 40);
+    if (!what) continue;
+    /* 模型多半不会一字不差地抄回来，所以先找一模一样的，再退回找互相包含的 */
+    const hit = m.threads.find(x => !x.done && x.what === what)
+      || m.threads.find(x => !x.done && (x.what.includes(what) || what.includes(x.what)));
+    if (hit) { hit.done = n; added.done++; }
+  }
+
+  /* 四、装不下就折：**只折细节，名字留着**。折掉的是最久没再提起的那几个，
+   *    正在挂着的头绪一条都不折。 */
+  if (m.people.length > MEMO_CAP.people) {
+    const over = m.people.length - MEMO_CAP.people;
+    const old = [...m.people].sort((a, b) => a.last - b.last).slice(0, over);
+    for (const p of old) {
+      m.people.splice(m.people.indexOf(p), 1);
+      m.folded.push(`${p.who}（第 ${p.first} 个月认识的）`);
+      added.folded++;
+    }
+  }
+  if (m.threads.length > MEMO_CAP.threads) {
+    const closed = m.threads.filter(x => x.done).sort((a, b) => a.done - b.done);
+    const over = m.threads.length - MEMO_CAP.threads;
+    for (const t of closed.slice(0, over)) {
+      m.threads.splice(m.threads.indexOf(t), 1);
+      m.folded.push(`${t.what}（第 ${t.done} 个月了的）`);
+      added.folded++;
+    }
+  }
+  return added;
+}
+
+/** 把记忆渲染成提示词里的那一段。**这里才是压缩发生的地方**——
+ *  存档里是全的，装不进提示词的时候缩的是这一份。
+ *  `budget` 是各段给多少条，改它不动存档。 */
+function memoText(s, budget = {}) {
+  const m = (s && s.memo) || newMemo();
+  const B = { people: 24, notes: 2, closed: 8, ...budget };
+  const part = [];
+
+  if (m.trail.length) {
+    part.push('走过的路（一个月一句，从头到现在一条不少）：\n' +
+      m.trail.map(t => `  第 ${t.n} 个月 ${t.year}-${String(t.month).padStart(2, '0')}：${t.say}`).join('\n'));
+  }
+
+  if (m.people.length) {
+    /* 人多了先给最近打过交道的——老交情靠 folded 那一行留个名字 */
+    const ps = [...m.people].sort((a, b) => b.last - a.last).slice(0, B.people)
+      .sort((a, b) => a.first - b.first);
+    /* 头一条是「怎么认识的」，最近两条是「现在什么交情」——中间那些进不了提示词，
+     * 但存档里一条不少，界面上那一折翻得到。 */
+    part.push('认识的人：\n' + ps.map(p => {
+      const pick = [...new Set([...p.notes.slice(0, 1), ...p.notes.slice(-B.notes)].map(x => x.note))];
+      return `  ${p.who}：${pick.join('；') || '打过照面'}`;
+    }).join('\n'));
+    if (m.people.length > ps.length) {
+      part.push(`  还有 ${m.people.length - ps.length} 个早先认识的：` +
+        [...m.people].sort((a, b) => a.last - b.last).slice(0, m.people.length - ps.length).map(p => p.who).join('、'));
+    }
+  }
+
+  const open = m.threads.filter(t => !t.done);
+  if (open.length) {
+    part.push('还没了结的事（这个月正文里该有个交代，办成了就写进 memo.done）：\n' +
+      open.map(t => `  · ${t.what}${t.note ? `——${t.note}` : ''}（第 ${t.opened} 个月起）`).join('\n'));
+  }
+  const closed = m.threads.filter(t => t.done).slice(-B.closed);
+  if (closed.length) part.push('了结过的：' + closed.map(t => t.what).join('、'));
+  if (m.folded.length) part.push('更早还有：' + m.folded.slice(-12).join('、'));
+
+  return part.join('\n');
+}
+
 /* ── 主角是个什么人 ──────────────────────────────────
  * 玩家开局写一句自己的长处和脾气，整局不变，每个月都拼进提示词。
  * 「不能超出正常人」靠两道闸：这里这道硬闸挡掉明摆着的超人设定，
@@ -677,4 +826,5 @@ module.exports = {
   currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchDueAfter, switchOnEntry, reprice, closeOut,
   startingCash, newRun, netWorth, applySwitch, advanceTo, applyMonth, tallyLine, settle, fmtScore, fmtUsd, WORLD,
   countHan, hasContent, checkList, checkPersona,
+  newMemo, applyMemo, memoText, MEMO_CAP,
 };

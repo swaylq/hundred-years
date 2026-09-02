@@ -125,6 +125,8 @@ function view(s) {
     assets: s.assets.map(a => ({ ...a, worthText: E.money(a.worth, cur) })),
     debts: s.debts.map(d => ({ ...d, amountText: E.money(d.amount, cur) })),
     persona: s.persona || '',
+    /* 这一局记着的事，整份发给界面——「不要丢失任何记忆」是要看得见的 */
+    memo: s.memo || E.newMemo(),
     netWorth: E.netWorth(s), netWorthText: E.money(E.netWorth(s), cur),
     income: E.incomeOf(s.year, s.month),
     incomeText: E.money(E.incomeOf(s.year, s.month), cur),
@@ -375,6 +377,9 @@ async function runOneMonthInner(req, res, b, s) {
 
     const curNow = E.currencyOf(s.year, s.month);
     const res1 = E.applyMonth(s, out.delta);
+    /* 把这个月压成的那几行并进记忆。**要在 advanceTo 之前**——
+     * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
+    const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month });
     const tally = E.tallyLine(res1.entries, curNow);
     s.months.push({
       n: s.n, year: s.year, month: s.month, list: String(b.list).slice(0, 2000),
@@ -413,6 +418,7 @@ async function runOneMonthInner(req, res, b, s) {
        * 1935 年印成「18.29 人民币（旧）换成了 18.29 法币」（该是银元），
        * 1949 年印成「人民币（旧）换成了人民币（旧）」。 */
       switched: switched.map(x => ({ say: x.say, before: E.money(x.before, x.from), after: E.money(x.after, x.cur) })),
+      memoAdd,
       local: usedLocal, why: out.why || null,
       options: s.options,
       state: view(s),

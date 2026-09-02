@@ -340,6 +340,8 @@ function renderPlay(last, opts = {}) {
 
   renderPicks(done ? [] : (last.options || s.options || []));
 
+  renderMemo(s.memo);
+
   const lb = $('#ledger-body'); lb.innerHTML = '';
   for (const d of (s.recent || []).slice().reverse()) {
     const r = el('div', 'row');
@@ -348,6 +350,49 @@ function renderPlay(last, opts = {}) {
     lb.appendChild(r);
   }
   $('#ledger').hidden = !(s.recent && s.recent.length);
+}
+
+/* 这一局记着的事。每过一个月，模型把刚发生的压成几行，游戏只添不删——
+   摊开给玩家看，是因为「一件都没丢」这件事得看得见，不能只是嘴上说。 */
+function renderMemo(m) {
+  const box = $('#memo'), body = $('#memo-body');
+  const has = m && ((m.trail || []).length || (m.people || []).length || (m.threads || []).length);
+  box.hidden = !has;
+  if (!has) return;
+  body.innerHTML = '';
+  const open = (m.threads || []).filter(t => !t.done);
+  const closed = (m.threads || []).filter(t => t.done);
+  $('#memo-sum').textContent = `这一局记着的事 · ${(m.trail || []).length} 个月 · ${(m.people || []).length} 个人`
+    + (open.length ? ` · ${open.length} 件没了结` : '');
+
+  const block = (title, rows) => {
+    if (!rows.length) return;
+    body.appendChild(el('h4', 'memo-h', title));
+    for (const [a2, b2] of rows) {
+      const r = el('div', 'row');
+      r.appendChild(el('span', 'd', a2));
+      r.appendChild(el('span', 't', b2));
+      body.appendChild(r);
+    }
+  };
+  block('还没了结的', open.map(t => [`第 ${t.opened} 个月起`, t.what + (t.note ? ` —— ${t.note}` : '')]));
+  block('走过的路', (m.trail || []).map(t => [`${t.year} 年 ${t.month} 月`, t.say]));
+  /* 一个人一小段：名字一行，跟他之间发生过的事一个月一行。
+     挤成一段读不下去——第 1 个月怎么认识的和第 20 个月什么交情，得看得出先后。 */
+  if ((m.people || []).length) {
+    body.appendChild(el('h4', 'memo-h', '认识的人'));
+    for (const p of m.people) {
+      body.appendChild(el('div', 'memo-who', p.who));
+      for (const x of (p.notes || [])) {
+        const r = el('div', 'row');
+        r.appendChild(el('span', 'd', `第 ${x.n} 个月`));
+        r.appendChild(el('span', 't', x.note));
+        body.appendChild(r);
+      }
+    }
+  }
+  if (closed.length) block('了结过的', closed.map(t => [`第 ${t.done} 个月`, t.what]));
+  if ((m.folded || []).length) block('更早还有', [['', m.folded.join('、')]]);
 }
 
 /* 三条路。点一条就写进下面的格子里，还能接着改、接着添——

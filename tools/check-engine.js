@@ -445,5 +445,109 @@ console.log('14. 除了钱没有别的属性');
   } catch (e) { fail(`老档读不回来了：${e.message}`); }
 }
 
+/* 15. 记忆只添不删：走满二十四个月，头一个月的事必须还在 */
+console.log('15. 二十四个月走下来，一件都没丢');
+{
+  const s = E.newRun({ year: 1926, month: 10, nick: 'x', seed: 7 });
+  /* 第 1 个月认识老周、起一条头绪；第 9 个月了结它；第 20 个月老周再出现 */
+  for (let n = 1; n <= E.MONTHS; n++) {
+    const at = { n, year: 1926 + Math.floor((9 + n) / 12), month: (9 + n) % 12 + 1 };
+    const d = { memo: { line: `第 ${n} 个月的事`, people: [], threads: [], done: [] } };
+    if (n === 1) {
+      d.memo.people.push({ who: '老周（十六铺工头）', note: '要两块押金，头月不退' });
+      d.memo.threads.push({ what: '凑两块交押金入伙扛包', note: '老周说交了才排得上' });
+    }
+    if (n === 9) d.memo.done.push('凑两块交押金');           // 故意不抄全，考一考模糊匹配
+    if (n === 20) d.memo.people.push({ who: '老周（十六铺工头）', note: '肯赊两天工钱给他' });
+    E.applyMemo(s, d, at);
+  }
+  const m = s.memo;
+  if (m.trail.length !== E.MONTHS) fail(`走过的路该有 ${E.MONTHS} 条，实际 ${m.trail.length}`);
+  else if (m.trail[0].say !== '第 1 个月的事') fail(`第 1 个月被挤掉了：现在头一条是「${m.trail[0].say}」`);
+  else if (m.trail.some((t, i) => t.n !== i + 1)) fail('走过的路的月份不连续，有缺格或者重了');
+  else ok(`${E.MONTHS} 个月一条不缺，第 1 个月那句到第 24 个月还在`);
+
+  const 周 = m.people.find(p => p.who.startsWith('老周'));
+  if (!周) fail('老周不见了');
+  else if (周.notes.length !== 2) fail(`老周名下该有 2 条记录，实际 ${周.notes.length}`);
+  else if (周.first !== 1 || 周.last !== 20) fail(`老周的头尾记错了：${周.first} → ${周.last}`);
+  else ok('同一个人隔十九个月再出现，新记一条，第 1 个月那条没被盖掉');
+
+  const 头绪 = m.threads[0];
+  if (!头绪 || 头绪.done !== 9) fail(`那条头绪该在第 9 个月盖戳，实际 ${头绪 && 头绪.done}`);
+  else ok('了结的头绪盖个戳留着，没删（done 抄得不全也认得出来）');
+
+  const txt = E.memoText(s);
+  if (!txt.includes('第 1 个月的事')) fail('渲染出来的那一段里没有第 1 个月');
+  else if (!txt.includes('要两块押金')) fail('渲染出来的那一段里没有老周头一回那句');
+  else ok(`渲染成 ${E.countHan(txt)} 个汉字，第 1 个月的人和事都在里头`);
+}
+
+/* 16. 挤不下的时候只折细节、留名字；挂着的头绪一条都不折 */
+console.log('16. 挤不下就折，不删');
+{
+  const s = E.newRun({ year: 1936, month: 5, nick: 'x' });
+  for (let n = 1; n <= 100; n++) {
+    E.applyMemo(s, { memo: { people: [{ who: `路人${n}`, note: `第 ${n} 个月见过` }] } }, { n });
+  }
+  if (s.memo.people.length !== E.MEMO_CAP.people) fail(`人该封顶在 ${E.MEMO_CAP.people}，实际 ${s.memo.people.length}`);
+  else if (s.memo.folded.length !== 100 - E.MEMO_CAP.people) fail(`折出去的该有 ${100 - E.MEMO_CAP.people} 个，实际 ${s.memo.folded.length}`);
+  else if (!s.memo.folded[0].includes('路人1')) fail(`折的该是最久没提起的那个，实际折了「${s.memo.folded[0]}」`);
+  else ok(`一百个人挤到 ${E.MEMO_CAP.people} 个，挤出去的 ${s.memo.folded.length} 个只折掉细节、名字留着`);
+
+  /* 挂着的头绪：只要没了结，多到封顶也不许折 */
+  const s2 = E.newRun({ year: 1936, month: 5, nick: 'x' });
+  for (let n = 1; n <= E.MEMO_CAP.threads + 10; n++) {
+    E.applyMemo(s2, { memo: { threads: [{ what: `没了结的第 ${n} 件` }] } }, { n });
+  }
+  const 挂着 = s2.memo.threads.filter(t => !t.done);
+  if (挂着.length !== E.MEMO_CAP.threads + 10) fail(`挂着的头绪被折掉了 ${E.MEMO_CAP.threads + 10 - 挂着.length} 条`);
+  else ok(`${挂着.length} 条挂着的头绪一条没折——办不成的事不许悄悄消失`);
+}
+
+/* 17. 老档没有这一块，补得上 */
+console.log('17. 老档没有记忆这一块');
+{
+  const 老档 = E.newRun({ year: 1962, month: 5, nick: 'x' });
+  delete 老档.memo;
+  try {
+    E.applyMemo(老档, { memo: { line: '接着走' } }, { n: 5, year: 1962, month: 9 });
+    if (老档.memo.trail.length !== 1) fail('老档补上记忆之后没记进去');
+    else if (E.memoText({}) !== '') fail('没有记忆的存档该渲染成空串');
+    else ok('老档进来先补一块空的，再往里记；没有记忆的存档渲染成空串，不报错');
+  } catch (e) { fail(`老档读不回来了：${e.message}`); }
+}
+
+/* 18. 同一个人换个叫法，不许记成两个 */
+console.log('18. 换个叫法还是同一个人');
+{
+  const s = E.newRun({ year: 1948, month: 1, nick: 'x' });
+  /* 1948 那一局真跑出来的两个叫法 */
+  E.applyMemo(s, { memo: { people: [{ who: '工头老张（自来水厂）', note: '认可你的进口工具' }] } }, { n: 4 });
+  E.applyMemo(s, { memo: { people: [{ who: '老张（自来水厂工头）', note: '把核心泵房交给你' }] } }, { n: 5 });
+  const 张 = s.memo.people.filter(p => p.who.includes('老张'));
+  if (张.length !== 1) fail(`老张记成了 ${张.length} 个人`);
+  else if (张[0].notes.length !== 2) fail(`并起来该有 2 条记录，实际 ${张[0].notes.length}`);
+  else if (张[0].first !== 4) fail('并的时候把头一次见面的月份丢了');
+  else ok('「工头老张（自来水厂）」和「老张（自来水厂工头）」并成一个人，两条记录都在');
+
+  /* 别并过头：这是两个人 */
+  E.applyMemo(s, { memo: { people: [{ who: '阿强', note: '雇他搬东西' }] } }, { n: 6 });
+  E.applyMemo(s, { memo: { people: [{ who: '阿强的学徒', note: '跟着来了' }] } }, { n: 7 });
+  if (s.memo.people.filter(p => p.who.includes('阿强')).length !== 2) fail('阿强和他的学徒被并成一个人了');
+  else ok('「阿强」和「阿强的学徒」还是两个人');
+
+  /* 一个人攒二十条记录也不许删，提示词里只挑头一条和最近两条 */
+  const s2 = E.newRun({ year: 1948, month: 1, nick: 'x' });
+  for (let n = 1; n <= 20; n++) E.applyMemo(s2, { memo: { people: [{ who: '老周', note: `第 ${n} 个月的事` }] } }, { n });
+  const 周 = s2.memo.people[0];
+  const txt = E.memoText(s2);
+  if (周.notes.length !== 20) fail(`老周名下该有 20 条，实际 ${周.notes.length}`);
+  else if (!txt.includes('第 1 个月的事')) fail('提示词里丢了「头一回怎么认识的」那一条');
+  else if (!txt.includes('第 20 个月的事')) fail('提示词里丢了最近那一条');
+  else if (txt.includes('第 10 个月的事')) fail('提示词里不该塞中间那些，太占地方');
+  else ok('存档留 20 条，提示词只给头一条和最近两条——中间的翻界面看得到');
+}
+
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');
 process.exit(bad ? 1 : 0);

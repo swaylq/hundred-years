@@ -140,7 +140,23 @@ async function noHScroll(page, where) {
   }
 
   if (!FAST) {
-    console.log('\n五之二、翻一下这一年');
+    /* 记着的事那一折：走过两个月，两个月都该在里头，一个字都不许少 */
+  {
+    const memo = await page.evaluate(() => {
+      const d = document.querySelector('#memo');
+      if (!d || d.hidden) return null;
+      d.open = true;
+      return { 概要: d.querySelector('summary').textContent, 正文: d.querySelector('#memo-body').innerText };
+    });
+    check(!!memo, '玩的时候翻得到「这一局记着的事」');
+    if (memo) {
+      check(/2 个月/.test(memo.概要), `折起来的那行写着走了几个月：${memo.概要.slice(0, 40)}`);
+      check(memo.正文.includes('走过的路'), '里头有「走过的路」这一段');
+      await snap(page, 'e3-记着的事');
+    }
+  }
+
+  console.log('\n五之二、翻一下这一年');
     await page.locator('#ref > summary').click();
     await page.waitForTimeout(900);
     const refBlocks = await page.locator('#ref-body .block').count();

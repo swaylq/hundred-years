@@ -256,6 +256,13 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .start-box .who .count.over { color: var(--seal-ink); }
 .start-box .who-say { flex: 1 1 100%; font-size: 12.5px; line-height: 1.65; color: var(--muted); margin: -4px 0 0; max-width: 62ch; }
 
+/* 记着的事那一折：小标题 + 「谁 / 什么」两栏，跟账本那一折同一个骨架 */
+.memo-h { font-size: 12.5px; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+.memo-h:first-child { margin-top: 2px; }
+#memo-body .row .d { white-space: normal; }
+.memo-who { font-size: 13px; color: var(--ink); margin: 10px 0 3px; }
+.memo-who:first-of-type { margin-top: 2px; }
+
 .story { margin-bottom: 26px; }
 .day-head { display: flex; align-items: baseline; gap: 12px; margin: 2px 0 12px; font: 500 15.5px/1.4 var(--serif); white-space: nowrap; }
 .day-head::after { content: ''; flex: 1; border-top: 1px solid var(--rule-2); }
