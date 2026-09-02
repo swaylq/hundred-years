@@ -9,7 +9,18 @@
  */
 const path = require('path');
 const fs = require('fs');
-const { chromium } = require('/Users/sway003/text-game/node_modules/playwright');
+// playwright 不在本项目的依赖里，去几个已知位置找一份能用的
+const { chromium } = (() => {
+  const tries = [
+    'playwright',
+    path.join(__dirname, '..', '..', '..', 'node_modules', 'playwright'),   // 本 agent 根目录
+    '/Users/mac/claudeclaw/asst/node_modules/playwright',
+    '/Users/sway003/text-game/node_modules/playwright',
+  ];
+  for (const t of tries) { try { return require(t); } catch (e) {} }
+  console.error('找不到 playwright。在本 agent 根目录跑一次 `npm i playwright` 再来，或改这里的路径。');
+  process.exit(2);
+})();
 
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : (i >= 0 ? true : d); };
 const OUT = path.resolve(String(arg('out', path.join(__dirname, '..', 'goal', 'shots'))));

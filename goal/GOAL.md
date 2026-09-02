@@ -57,7 +57,7 @@
 # 怎么跑起来
 
 ```bash
-cd /Users/sway003/text-game/projects/hundred-years
+cd /Users/mac/claudeclaw/text-game/projects/hundred-years
 export PATH="$HOME/.local/bin:$PATH"
 
 node tools/check-engine.js         # 算账，几秒，不花钱

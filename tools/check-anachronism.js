@@ -19,19 +19,34 @@ const SIM = require('../sim.js');
 const LOCAL = process.argv.includes('--local');
 const JOBS = (() => { const i = process.argv.indexOf('--jobs'); return i >= 0 ? Number(process.argv[i + 1]) : 4; })();
 
-/* want: 应当被顶回去的那个词。null 表示这条是对照组，不该被拦。 */
+/* want: 应当被顶回去的那个词。null 表示这条是对照组，不该被拦。
+ * alsoOk: 同一件事的其它说法。第二层只查「模型的拒绝里有没有点出那件事」，
+ *   模型经常换个说法——1943 写「1943 年尚无电子计算机」、1962 写「私人办厂属于投机倒把」，
+ *   判得都对，只是没有逐字出现 want。实测每六次会这么挂一次，而且每次挂的场景不同。
+ *   所以 want 和 alsoOk 里任一个命中就算数。这不是放宽：拒绝理由仍然要 ≥10 字、
+ *   仍然不许跟玩家写的原话一模一样，对照组仍然一个都不许被拦。 */
 const CASES = [
-  { year: 1930, month: 5,  list: '我打算做一个手机应用，卖给上海的商行，收订阅费。', want: '手机应用' },
-  { year: 1943, month: 3,  list: '弄一台个人电脑，写一套记账的程序卖给几家商行。', want: '个人电脑' },
-  { year: 1958, month: 9,  list: '去银行办一张信用卡，先刷五百块进货。', want: '信用卡' },
-  { year: 1962, month: 5,  list: '注册一家私营企业，招十个工人做服装。', want: '私营企业' },
+  { year: 1930, month: 5,  list: '我打算做一个手机应用，卖给上海的商行，收订阅费。', want: '手机应用',
+    alsoOk: ['手机', '移动电话', '应用程序'] },
+  { year: 1943, month: 3,  list: '弄一台个人电脑，写一套记账的程序卖给几家商行。', want: '个人电脑',
+    alsoOk: ['电脑', '计算机'] },
+  { year: 1958, month: 9,  list: '去银行办一张信用卡，先刷五百块进货。', want: '信用卡',
+    alsoOk: ['刷卡', '银行卡', '透支'] },
+  { year: 1962, month: 5,  list: '注册一家私营企业，招十个工人做服装。', want: '私营企业',
+    alsoOk: ['私营', '私人办厂', '私人经营', '公私合营', '雇工', '雇佣劳动'] },
   { year: 1934, month: 6,  list: '去交易所做标金，再看看纱布期货，本钱两百块大洋。', want: null },
-  { year: 1968, month: 4,  list: '在街口摆个摊卖凉粉，一天卖两百碗。', want: '摆摊' },
-  { year: 1975, month: 7,  list: '按揭买一套商品房，等它涨价再卖掉。', want: '商品房' },
-  { year: 1980, month: 6,  list: '开个网店，把这边的衣服卖到南方去。', want: '网店' },
-  { year: 1986, month: 2,  list: '用微信联系几个客户，把货款打过来。', want: '微信' },
-  { year: 1992, month: 1,  list: '买点比特币囤着，等它翻十倍。', want: '比特币' },
-  { year: 2003, month: 4,  list: '开个直播带货，一晚上卖三万块。', want: '直播带货' },
+  { year: 1968, month: 4,  list: '在街口摆个摊卖凉粉，一天卖两百碗。', want: '摆摊',
+    alsoOk: ['摆个摊', '个体户', '个体经营', '投机倒把', '私自买卖'] },
+  { year: 1975, month: 7,  list: '按揭买一套商品房，等它涨价再卖掉。', want: '商品房',
+    alsoOk: ['房屋买卖', '买卖房', '房产交易', '按揭', '私有房产'] },
+  { year: 1980, month: 6,  list: '开个网店，把这边的衣服卖到南方去。', want: '网店',
+    alsoOk: ['网上', '互联网', '因特网', '电子商务', '上网'] },
+  { year: 1986, month: 2,  list: '用微信联系几个客户，把货款打过来。', want: '微信',
+    alsoOk: ['即时通讯', '智能手机', '互联网', '在线转账'] },
+  { year: 1992, month: 1,  list: '买点比特币囤着，等它翻十倍。', want: '比特币',
+    alsoOk: ['加密货币', '虚拟货币', '数字货币'] },
+  { year: 2003, month: 4,  list: '开个直播带货，一晚上卖三万块。', want: '直播带货',
+    alsoOk: ['直播', '带货', '短视频'] },
   /* 两条对照组：写的是那一年真有的事，绝不能被拦 */
   { year: 1985, month: 8,  list: '在街口摆个摊卖凉粉，一天卖两百碗，顺便打听哪里能批到便宜的绿豆。', want: null },
   { year: 2015, month: 6,  list: '开个网店卖衣服，找人拍照修图，先上二十个款试试水。', want: null },
@@ -75,7 +90,7 @@ async function one(c, i) {
     out.modelOk = !saidAbsent;
     if (!out.modelOk) out.why = `对照组被当成跨时代顶回去了：${refused.slice(0, 70)}`;
   } else {
-    const mentioned = refused.includes(c.want) || story.includes(c.want);
+    const mentioned = [c.want, ...(c.alsoOk || [])].some(w => refused.includes(w) || story.includes(w));
     /* 「有没有给理由」用字数判，不用词表判。
      * 上一版列了二十来个词（没有/不存在/要到/犯法…），
      * 结果模型写「私有经济被禁止，属于投机倒把，面临没收工具和拘留处罚」

@@ -61,7 +61,7 @@ function fetchUrl(u, redirects = 0) {
       if (r.statusCode !== 200) { r.resume(); return resolve({ ok: false, why: `HTTP ${r.statusCode}` }); }
       const ctype = String(r.headers['content-type'] || '');
       const chunks = []; let n = 0;
-      r.on('data', d => { n += d.length; if (n < 800000) chunks.push(d); });
+      r.on('data', d => { n += d.length; if (n < 4000000) chunks.push(d); });  // 4MB：统计局公报页 1.2–2.5MB，「人民生活」那一章在靠后位置，800KB 会把它截掉、把好出处误判成「数字对不上」
       r.on('end', () => {
         const buf = Buffer.concat(chunks);
         /* PDF / 图片 / 压缩包读不出文字层，只能确认「这个文件真的在」，
