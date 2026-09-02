@@ -246,8 +246,22 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .money .sub { color: var(--muted); font-size: 12.5px; margin-top: 7px; line-height: 1.65; }
 .money .sub b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 
-/* 左栏最下面那一行小字：玩家开局写的「他是个什么人」。
-   四条杠（体力/名声/关系/麻烦）2026-09-03 撤了，这一局只有钱。 */
+/* 四条杠 */
+.meters { display: grid; gap: 8px; padding: 2px 2px 0; }
+.meter { display: grid; grid-template-columns: 2.6em 1fr 2.2em; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.meter i { display: block; height: 5px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+.meter i b { display: block; height: 100%; background: var(--ink-2); border-radius: 3px; transition: width .45s; }
+.meter em { font-style: normal; text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.meter.m-trouble { color: var(--seal-ink); }
+.meter.m-trouble i b { background: var(--seal); }
+
+/* 他这两年练出来、挣下来的：一样一个小牌子，鼠标停上去看细节 */
+.traits { padding: 2px 2px 0; }
+.traits .lab { display: block; font-size: 11px; letter-spacing: .1em; color: var(--muted); margin-bottom: 5px; }
+.traits i { display: inline-block; font-style: normal; font-size: 12px; line-height: 1.5; color: var(--ink-2);
+  border: 1px solid var(--rule-2); border-radius: 2px; padding: 2px 7px; margin: 0 4px 4px 0; cursor: default; }
+
+/* 左栏最下面那一行小字：玩家开局写的「他是个什么人」 */
 .who-line { font-size: 12.5px; line-height: 1.6; color: var(--muted); padding: 2px 2px 0; border-top: 1px solid var(--rule); margin-top: 2px; padding-top: 8px; }
 /* 开局那一屏的设定框：五十个汉字要占满一行，跟名号挤在一起就只看得见末尾几个字 */
 .start-box .who { flex: 1 1 100%; display: grid; gap: 4px; align-items: stretch; }
@@ -262,6 +276,7 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 #memo-body .row .d { white-space: normal; }
 .memo-who { font-size: 13px; color: var(--ink); margin: 10px 0 3px; }
 .memo-who:first-of-type { margin-top: 2px; }
+.memo-who.lost { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--rule-2); }
 
 .story { margin-bottom: 26px; }
 .day-head { display: flex; align-items: baseline; gap: 12px; margin: 2px 0 12px; font: 500 15.5px/1.4 var(--serif); white-space: nowrap; }
@@ -412,7 +427,7 @@ table.board tr.mine-go:hover td { background: color-mix(in srgb, var(--ink) 4%, 
   .play { grid-template-columns: 1fr; gap: 20px; }
   .bar {
     position: static;
-    grid-template-columns: auto 1fr; grid-template-areas: "cal money" "ticks ticks" "who who";
+    grid-template-columns: auto 1fr; grid-template-areas: "cal money" "ticks ticks" "meters meters" "traits traits" "who who";
     gap: 10px 14px; padding: 12px 14px; background: var(--sheet); border-radius: 3px; box-shadow: var(--shadow);
     border-top: 3px dashed var(--rule-2);
   }
@@ -426,6 +441,8 @@ table.board tr.mine-go:hover td { background: color-mix(in srgb, var(--ink) 4%, 
   .ticks { grid-area: ticks; }
   .money { grid-area: money; box-shadow: none; padding: 0; background: none; text-align: right; }
   .money .cash { font-size: 20px; }
+  .meters { grid-area: meters; grid-template-columns: 1fr 1fr; gap: 6px 18px; padding: 0; }
+  .traits { grid-area: traits; padding: 0; }
   .who-line { grid-area: who; padding: 8px 0 0; }
 }
 

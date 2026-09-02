@@ -418,30 +418,41 @@ console.log('13. 主角设定的闸');
   else ok('收下的设定进存档、顶回去的不进');
 }
 
-/* 14. 这一局只有钱：四条杠不许从任何一条路上再冒出来。
- *     静态扫源码——玩家看不看得见那四条杠，取决于存档里有没有那几个字段，
- *     跑一局是看不出来的（老档里还留着它们）。 */
-console.log('14. 除了钱没有别的属性');
+/* 14. 四条杠回来了（2026-09-03 晚 sway 要回来的），但**记分只看家底** */
+console.log('14. 四条杠回来了，可它们不进分数');
 {
-  const fs2 = require('fs'), path2 = require('path');
-  const root = path2.join(__dirname, '..');
-  const 禁 = /\.standing\b|["'「]standing["'」]|\bstanding\s*[:=]|名声\s*\$?\{|体力\s*[:：]\s*\d/;
-  const 中招 = [];
-  for (const f of ['engine.js', 'sim.js', 'server.js', 'public/app.js', 'tools/bot.js', 'tools/player.js']) {
-    const src = fs2.readFileSync(path2.join(root, f), 'utf8');
-    src.split('\n').forEach((line, i) => {
-      const 代码 = line.replace(/\/\*.*?\*\//g, '').replace(/^\s*\*.*$/, '').replace(/\/\/.*$/, '');
-      if (禁.test(代码)) 中招.push(`${f}:${i + 1} ${代码.trim().slice(0, 60)}`);
-    });
-  }
-  if (中招.length) 中招.forEach(x => fail(`四条杠又冒出来了：${x}`));
-  else ok('六个文件的代码里都没有名声/关系/体力/麻烦这几条槽了（注释里说明改动史不算）');
+  const s = E.newRun({ year: 1936, month: 5, nick: 'x' });
+  const 该有 = { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 };
+  if (JSON.stringify(s.standing) !== JSON.stringify(该有)) fail(`开局那四个数不对：${JSON.stringify(s.standing)}`);
+  else ok(`开局 ${Object.entries(该有).map(([k, v]) => k + ' ' + v).join(' · ')}`);
 
-  /* 老档里还带着 standing，不能因此读不回来 */
-  const 老档 = { ...E.newRun({ year: 1962, month: 5, nick: 'x' }), standing: { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 } };
+  /* 模型给的是增量，夹在 0..100 之间 */
+  E.applyMonth(s, { entries: [{ what: '做工', amount: 10 }], standing: { 体力: -95, 麻烦: 150, 名声: 3 } });
+  if (s.standing.体力 !== 0) fail(`体力该压到 0，实际 ${s.standing.体力}`);
+  else if (s.standing.麻烦 !== 100) fail(`麻烦该封到 100，实际 ${s.standing.麻烦}`);
+  else if (s.standing.名声 !== 13) fail(`名声该是 13，实际 ${s.standing.名声}`);
+  else ok('模型给的是变化量，夹在 0 到 100 之间（−95 压到 0，+150 封到 100）');
+
+  /* 记分只看家底：四条杠差到天上去，分数也必须一模一样 */
+  const mk = st => {
+    const r = E.newRun({ year: 1936, month: 5, nick: 'x', seed: 1 });
+    Object.assign(r.standing, st);
+    r.cash *= 3;
+    for (let i = 1; i <= E.MONTHS; i++) { r.months.push({ n: r.n, year: r.year, month: r.month }); if (i < E.MONTHS) E.advanceTo(r, i + 1); else E.closeOut(r); }
+    return E.settle(r).score;
+  };
+  const 高 = mk({ 名声: 100, 关系: 100, 体力: 100, 麻烦: 0 });
+  const 低 = mk({ 名声: 0, 关系: 0, 体力: 1, 麻烦: 100 });
+  if (高 !== 低) fail(`四条杠影响了分数：满杠 ${高}、空杠 ${低}`);
+  else ok('名声关系体力麻烦拉满和拉爆，分数一模一样——记分只看家底');
+
+  /* 09-03 白天那半天开的局没有 standing，读回来不许炸 */
+  const 老档 = E.newRun({ year: 1962, month: 5, nick: 'x' });
+  delete 老档.standing;
   try {
     E.applyMonth(老档, { entries: [{ what: '做工', amount: 40 }], standing: { 体力: -9 } });
-    ok('老档带着 standing 也照样走得动，模型回的 standing 直接扔掉');
+    if (老档.standing.体力 !== 71) fail(`老档补默认值之后该是 71，实际 ${老档.standing.体力}`);
+    else ok('撤掉四条杠那半天开的老档，进来先补默认值再往上加');
   } catch (e) { fail(`老档读不回来了：${e.message}`); }
 }
 
@@ -564,11 +575,13 @@ console.log('19. 越削越狠，四条底线一档都不破');
     const d = { memo: { line: `第 ${n} 个月做成了一笔买卖，进项还算稳当`, people: [], threads: [], done: [] } };
     for (let k = 0; k < 18; k++) d.memo.people.push({ who: `熟人${k}`, note: `第 ${n} 个月跟熟人${k}又打了一次交道` });
     if (n <= 6) d.memo.threads.push({ what: `挂着的第 ${n} 件`, note: '说好下月再来' });
+    d.memo.traits = [{ what: `本事${n % 9}`, note: `第 ${n} 个月又长进了一点` }];
     if (n > 6) { d.memo.threads.push({ what: `办完的第 ${n} 件` }); d.memo.done.push(`办完的第 ${n} 件`); }
     E.applyMemo(s, d, { n, year: 1948, month: (n - 1) % 12 + 1 });
   }
   const 人名 = s.memo.people.map(p => p.who);
   const 挂着 = s.memo.threads.filter(t => !t.done);
+  const 本事 = s.memo.traits.filter(t => !t.lost).map(t => t.what);
   let 破 = [];
   for (let lv = 0; lv <= 6; lv++) {
     /* limit 卡成 1 就一路降到第 6 档，每一档都验一遍 */
@@ -579,6 +592,7 @@ console.log('19. 越削越狠，四条底线一档都不破');
     }
     for (const w of 人名) if (!txt.includes(w)) { 破.push(`${档}：${w} 这个名字没了`); break; }
     for (const t of 挂着) if (!txt.includes(t.what)) { 破.push(`${档}：挂着的「${t.what}」没了`); break; }
+    for (const t of 本事) if (!txt.includes(t)) { 破.push(`${档}：身上的「${t}」没了`); break; }
     if (lv > 0 && !txt.includes('没写在这儿')) 破.push(`${档}：折了却没留记号`);
     if (lv === 0) break;                       // limit 给足就是第 0 档，剩下的都用 limit=1 跑
   }
@@ -586,7 +600,7 @@ console.log('19. 越削越狠，四条底线一档都不破');
   const 最狠 = E.memoText(s, { limit: 1 });
   if (!最狠.includes('早先几个月并成了段')) 破.push('limit 卡到 1 都没降到最后一档，档位没接上');
   if (破.length) 破.forEach(fail);
-  else ok('第 0 档到第 6 档：24 个月一句不少、18 个人名一个不缺、6 条挂着的一条不折、折过的都留了记号');
+  else ok(`第 0 档到第 6 档：24 个月一句不少、18 个人名一个不缺、6 条挂着的一条不折、${本事.length} 样本事一条不折、折过的都留了记号`);
 
   const 全 = E.countHan(E.memoText(s, { limit: 1e9 })), 狠 = E.countHan(最狠);
   ok(`同一份记忆：一档不折 ${全} 个汉字，削到底 ${狠} 个（省了 ${Math.round((1 - 狠 / 全) * 100)}%），两头都没破底线`);
@@ -596,6 +610,63 @@ console.log('19. 越削越狠，四条底线一档都不破');
   if (真实 !== E.memoText(s, { limit: 1e9 }) && E.countHan(E.memoText(s, { limit: 1e9 })) <= E.MEMO_LIMIT)
     fail('没超预算却折了');
   else ok(`预算 ${E.MEMO_LIMIT} 个汉字：够用就一档不折，超了才一档一档往下降`);
+}
+
+/* 20. 他变成什么人，攒在 memo.traits 里——练废了也不删，只盖个戳 */
+console.log('20. 练出来的本事攒着，废了也留着');
+{
+  const s = E.newRun({ year: 1926, month: 10, nick: 'x' });
+  const at = n => ({ n, year: 1926, month: 10 });
+  E.applyMemo(s, { memo: { traits: [{ what: '练拳', note: '跟退役的拳师练了一个月，还打不过人' }] } }, at(1));
+  E.applyMemo(s, { memo: { traits: [{ what: '练拳', note: '扛得住码头上一般混混两下了' }] } }, at(6));
+  E.applyMemo(s, { memo: { traits: [{ what: '城西那摊子', note: '手下二十来号人，收三条街的份子' }] } }, at(14));
+
+  const 拳 = s.memo.traits.find(t => t.what === '练拳');
+  if (!拳 || 拳.notes.length !== 2) fail(`练拳该有 2 条长进记录，实际 ${拳 ? 拳.notes.length : 0}`);
+  else if (拳.first !== 1 || 拳.last !== 6) fail(`练拳的头尾记错了：${拳.first} → ${拳.last}`);
+  else ok('同一样本事下个月又长进，往它名下再记一条，第 1 个月那条没被盖掉');
+
+  /* 废了不删，盖个戳；戳过之后渲染进「曾经有过」那一行 */
+  E.applyMemo(s, { memo: { traitsLost: ['练拳'] } }, at(19));
+  const txt = E.memoText(s);
+  if (s.memo.traits.length !== 2) fail(`废了不该删，现在只剩 ${s.memo.traits.length} 条`);
+  else if (拳.lost !== 19) fail(`该在第 19 个月盖戳，实际 ${拳.lost}`);
+  else if (!/曾经有过、后来没了的：.*练拳/.test(txt)) fail('废掉的本事没进「曾经有过」那一行');
+  else if (/练出来、挣下来的[\s\S]*?· 练拳/.test(txt)) fail('废了还挂在「他现在有什么」里');
+  else if (!txt.includes('城西那摊子')) fail('还在身上的那条不见了');
+  else ok('练废了只盖戳不删：从「他现在有什么」挪进「曾经有过、后来没了的」');
+
+  /* 捡回来 */
+  E.applyMemo(s, { memo: { traits: [{ what: '练拳', note: '养好了手，又练回来一些' }] } }, at(22));
+  if (拳.lost !== null) fail('又练回来了，戳该撤掉');
+  else if (拳.notes.length !== 3) fail('捡回来那一条也该记上');
+  else ok('后来又练回来，戳撤掉，三条记录都在');
+
+  /* 模型给同一样本事改名（真跑出来过：第 1 个月「洋行跑街学徒」、第 2 个月「洋行跑街」） */
+  const s3 = E.newRun({ year: 1926, month: 10, nick: 'x' });
+  E.applyMemo(s3, { memo: { traits: [{ what: '洋行跑街学徒', note: '刚学会跑腿送样' }] } }, at(1));
+  E.applyMemo(s3, { memo: { traits: [{ what: '洋行跑街', note: '能独立找作坊谈合作了' }] } }, at(2));
+  E.applyMemo(s3, { memo: { traits: [{ what: '练拳', note: '另一样东西' }] } }, at(3));
+  if (s3.memo.traits.length !== 2) fail(`改个名该并起来，现在有 ${s3.memo.traits.length} 条：${s3.memo.traits.map(t => t.what).join('、')}`);
+  else if (s3.memo.traits[0].what !== '洋行跑街') fail(`该留最近那个叫法，实际留了「${s3.memo.traits[0].what}」`);
+  else if (s3.memo.traits[0].notes.length !== 2) fail('并起来之后两条记录该都在');
+  else if (s3.memo.traits[0].first !== 1) fail('并的时候把头一次的月份丢了');
+  else ok('「洋行跑街学徒」改叫「洋行跑街」并成一条，留最近那个叫法，两条记录都在');
+
+  /* 一个月最多收两条：模型一放开就月月长出一样新本事 */
+  const s4 = E.newRun({ year: 1926, month: 10, nick: 'x' });
+  E.applyMemo(s4, { memo: { traits: [{ what: '甲' }, { what: '乙' }, { what: '丙' }, { what: '丁' }] } }, at(1));
+  if (s4.memo.traits.length !== 2) fail(`一个月该最多收两条，实际收了 ${s4.memo.traits.length}`);
+  else ok('一个月最多添两样本事，多给的不收');
+
+  /* 老档没有这一摊，补得上 */
+  const 老档 = E.newRun({ year: 1962, month: 5, nick: 'x' });
+  delete 老档.memo.traits;
+  try {
+    E.applyMemo(老档, { memo: { traits: [{ what: '会修钟表', note: '跟街口的师傅学的' }] } }, at(3));
+    if (老档.memo.traits.length !== 1) fail('老档补上这一摊之后没记进去');
+    else ok('09-03 晚之前的老档没有这一摊，进来先补一块空的');
+  } catch (e) { fail(`老档读不回来了：${e.message}`); }
 }
 
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');

@@ -124,6 +124,7 @@ function view(s) {
     cash: s.cash, cashText: E.money(s.cash, cur),
     assets: s.assets.map(a => ({ ...a, worthText: E.money(a.worth, cur) })),
     debts: s.debts.map(d => ({ ...d, amountText: E.money(d.amount, cur) })),
+    standing: s.standing || { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 },
     persona: s.persona || '',
     /* 这一局记着的事，整份发给界面——「不要丢失任何记忆」是要看得见的 */
     memo: s.memo || E.newMemo(),

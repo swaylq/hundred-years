@@ -201,6 +201,13 @@ function newRun({ year, month, nick, seed, persona }) {
     cash,
     assets: [],
     debts: [],
+    /* 四条杠 2026-09-03 撤过一次，当天晚上 sway 又要回来了：
+     * 钱仍旧是**唯一记分的那个数**（settle 只看家底），这四个是状态，不进分数。
+     * 它们管的是「这个月他能干什么」——体力扛不扛得动、名声进不进得了门、
+     * 关系有没有人肯担保、麻烦大到多少会真栽。
+     * 比数值更要紧的是 memo.traits 那一摊：练出来的身手、拉起来的班底、
+     * 落下的病根——那些是没有上限、也不该有上限的东西。 */
+    standing: { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 },
     /* 这一局的记忆。每过一个月，模型把刚发生的事压成几行短的，
      * 由 applyMemo 并进来；**引擎只添不删**，压缩发生在往提示词里渲染那一步。
      * 少了它，模型只看得见最近两个月的正文，第三个月起认识的人和谈了一半的买卖就没了。 */
@@ -434,7 +441,15 @@ function applyMonth(s, delta) {
     if (i >= 0) s.debts.splice(i, 1);
   }
 
-  /* 模型要是还按老格式回了 standing，直接扔掉：这一局只有钱。 */
+  /* 四条杠：模型给的是增量（−20..+20），夹在 0..100 之间。
+   * 老档（2026-09-03 白天那半天开的局）没有这一块，进来先补上默认值。 */
+  if (!s.standing) s.standing = { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 };
+  const st = delta.standing || {};
+  for (const k of ['名声', '关系', '体力', '麻烦']) {
+    if (s.standing[k] == null) s.standing[k] = k === '体力' ? 80 : (k === '麻烦' ? 0 : 10);
+    if (st[k] === undefined) continue;
+    s.standing[k] = Math.max(0, Math.min(100, s.standing[k] + (Number(st[k]) || 0)));
+  }
 
   /* 一个月赚太多就削回上限。按比例压这个月新增的那几项（现金进账、新添的东西），
    * 不是从现金里一把扣掉——那样会把兜里的钱压成负数，账面看着莫名其妙。 */
@@ -653,9 +668,9 @@ function checkList(text) {
  * 为什么不让模型每个月重写一整段记忆：二十四个月连着重写二十四次，
  * 每次丢一点，走到后半程就只剩最近几个月了——而这正是要修的毛病。
  * 让它只写增量，旧的由引擎原样留着，丢失就不可能发生。 */
-const MEMO_CAP = { people: 60, threads: 40 };
+const MEMO_CAP = { people: 60, threads: 40, traits: 40 };
 
-function newMemo() { return { trail: [], people: [], threads: [], folded: [] }; }
+function newMemo() { return { trail: [], people: [], threads: [], traits: [], folded: [] }; }
 
 const oneLine = (x, n) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, n);
 
@@ -675,9 +690,10 @@ function whoKey(who) {
 function applyMemo(s, delta, at) {
   if (!s.memo || !Array.isArray(s.memo.trail)) s.memo = newMemo();      // 老档没有这一块，补上
   const m = s.memo;
+  if (!Array.isArray(m.traits)) m.traits = [];                          // 09-03 晚之前的档没有这一摊
   const d = (delta && delta.memo) || {};
   const n = at && at.n != null ? at.n : s.n;
-  const added = { trail: 0, people: 0, notes: 0, threads: 0, done: 0, folded: 0 };
+  const added = { trail: 0, people: 0, notes: 0, threads: 0, done: 0, traits: 0, traitNotes: 0, lost: 0, folded: 0 };
 
   /* 一、这个月压成的那一句。一个月一条，写下就不再改——这是「一件都没丢」的骨干。 */
   const line = oneLine(d.line, 60);
@@ -721,6 +737,39 @@ function applyMemo(s, delta, at) {
     if (hit) { hit.done = n; added.done++; }
   }
 
+  /* 三点五、他成了什么人。**这一摊是自由度的落点**：练出来的身手、学会的手艺、
+   *    拉起来的班底、挣下的名号、落下的病根——什么都能往里放，没有固定的种类，
+   *    也没有上限。它跟四条杠的分工是：杠子是粗的状态，这里是**具体成了什么**。
+   *    「苦练拳击」的结果不是体力 +5，是往这儿添一条「打得过码头上一般的混混」。
+   *
+   *    废了、丢了、断了，也**不删**，盖个 lost 的戳——「他曾经有过、后来没了」
+   *    本身就是这个人的一部分，删掉的话模型下个月会当他从来没练过。 */
+  /* 一个月最多收两条：模型一放开就月月长出一样新本事，二十四个月能攒出九条
+   * 名字各异、其实是同一样东西的记录。提示词里也写了同一条，两头一起拦。 */
+  for (const t of (Array.isArray(d.traits) ? d.traits : []).slice(0, 2)) {
+    const what = oneLine(t && t.what, 30);
+    const note = oneLine(t && t.note, 60);
+    if (!what) continue;
+    /* 模型给同一样本事改名是常事（第 1 个月「洋行跑街学徒」、第 2 个月「洋行跑街」）。
+     * 一个名字套着另一个名字，就当同一样东西并起来，**留最近那个叫法**——
+     * 名目本来就跟着人一起变，第 24 个月他早不是学徒了。 */
+    let rec = m.traits.find(x => x.what === what)
+      || m.traits.find(x => !x.lost && (x.what.includes(what) || what.includes(x.what))
+        && Math.min(x.what.length, what.length) >= 2);
+    if (!rec) { rec = { what, notes: [], first: n, last: n, lost: null }; m.traits.push(rec); added.traits++; }
+    rec.what = what;
+    rec.last = n;
+    rec.lost = null;                                            // 又捡回来了
+    if (note && !rec.notes.some(x => x.note === note)) { rec.notes.push({ n, note }); added.traitNotes++; }
+  }
+  for (const w of (Array.isArray(d.traitsLost) ? d.traitsLost : []).slice(0, 5)) {
+    const what = oneLine(w, 30);
+    if (!what) continue;
+    const hit = m.traits.find(x => !x.lost && x.what === what)
+      || m.traits.find(x => !x.lost && (x.what.includes(what) || what.includes(x.what)));
+    if (hit) { hit.lost = n; added.lost++; }
+  }
+
   /* 四、装不下就折：**只折细节，名字留着**。折掉的是最久没再提起的那几个，
    *    正在挂着的头绪一条都不折。 */
   if (m.people.length > MEMO_CAP.people) {
@@ -729,6 +778,15 @@ function applyMemo(s, delta, at) {
     for (const p of old) {
       m.people.splice(m.people.indexOf(p), 1);
       m.folded.push(`${p.who}（第 ${p.first} 个月认识的）`);
+      added.folded++;
+    }
+  }
+  if (m.traits.length > MEMO_CAP.traits) {
+    /* 只折已经废了的那些，还在身上的一条都不折 */
+    const gone = m.traits.filter(x => x.lost).sort((a, b) => a.lost - b.lost);
+    for (const t of gone.slice(0, m.traits.length - MEMO_CAP.traits)) {
+      m.traits.splice(m.traits.indexOf(t), 1);
+      m.folded.push(`${t.what}（第 ${t.first}–${t.lost} 个月有过）`);
       added.folded++;
     }
   }
@@ -801,6 +859,27 @@ function renderAt(m, lv) {
     }
   }
 
+  /* 一点五、他现在是个什么人。**放在最前面**——模型得先知道他成了什么样，
+   *    再去写这个月他能干什么。折到最狠也只折注解，本事的名目一条不少。 */
+  const traits = m.traits || [];
+  if (traits.length) {
+    const 在身上 = traits.filter(t => !t.lost), 废了 = traits.filter(t => t.lost);
+    const line = t => {
+      const ns = t.notes || [];
+      if (!ns.length) return `  · ${t.what}`;
+      const keep = lv >= 4 ? 1 : lv >= 3 ? 2 : Infinity;
+      const body = keep === Infinity ? ns.map(noteAt).join('；') : foldNotes(t, keep);
+      return `  · ${t.what}：${body}`;
+    };
+    if (在身上.length) {
+      part.push('他这两年练出来、挣下来的（写这个月之前先看一眼他现在是什么人）：\n' +
+        在身上.map(line).join('\n'));
+    }
+    if (废了.length) {
+      part.push('曾经有过、后来没了的：' + 废了.map(t => `${t.what}（第 ${t.first}–${t.lost} 个月）`).join('、'));
+    }
+  }
+
   /* 二、认识的人。名字任何一档都留着，折的只是他名下的记录。 */
   if (m.people.length) {
     const ps = [...m.people].sort((a, b) => a.first - b.first);
@@ -836,7 +915,7 @@ function renderAt(m, lv) {
 /** 渲染。`opts.limit` 是汉字预算，不给就用 MEMO_LIMIT。 */
 function memoText(s, opts = {}) {
   const m = (s && s.memo) || newMemo();
-  if (!m.trail.length && !m.people.length && !m.threads.length) return '';
+  if (!m.trail.length && !m.people.length && !m.threads.length && !(m.traits || []).length) return '';
   const limit = opts.limit || MEMO_LIMIT;
   let txt = '';
   for (let lv = 0; lv <= 6; lv++) {

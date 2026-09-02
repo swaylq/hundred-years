@@ -103,8 +103,8 @@ async function noHScroll(page, where) {
   await page.locator('#start').click();
   await page.waitForSelector('#s-play.on', { timeout: 15000 });
   await page.waitForSelector('.bar .cash', { timeout: 10000 });
-  /* 这一局只有钱：左栏不许再有那四条杠 */
-  check(await page.locator('.bar .meter').count() === 0, '左栏没有体力/名声/关系/麻烦那四条杠了');
+  /* 四条杠 09-03 晚又要回来了：三条常驻，麻烦是 0 的时候不显示 */
+  check(await page.locator('.bar .meter').count() === 3, `左栏有那几条杠（数到 ${await page.locator('.bar .meter').count()} 条；麻烦是 0 时不显示）`);
   check((await page.locator('.bar .who-line').textContent()).includes('认死理'), '左栏最下面写着他是个什么人');
   await snap(page, 'c-开局');
 
@@ -154,6 +154,17 @@ async function noHScroll(page, where) {
       check(memo.正文.includes('走过的路'), '里头有「走过的路」这一段');
       await snap(page, 'e3-记着的事');
     }
+  }
+
+  /* 他这两年练出来的：走两个月未必攒得出来，攒出来了就得显示 */
+  {
+    const tr = await page.evaluate(() => {
+      const box = document.querySelector('.bar .traits');
+      const memo = (window.run && run.state.memo && run.state.memo.traits) || [];
+      return { 显示了: !!box, 存了: memo.filter(t => !t.lost).map(t => t.what) };
+    });
+    if (tr.存了.length) check(tr.显示了, `攒出了 ${tr.存了.length} 样本事，左栏显示了：${tr.存了.join('、')}`);
+    else ok(`走了两个月还没攒出本事来，左栏也就没这一栏（正常）`);
   }
 
   console.log('\n五之二、翻一下这一年');
@@ -252,7 +263,7 @@ async function noHScroll(page, where) {
   await m.waitForSelector('.bar .cash', { timeout: 10000 });
   await snap(m, 'i-手机-开局');
   await noHScroll(m, '手机开局');
-  check(await m.locator('.bar .meter').count() === 0, '手机上也没有那四条杠了');
+  check(await m.locator('.bar .meter').count() === 3, '手机上那几条杠也在');
   {
     /* 左栏那一行小字不许跟上面的家底叠在一起 */
     const box = await m.evaluate(() => {

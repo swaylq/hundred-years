@@ -269,8 +269,11 @@ function renderPlay(last, opts = {}) {
   const s = run.state;
   const now = Math.min(s.n, s.months);
   const done = !!s.finished || s.n > s.months;
+  const st = s.standing || {};
+  const traits = ((s.memo || {}).traits || []).filter(t => !t.lost);
 
   /* 左边那一栏：日历页、二十四道刻度、家底、四条杠 */
+  const meter = (k, cls) => `<div class="meter ${cls}"><span>${k}</span><i><b style="width:${Number(st[k]) || 0}%"></b></i><em>${Number(st[k]) || 0}</em></div>`;
   const ticks = Array.from({ length: s.months }, (_, i) =>
     `<i class="${i < s.n - 1 || done ? 'on' : (i === s.n - 1 ? 'now' : '')}"></i>`).join('');
   const subs = [`现金 <b>${esc(s.cashText)}</b>`];
@@ -283,7 +286,11 @@ function renderPlay(last, opts = {}) {
        <div class="cal-foot"><span class="of">第 ${now} / ${s.months} 个月</span> · ${esc(s.city)}</div>
      </div>
      <div class="ticks">${ticks}</div>
-     <div class="money"><span class="lab">家底</span><b class="cash">${esc(s.netWorthText)}</b><div class="sub">${subs.join('<br>')}</div></div>` +
+     <div class="money"><span class="lab">家底</span><b class="cash">${esc(s.netWorthText)}</b><div class="sub">${subs.join('<br>')}</div></div>
+     <div class="meters">${meter('体力', 'm-body')}${meter('名声', 'm-name')}${meter('关系', 'm-ties')}${st.麻烦 > 0 ? meter('麻烦', 'm-trouble') : ''}</div>` +
+    /* 他这两年练出来、挣下来的——这一栏是自由度看得见的地方，比四条杠更该占位置 */
+    (traits.length ? `<div class="traits"><span class="lab">这两年练出来的</span>${
+      traits.map(t => `<i title="${esc((t.notes || []).map(x => x.note).join('；'))}">${esc(t.what)}</i>`).join('')}</div>` : '') +
     (s.persona ? `<div class="who-line">${esc(s.persona)}</div>` : '');
 
   /* 正文 */
@@ -356,14 +363,15 @@ function renderPlay(last, opts = {}) {
    摊开给玩家看，是因为「一件都没丢」这件事得看得见，不能只是嘴上说。 */
 function renderMemo(m) {
   const box = $('#memo'), body = $('#memo-body');
-  const has = m && ((m.trail || []).length || (m.people || []).length || (m.threads || []).length);
+  const has = m && ((m.trail || []).length || (m.people || []).length || (m.threads || []).length || (m.traits || []).length);
   box.hidden = !has;
   if (!has) return;
   body.innerHTML = '';
   const open = (m.threads || []).filter(t => !t.done);
   const closed = (m.threads || []).filter(t => t.done);
+  const 在身上 = (m.traits || []).filter(t => !t.lost).length;
   $('#memo-sum').textContent = `这一局记着的事 · ${(m.trail || []).length} 个月 · ${(m.people || []).length} 个人`
-    + (open.length ? ` · ${open.length} 件没了结` : '');
+    + (在身上 ? ` · ${在身上} 样本事` : '') + (open.length ? ` · ${open.length} 件没了结` : '');
 
   const block = (title, rows) => {
     if (!rows.length) return;
@@ -375,6 +383,20 @@ function renderMemo(m) {
       body.appendChild(r);
     }
   };
+  const tr = m.traits || [];
+  if (tr.length) {
+    body.appendChild(el('h4', 'memo-h', '这两年练出来、挣下来的'));
+    for (const t of tr) {
+      body.appendChild(el('div', 'memo-who' + (t.lost ? ' lost' : ''),
+        t.what + (t.lost ? `（第 ${t.first}–${t.lost} 个月有过，后来没了）` : '')));
+      for (const x of (t.notes || [])) {
+        const r = el('div', 'row');
+        r.appendChild(el('span', 'd', `第 ${x.n} 个月`));
+        r.appendChild(el('span', 't', x.note));
+        body.appendChild(r);
+      }
+    }
+  }
   block('还没了结的', open.map(t => [`第 ${t.opened} 个月起`, t.what + (t.note ? ` —— ${t.note}` : '')]));
   block('走过的路', (m.trail || []).map(t => [`${t.year} 年 ${t.month} 月`, t.say]));
   /* 一个人一小段：名字一行，跟他之间发生过的事一个月一行。
