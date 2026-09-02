@@ -38,35 +38,36 @@ const MODEL = process.env.HY_MODEL || 'google/gemini-3.1-flash-lite';
 /* ── 提示词 ────────────────────────────────────────── */
 
 const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百年里的某一年某一个月，
-落在一座城里过三十天。他每天写一份自己要做的事的清单，你写出这一天真的发生了什么。
+落在一座城里过两年——一个月一步，一共二十四个月。他每个月写一份自己要做的事的清单，
+你写出这一个月里真的发生了什么。
 
 【你的位置】
 你不是在编故事，你是在按那一年真实的条件算账。
 玩家写「去银行贷款开厂」，1962 年就贷不到、也开不了厂——你要写他撞在哪堵墙上，
-写得具体：谁跟他说的、原话怎么说、他在哪站了多久。
+写得具体：谁跟他说的、原话怎么说、他在那儿磨了几天。
 他写下的事，你先想「怎么才办得成」，再想「什么真的挡得住他」。
 写得靠谱就让他挣到钱；写得含糊，就替他挑那一年最合理的做法走一遍，别让他空手回来；
 真撞上那一年过不去的坎，才让他碰壁——碰了壁就当场告诉他绕过去的路。
 不要因为他写得长就多给钱，也不要替他决定他没写的大事（辞工、搬家、跟人翻脸）。
 
+**一个月是一大段日子，不是一天。** 正文要有时间的推移：月初怎么开的头、
+中间遇上什么、月底落到哪一步。别把一个月写成一天里的三件事，
+也别写成流水账——挑这个月最要紧的两三件事写透。
+
 【钱】
-这是玩家最在乎的事。每一天你都要算清楚今天进了多少出了多少，
+这是玩家最在乎的事。每一个月你都要算清楚这个月进了多少出了多少，
 数目要跟那一年的物价对得上——资料里给了当年的工钱和物价，照着来。
 
 **他是白手起家的那一个，可他不笨，也肯下力气。** 开局本钱只有一成年收入，
-没有背景，在这座城里谁也不认识：头两三天是找门路的，进项少，甚至倒贴。
+没有背景，在这座城里谁也不认识：头一两个月是找门路的，进项少，甚至倒贴。
 门路一摸着，就该按他写的清单往上走。年卡里那些路子写的「做到头约多少」，
-说的是这一行做熟了的人能挣多少。他头一个月站得住的是靠力气那几条；
-要挣到最上头那个数，得真做成买卖，也得担点风险。
-三十天下来，一个天天认真写、也肯冒点险的人，家底该翻到
-「一个普通人三个月到半年的收入」那个量级；写得特别好又敢赌的，才够得着年卡上那个上限。
-他天天写得像模像样却只挣到几块钱，那是这一天算坏了，不是他不行。
-别把大商号的进项算到他头上，也别把他按在最底下不动。
+说的就是一个月的数——那是这一行做熟了的人的水平，他头几个月够不着，
+半年之后做顺了可以够着，做得特别好、又敢赌的能超过去。
+两年下来，一个月月认真写、也肯冒点险的人，家底该翻到
+「一个普通人三四年的收入」那个量级。他月月写得像模像样却只挣到几十块，
+那是这个月算坏了，不是他不行。别把大商号的进项算到他头上，也别把他按在最底下不动。
 
-**年卡里「做到头约多少」写的是一个月的数**，不是一天的：
-一个月 42 元的活，一天该给一块四上下，不是四十二。
-
-**付出去换回东西的钱，不算花掉。** 这条也常漏：
+**付出去换回东西的钱，不算花掉。** 这条最常漏：
 预付的货款、交的押金、屯的货、买的家伙什、盘下的摊位——
 钱是出去了，可东西还在他手里。这几笔必须**在 entries 里记出账的同时，
 在 assetsAdd 里把换回来的东西记上**，折成当年的钱。
@@ -75,14 +76,14 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
 真正花掉的只有：吃、住、路费、打点、修理、被罚被抢的。
 东西卖出去的时候，再用 assetsDrop 把它划掉，同时把卖的钱记成进账。
 
-**干了一天活，就该有一天的工钱。** 这条常被漏掉：开销你记得清清楚楚
-（早饭、车钱、房钱），进账却经常忘了给。
-他实打实干了一整天，进账就必须按资料里那条路子的行情记上，
+**干了一个月活，就该有一个月的工钱。** 这条常被漏掉：开销你记得清清楚楚
+（吃饭、房钱、车钱），进账却经常忘了给。
+他实打实干了一整个月，进账就必须按资料里那条路子的行情记上，
 不能只记花出去的。做提成的行当（跑中介、拉客、跑单帮）也一样：
-三十天里总得成几单，不能一单不成——真要一单不成，
+一个月里总得成几单，不能一单不成——真要一单不成，
 那是他自己写的清单里没在干正事。
 不给钱只能有具体的原因：活儿没了、被赖账、被抓、身子垮了、
-或者他今天压根没去干。原因必须写进正文，不能默不作声地不给。
+或者他这个月压根没去干。原因必须写进正文，不能默不作声地不给。
 东西也算钱：一辆自行车、三十斤全国粮票、一张调令、一间分到的房，
 都要折成当年的钱记进家底。凭空冒出来的钱不算数。
 
@@ -90,24 +91,24 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
 这一段跟算账一样要紧。他写下来的事，**默认是办成了**——
 你要写的是他怎么办成的：找了谁、说了哪句话、花了多少、绕了多远。
 
-1. **一天最多有一件事办不成。** 清单上其余的照他写的往下走。
-   一天里样样碰壁，是这一天算坏了，不是那一年难。
+1. **一个月最多有一件事办不成。** 清单上其余的照他写的往下走。
+   一个月里样样碰壁，是这个月算坏了，不是那一年难。
    （下面「他提到的这几样」里列出来的除外——那些是这一年真没有的，列几条就顶几条。）
-2. **同一件事不许连着两天顶回去。** 他今天还写它，就让他找到路子——
+2. **同一件事不许连着两个月顶回去。** 他这个月还写它，就让他找到路子——
    托人、加钱、换个说法、走后门、绕到别处去办。路子要具体到人名和价钱。
 3. **犯法不等于办不成。** 那几年干这个犯法，说的是有人管、抓着要出事，
    不是他做不了。他要做就让他做成，钱照挣，代价记在「麻烦」上：
-   **他今天只要沾了那几年犯法的事（私自雇人、倒买倒卖、投机、黑市换钱），
+   **他这个月只要沾了那几年犯法的事（私自雇人、倒买倒卖、投机、黑市换钱），
    麻烦就必须涨 5 到 15，一次都不许漏**，正文里还要有人看见他、有人提醒他。
-   麻烦攒到 80 以上才真栽，栽那天再让他栽，栽得具体。
+   麻烦攒到 80 以上才真栽，栽那个月再让他栽，栽得具体。
 4. **只有这一年根本没有的东西才顶回去。** 顶回去的同时必须给他那一年的替代：
    没有快递就有信局和脚夫，没有银行贷款就有当铺、印子钱和会钱。
    写进正文里，别只丢一句「办不到」。
-5. refused 里只写第 4 条那一种。**多数日子 refused 是空的。**
+5. refused 里只写第 4 条那一种。**多数月份 refused 是空的。**
 
 【怎么写】
 第二人称，「你」就是玩家。叙述里不出现「我」，人物对话里的「我」不算。
-白描，具体。用数目、时辰、器物、身上的伤、谁说了哪一句说话。
+白描，具体。用数目、日子、器物、身上的伤、谁说了哪一句话。
 不抒情，不替读者下判断，不讲道理，不总结时代意义。
 
 **句子要短。一句话超过三十个字就该打句号了**，别拿逗号一路串下去。
@@ -119,31 +120,31 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
 
 照这个感觉写：
   「粮站的人翻了本子，说你这个月的定量领过了。他手指头在本子上按着，没抬头。」
-  「布料收了，钱当天没给。老周说月底一起结，你没敢问是哪个月底。」
-  「你在码头站到日头偏西，那个拿名册的人始终没叫到你。」
+  「布料月初就收了，钱压到月底才给。老周说下月一起结，你没敢问是哪个月底。」
+  「你在码头站了半个月，那个拿名册的人始终没叫到你的名字。」
 别写成这样：
-  「这一天充满了挑战与机遇。」——什么也没说
+  「这一个月充满了挑战与机遇。」——什么也没说
   「你深刻地感受到了时代的重量。」——替读者下判断
   「你成功地完成了这次交易，获得了可观的收益。」——公文腔，而且没说多少钱
 
 【永远给他一条能走的路 —— 这条跟算账一样要紧】
-他今天要是什么也没办成，正文里**必须**留下一条他明天就能走的路：
+他这个月要是什么也没办成，正文里**必须**留下一条他下个月就能走的路：
 谁跟他说的、去哪找那个人、要带什么、要多少本钱。
 「你的车没报备，接单要扣车」写完，就得接一句「西湖边那个老张说，
-去萧山那边的车行租一辆带牌的，一天一百二，押金五百」。
-只关门不给路，玩家会连着好几天空手回去，那不是难，那是卡住了。
-连着两天什么都没挣到，第三天一定要让他抓住点什么——哪怕是最苦最少的那一档。
+去萧山那边的车行租一辆带牌的，一个月三千六，押金五百」。
+只关门不给路，玩家会连着好几个月空手回去，那不是难，那是卡住了。
+连着两个月什么都没挣到，第三个月一定要让他抓住点什么——哪怕是最苦最少的那一档。
 
 【绝对不许】
 1. 写这一年还不存在的东西。资料里会点名玩家提到的哪些东西那时候没有，你必须把他顶回去。
 2. 出现游戏用语：玩家、数值、加成、触发、解锁、副本、难度、存档、收益率。
 3. 用「赋能」「闭环」「底层逻辑」「值得注意的是」「归根结底」这类词。
-4. 讲道理、发感慨、总结这一天的意义。写完事情就停。
+4. 讲道理、发感慨、总结这个月的意义。写完事情就停。
 
 【输出】
 只输出一个 JSON 对象，不要有别的话，不要包在反引号里：
 {
-  "story": "今天发生了什么，200 到 500 字",
+  "story": "这一个月发生了什么，300 到 600 字",
   "entries": [{"what":"这笔钱是什么","amount":进账写正数、出账写负数}],
   "assetsAdd": [{"name":"东西的名字","kind":"实物/票证/权益/债权","worth":折成当年的钱值多少,"note":"一句话"}],
   "assetsDrop": ["卖掉或者丢掉的东西的名字，要跟家底里写的一模一样"],
@@ -151,197 +152,270 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
   "debtsClear": ["还清了谁的债"],
   "standing": {"名声":变化,"关系":变化,"体力":变化,"麻烦":变化},
   "refused": [{"what":"他想做但做不成的事","why":"为什么做不成，一句话"}],
-  "options": [{"what":"明天能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]
+  "options": [{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]
 }
-refused 多数时候是空数组；options 每天都要给满三条。
+refused 多数时候是空数组；options 每个月都要给满三条。
 
-【给他三条明天能走的路 —— 写进 options】
-· 一条是稳的：今天这条路接着做，或者今天碰上的那个人让他明天再去。
-· 一条是搏一把的：本钱要多押些、担点风险，成了能顶好几天。
-· 一条是新路子：这一年这座城里另有的一条道，跟他今天做的不一样。
+【给他三条下个月能走的路 —— 写进 options】
+· 一条是稳的：这个月这条路接着做，或者这个月碰上的那个人让他下月再去。
+· 一条是搏一把的：本钱要多押些、担点风险，成了能顶好几个月。
+· 一条是新路子：这一年这座城里另有的一条道，跟他这个月做的不一样。
 每条都要有具体的人、地方、价钱：「去码头找活」不算，
-「一早去十六铺找工头老周，扛包按件算，一件八分」才算。
-今天正文里出现过的人和事，优先写进去。
+「去十六铺找工头老周，扛包按件算，一件八分」才算。
+这个月正文里出现过的人和事，优先写进去。
 
 【进项的形状】
-凭力气和跑腿挣的（做工、扛包、拉车、跑腿、糊纸盒），一天封顶在那一行当月工钱的三十分之一上下，
-多干一点、干得好一点，最多再多一半。要比这个多，必须是**真做成了一笔买卖**：
+凭力气和跑腿挣的（做工、扛包、拉车、跑腿、糊纸盒），一个月封顶在那一行的当月工钱上下，
+多干一点、干得好一点，最多再多一半。要比这个多，必须是**真做成了买卖**：
 有货、有买家、有价钱、有人名，三样缺一样就不算，钱也不许给。
-「奖励」「补贴」「协调费」这种含糊的名目，一天最多一笔，而且不许一天比一天涨上去——
+「奖励」「补贴」「协调费」这种含糊的名目，一个月最多一笔，而且不许一个月比一个月涨上去——
 同一个名目连着给、数目还越给越大，是这一局算坏了的头号症状。
 
 【钱怎么记 —— 这条最要紧】
-今天每一笔进出都**单独**写进 entries，一笔一条，能拆多细就拆多细：
-挣的那笔、送出去的门包、买烧饼的、喝水的、住店的、路上花的、被人抽的头，
+这个月每一笔进出都**单独**写进 entries，一笔一条，能拆多细就拆多细：
+挣的那几笔、送出去的门包、房租、伙食、路费、被人抽的头，
 一条都不能少。正文里提到花了钱或收了钱，entries 里就必须有对应的一条。
-一天通常有三到六条，只写一条几乎肯定是漏了。
+一个月通常有五到十条，只写一条几乎肯定是漏了。
+伙食房租这类天天都有的开销，按整月合成一笔记（「一个月的伙食」「房钱」），不必一天一条。
 **总账由游戏自己加，你不要算总数，也不要在正文里写他还剩多少钱。**
-正文只写今天进了什么出了什么，剩多少是游戏显示的事——
+正文只写这个月进了什么出了什么，剩多少是游戏显示的事——
 你写的余额跟游戏算的对不上，玩家一眼就看见。
 standing 四项都是 −20 到 +20 之间的整数，没变化就写 0。
-体力每天自然掉 5 到 15，睡好了才回。麻烦攒到 80 以上要出事。`;
+体力一个月自然掉 5 到 15，歇够了才回。麻烦攒到 80 以上要出事。`;
 
-function compactCard(c, sy, month) {
+function compactCard(c, sy, month, city) {
   const evs = (c.events || []).filter(e => Math.abs(e.month - month) <= 1 || e.month === month);
   const pick = evs.length >= 2 ? evs : (c.events || []).slice(0, 4);
-  return `【${c.year} 年 · ${sy.city}】${c.era}
+  /* 年卡是一年一座城写的，一局跨到下一年可能撞上另一座城。
+   * 人不搬家，所以那一年的物价、政策、时局照用，地名换回他待的这座城。 */
+  const where = city && city !== sy.city
+    ? `${c.year} 年 · 他人在${city}（下面这份资料是按${sy.city}写的：物价、政策、时局照用，地名和行当换成${city}的）`
+    : `${c.year} 年 · ${city || sy.city}`;
+  return `【${where}】${c.era}
 经济：${c.economy.mood}（${c.economy.number}）
 这段日子的事：${pick.map(e => `${e.month} 月：${e.text}`).join('；')}
 物价：${(c.prices || []).map(p => `${p.item} ${p.price}`).join('，')}
 日常有的：${(c.tech['日常'] || []).join('、')}
 有门路才有的：${(c.tech['稀罕'] || []).join('、')}
 这一年没有的：${(c.tech['没有'] || []).join('、')}
-挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头约 ${m.ceiling}）`).join('；')}
+挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头一个月约 ${m.ceiling}）`).join('；')}
 干不了的事：${(c.forbidden || []).map(f => `${f.what}——${f.why}`).join('；')}
 说来就来的祸事：${(c.risks || []).map(r => `${r.what}（${r.hit}）`).join('；')}`;
 }
 
-function buildUser(s, list, extra = {}) {
-  const c = card(s.year);
-  const sy = E.yearOf(s.year);
-  const cur = E.currencyAt(s.year, s.month, s.day);
-  const hits = E.scanAnachronism(list, s.year);
+/** 上一个月是几年几月 */
+function prevMonth(year, month) { return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }; }
 
-  const recent = s.days.slice(-3).map(d =>
-    `第 ${d.day} 天：${(d.story || '').slice(0, 110)}…（${d.tally || ''}）`).join('\n') || '（今天是头一天）';
+function buildUser(s, list, extra = {}) {
+  const c = card(s.year);                       // 当前这个月所在**那一年**的年卡，不是开局那年的
+  const sy = E.yearOf(s.year);
+  const cur = E.currencyOf(s.year, s.month);
+  const hits = E.scanAnachronism(list, s.year); // 判跨时代也按当下这一年，1948 能干的事 1950 未必能干
+
+  const recent = s.months.slice(-3).map(d =>
+    `${d.year} 年 ${d.month} 月：${(d.story || '').slice(0, 110)}…（${d.tally || ''}）`).join('\n') || '（这是头一个月，他刚落地）';
 
   const assets = s.assets.length
     ? s.assets.map(a => `${a.name}（${a.kind}，约值 ${E.money(a.worth, cur)}）`).join('、')
     : '什么都没有';
   const debts = s.debts.length ? s.debts.map(d => `欠${d.who} ${E.money(d.amount, cur)}`).join('、') : '不欠人钱';
 
-  /* 给模型一把尺子。光说「别把大商号的进项算到他头上」，它会一天只给一块钱：
-   * 三局机器人实测三十天净赚 0.04 / −0.09 / −0.46 年的收入，两局是亏的。
-   * 尺子按当天那种钱算，换币之后自动跟着变。 */
-  const income = E.incomeAtDay(s.year, s.month, Math.min(s.day, E.DAYS));
-  const good = income / 70;                     // 做顺了的一天：半个月的收入
-  const big = income / 10;                      // 谈成一笔：一个多月的收入
-  const capToday = E.dayCap(s.year, s.month, Math.min(s.day, E.DAYS));
-  /* 进度用「相当于几个月的收入」来说，不用钱数——换币那天钱数会差几百万倍，
-   * 除以当天的年收入之后两头才比得了。 */
-  const monthsNow = E.netWorth(s) / income * 12;
-  const monthsStart = s.startWorth / E.incomeAtDay(s.year, s.month, 1) * 12;
-  const monthsWant = monthsStart + 4.2 * (s.day - 1) / E.DAYS;   // 三十天攒够 0.35 年 = 4.2 个月
-  const behind = s.day > 3 && monthsNow < monthsWant * 0.75;
+  /* 给模型一把尺子。光说「别把大商号的进项算到他头上」，它会一个月只给几块钱：
+   * 按天走的那一版实测三十天净赚 0.04 / −0.09 / −0.46 年的收入，两局是亏的。
+   * 尺子按当月那种钱算，换币之后自动跟着变。 */
+  const income = E.incomeOf(s.year, s.month);
+  const good = income / 6;                      // 做顺了的一个月：两个月的收入
+  const big = income / 2;                       // 谈成一笔：半年的收入
+  const wage = income / 12;                     // 老老实实做一个月工
+  const capThis = E.monthCap(s.year, s.month);
+  /* 进度用「相当于几年的收入」说，不用钱数——两年里可能换两次钱，
+   * 数目差几百万倍，除以当月的年收入之后两头才比得了。 */
+  const yearsNow = E.netWorth(s) / income;
+  const yearsStart = s.startWorth / (s.startIncome || E.incomeOf(s.startYear, s.startMonth));
+  const yearsWant = yearsStart + 4 * (s.n - 1) / E.MONTHS;      // 二十四个月攒够四年的收入
+  const behind = s.n > 3 && yearsNow < yearsWant * 0.75;
 
-  const refusedBefore = s.days.slice(-2).flatMap(d => (d.refused || []).map(r => r.what)).filter(Boolean);
+  const refusedBefore = s.months.slice(-2).flatMap(d => (d.refused || []).map(r => r.what)).filter(Boolean);
 
   const monthEvents = (c.events || []).filter(e => e.month === s.month);
-  const sw = sy.switch;
-  /* 换过钱之后的每一天都要再说一遍钱的量级。只在换币当天提醒一次不够——
-   * 第二天起模型会顺着前几天的记录接着用旧钱的数目，一天记出上亿来。 */
-  const swPast = sw && s.month === sw.month && s.day > sw.day
-    ? `\n**这个月 ${sw.day} 日已经换过钱了，现在用的是${E.CN[sw.to]}，不是${E.CN[sw.from]}。**\n` +
-      `记账一律用${E.CN[sw.to]}的数目：一个普通人一年挣 ${E.money(E.incomeAtDay(s.year, s.month, s.day), sw.to)}，` +
-      `一顿饭、一次车钱都是个位数或者几十。前几天那些${E.CN[sw.from]}的数目不要再照着写。` : '';
-  const swToday = sw && s.month === sw.month && s.day === sw.day
-    ? `\n**今天就是换钱那天**：${sw.say}\n` +
-      `上面「他现在的家底」那个数**已经是折算之后的新钱了**，游戏替他换好了。\n` +
+
+  /* 换币算在那个月的月初：走进这个月，游戏已经把他手里的钱折过了。
+   * 所以这个月的账从头到尾都用新钱记，别再记一笔「换钱的损失」。 */
+  const swNow = E.switchOn(s.year, s.month);
+  const pv = prevMonth(s.year, s.month);
+  const swLast = s.n > 1 ? E.switchOn(pv.year, pv.month) : null;
+  const swThis = swNow
+    ? `\n**这个月换钱**：${swNow.say}\n` +
+      `上面「他现在的家底」那个数**已经是折算之后的${E.CN[swNow.to]}了**，游戏替他换好了。\n` +
       `所以：正文里要写这件事（他排了多久的队、柜台上怎么说、手里那叠旧钞变成了什么），` +
-      `但 **entries 里绝对不许再记一笔「换钱的损失」**——那等于同一笔钱扣两遍。` : '';
+      `但 **entries 里绝对不许再记一笔「换钱的损失」**——那等于同一笔钱扣两遍。\n` +
+      `这个月的账一律用${E.CN[swNow.to]}的数目：一个普通人一年挣 ${E.money(income, cur)}，` +
+      `一顿饭、一次车钱都是个位数或者几十。前几个月那些${E.CN[swNow.from]}的数目不要再照着写。` : '';
+  const swPast = swLast
+    ? `\n**上个月才换的钱，现在用的是${E.CN[swLast.to]}，不是${E.CN[swLast.from]}。**\n` +
+      `一个普通人一年挣 ${E.money(income, cur)}，前几个月那些${E.CN[swLast.from]}的数目不要再照着写。` : '';
+
+  /* 跨年：物价、能干的事、犯不犯法全变了，得让他知道。 */
+  const crossed = s.n > 1 && s.month === 1
+    ? `\n**翻年了：现在是 ${s.year} 年。** 这个月的正文里要交代这件事——` +
+      `${c.era}。物价、能干的事、什么算犯法，跟去年不一样的地方，挑要紧的写进正文，` +
+      `让他知道该改主意了。` : '';
 
   const rulings = hits.length
-    ? `\n【他提到的这几样，这一年办不成——必须顶回去，写清楚为什么】\n` +
+    ? `\n【他提到的这几样，${s.year} 年办不成——必须顶回去，写清楚为什么】\n` +
       hits.map(h => `· 「${h.word}」：${E.sayAnachronism(h)}。${h.note || ''}`).join('\n') +
       `\n把这几条写进 refused 里，正文里也要让他撞上这堵墙。\n` +
       `注意分清楚是哪一种：**根本没有这东西**（他跟人说，对方听不懂），` +
       `还是**有这东西但这几年干这个犯法**（他做得成，可有人管，抓着要出事）。这两种写法完全不一样。`
     : '';
 
-  return `${compactCard(c, sy, s.month)}
+  return `${compactCard(c, sy, s.month, s.city)}
 
-【今天】${s.year} 年 ${s.month} 月 ${s.day} 日，第 ${s.day} 天，一共 ${E.DAYS} 天。
-${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).join('；')}` : ''}${swToday}${swPast}
+【这个月】${s.year} 年 ${s.month} 月，是他这两年里的第 ${s.n} 个月，一共 ${E.MONTHS} 个月。
+${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).join('；')}` : ''}${crossed}${swThis}${swPast}
 
 【他现在的家底】
-手里的钱：${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(E.incomeAt(s.year, s.month), cur)}）
+手里的钱：${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(income, cur)}）
 东西：${assets}
 欠债：${debts}
 名声 ${s.standing.名声} · 关系 ${s.standing.关系} · 体力 ${s.standing.体力} · 麻烦 ${s.standing.麻烦}
 
-【前几天】
+【前几个月】
 ${recent}
-${refusedBefore.length ? `前两天已经顶回去过这几件：${refusedBefore.join('、')}。
-他今天要是还写同一件，就让他找到路子办成——托人、加钱、换个地方办，不许再顶一次。` : ''}
+${refusedBefore.length ? `前两个月已经顶回去过这几件：${refusedBefore.join('、')}。
+他这个月要是还写同一件，就让他找到路子办成——托人、加钱、换个地方办，不许再顶一次。` : ''}
 
-【今天这一天该走到哪儿】
-做顺了的一天，连做工带买卖，净进大概 ${E.money(good, cur)}；谈成一笔像样的买卖，那一天能到 ${E.money(big, cur)}。
-光靠做工、扛包、跑腿的一天，只有 ${E.money(income / 360, cur)} 上下——多出来的必须是买卖挣的，写清楚货、买家和价钱。
-今天无论如何不许超过 ${E.money(capToday, cur)}——超了游戏会削平，正文和账面就对不上。
-他落地那天的家底相当于一个普通人 ${monthsStart.toFixed(1)} 个月的收入，现在是 ${monthsNow.toFixed(1)} 个月，
-走到第 ${s.day} 天该在 ${monthsWant.toFixed(1)} 个月上下。
-${behind ? '他落下了：今天让他抓住点实在的东西，把欠的补回来一些。'
-  : monthsNow > monthsWant * 1.4 ? '他已经跑在前头了：今天把进项收紧，只给他做实了的那一份，含糊的名目一笔都不给。'
+【这个月该走到哪儿】
+做顺了的一个月，连做工带买卖，净进大概 ${E.money(good, cur)}；谈成一笔像样的买卖，这个月能到 ${E.money(big, cur)}。
+老老实实做一个月工、扛一个月包，只有 ${E.money(wage, cur)} 上下——多出来的必须是买卖挣的，写清楚货、买家和价钱。
+这个月无论如何不许超过 ${E.money(capThis, cur)}——超了游戏会削平，正文和账面就对不上。
+他落地时的家底相当于一个普通人 ${yearsStart.toFixed(2)} 年的收入，现在是 ${yearsNow.toFixed(2)} 年，
+走到第 ${s.n} 个月该在 ${yearsWant.toFixed(2)} 年上下。
+${behind ? '他落下了：这个月让他抓住点实在的东西，把欠的补回来一些。'
+  : yearsNow > yearsWant * 1.4 ? '他已经跑在前头了：这个月把进项收紧，只给他做实了的那一份，含糊的名目一笔都不给。'
   : '他走在道上：接着按他写的算，别忽然塞给他一座金山。'}
 
-【他今天写的清单】
+【他这个月写的清单】
 ${String(list).trim()}
 ${rulings}${extra.retry ? `\n\n【上一版写得不合格，改掉这几条再给我一遍完整的 JSON】\n${extra.retry.map(x => '- ' + x).join('\n')}` : ''}`;
 }
 
 /* ── 调模型 ────────────────────────────────────────── */
 
-/** 玩家在等这一天出来，所以有个总预算：默认 55 秒。
- *  只有一种情况会重来——回的东西解析不成 JSON。文风不再拦。 */
-async function runDay(s, list, opts = {}) {
+/** 从一串还没写完的 JSON 里，边收边把 story 那个字段的字吐出来。
+ *
+ * 流式回来的是 `{"story":"清晨五点，铁西区…` 这样半截的 JSON，解析不了。
+ * 这个小机器只认三件事：story 的引号从哪儿开始、转义怎么还原、到哪儿结束。
+ * 结束之后再喂给它也不会多吐——后面那些 entries、options 玩家不需要看着它长出来。
+ */
+function storyPicker() {
+  let buf = '', pos = -1, done = false;
+  return function feed(chunk) {
+    if (done) return '';
+    buf += chunk;
+    if (pos < 0) {
+      const m = /"story"\s*:\s*"/.exec(buf);
+      if (!m) return '';
+      pos = m.index + m[0].length;
+    }
+    let out = '';
+    while (pos < buf.length) {
+      const ch = buf[pos];
+      if (ch === '\\') {
+        if (pos + 1 >= buf.length) break;                 // 转义符被切在两包之间，等下一包
+        const nx = buf[pos + 1];
+        if (nx === 'u') {
+          if (pos + 6 > buf.length) break;
+          out += String.fromCharCode(parseInt(buf.slice(pos + 2, pos + 6), 16) || 0);
+          pos += 6;
+        } else {
+          out += ({ n: '\n', t: '　', r: '', '"': '"', '\\': '\\', '/': '/' })[nx] ?? nx;
+          pos += 2;
+        }
+        continue;
+      }
+      if (ch === '"') { done = true; break; }             // story 写完了
+      out += ch; pos++;
+    }
+    return out;
+  };
+}
+
+/** 玩家在等这个月出来，所以有个总预算：默认 90 秒。
+ *  一个月的正文比一天长，所以给的时间也长一些。
+ *  只有一种情况会重来——回的东西解析不成 JSON。文风不再拦。
+ *
+ *  opts.onStory(新到的一小段)：给了就走流式，正文边写边往外吐。
+ *  流式不重试——已经吐出去半段再重来，玩家会看到两遍开头。 */
+async function runMonth(s, list, opts = {}) {
   const OR = require('./tools/or.js');
-  const budget = opts.budget || 55000;
+  const budget = opts.budget || 90000;
   const t0 = Date.now();
   const left = () => budget - (Date.now() - t0);
   const user = buildUser(s, list);
+  const model = opts.model || MODEL;
+
+  if (opts.onStory) {
+    const pick = storyPicker();
+    const text = await OR.callStream(model, SYS, user, {
+      json: true, maxTokens: 3000, temperature: 0.85, timeout: Math.max(20000, left()),
+    }, piece => { const out = pick(piece); if (out) opts.onStory(out); });
+    return { delta: OR.parseJson(text), ms: Date.now() - t0, problems: [], streamed: true };
+  }
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const text = await OR.call(opts.model || MODEL, SYS, user, {
-        json: true, maxTokens: 2500, temperature: 0.85,
-        timeout: Math.max(8000, Math.min(30000, left())), tries: attempt === 1 ? 2 : 1,
+      const text = await OR.call(model, SYS, user, {
+        json: true, maxTokens: 3000, temperature: 0.85,
+        timeout: Math.max(8000, Math.min(45000, left())), tries: attempt === 1 ? 2 : 1,
       });
       return { delta: OR.parseJson(text), ms: Date.now() - t0, problems: [] };
     } catch (err) {
-      if (attempt === 2 || left() < 12000) throw err;
+      if (attempt === 2 || left() < 15000) throw err;
     }
   }
-  throw new Error('这一天没算出来');
+  throw new Error('这个月没算出来');
 }
 
-/* ── 没有密钥时的兜底：本地算一天，能玩完，但正文是模板 ── */
+/* ── 没有密钥时的兜底：本地算一个月，能玩完，但正文是模板 ── */
 function rng(seed) { let x = seed >>> 0; return () => (x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32; }
 
-function runDayLocal(s, list) {
+function runMonthLocal(s, list) {
   const c = card(s.year);
-  const r = rng((s.seed || 1) * 7919 + s.day * 104729);
+  const r = rng((s.seed || 1) * 7919 + s.n * 104729);
   const hits = E.scanAnachronism(list, s.year);
   const ways = c.money || [];
   const way = ways[Math.floor(r() * ways.length)] || { way: '打零工', who: '谁都行' };
-  /* 必须用 incomeAtDay：incomeAt 拿的是整月记的**新钱**，
-   * 而换币前手里是旧钱。1948 年 8 月前 18 天会按金圆券的量级发工钱，
-   * 而那时候的年收入是 1.84 亿法币——差三百万倍，等于前半个月白过。 */
-  const inc = E.incomeAtDay(s.year, s.month, s.day);
+  /* 必须用按月的口子：换币那个月手里还是旧钱，spine 整月记的却是新钱。
+   * 1948 年 8 月按金圆券的量级发工钱，而那时候的年收入是 1.84 亿法币——
+   * 差三百万倍，等于那个月白过。 */
+  const inc = E.incomeOf(s.year, s.month);
 
-  /* 写得越具体给得越多。尺子跟提示词里给模型的那把一样：做顺了的一天
-   * 约合半个月的收入（inc/70）。原来是 inc/365 那一档，一天挣一顿饭钱，
-   * 三十天下来跟没玩一样。 */
+  /* 写得越具体给得越多。尺子跟提示词里给模型的那把一样：
+   * 做顺了的一个月约合两个月的收入（inc/6）。 */
   const effort = 0.5 + Math.min(1, E.countHan(list) / 160);
   const luck = 0.5 + r() * 0.9;
-  /* 撞上这一年没有的东西：只废掉那一件，剩下的时间照旧干活，
-   * 拿平常的一半。整天清零是旧写法，跟现在「一天最多一件事办不成」对不上。 */
-  const gain = inc / 70 * effort * luck * (hits.length ? 0.5 : 1);
+  /* 撞上这一年没有的东西：只废掉那一件，剩下的日子照旧干活，拿平常的一半。 */
+  const gain = inc / 6 * effort * luck * (hits.length ? 0.5 : 1) * 0.5;
 
   const story = hits.length
     ? (hits[0].kind === 'banned'
-        ? `你把想做的事说给一个熟人听。说到「${hits[0].word}」，他往门口看了一眼，压低声音让你别再提。` +
-          `「这两年抓得紧。」这一件只好搁下。后半天你去做了${way.way}，天黑前收了工。`
+        ? `月初你把想做的事说给一个熟人听。说到「${hits[0].word}」，他往门口看了一眼，压低声音让你别再提。` +
+          `「这两年抓得紧。」这一件只好搁下。后半个月你去做了${way.way}，到月底才收了工钱。`
         : `你把想做的事跟街上的人说了一遍。说到「${hits[0].word}」的时候，对方停下来看着你，问那是什么。` +
-          `你解释了两句，他摇摇头走了。这一件办不成，你转头去做${way.way}，日头偏西才回来。`)
+          `你解释了两句，他摇摇头走了。这一件办不成，你转头去做${way.way}，一个月就这么过去了。`)
     : `你按写下的去做了。${way.way}这条路，${way.who}。` +
-      `跑了大半天，鞋底沾了一层灰。到日头偏西的时候，事情算是有了个着落。`;
+      `起早贪黑跑了一个月，鞋底磨薄了一层。到月底结账的时候，事情算是有了个着落。`;
 
   return {
     delta: {
       story,
-      entries: [{ what: hits.length ? '白跑一天的开销' : (way.way || '打零工'), amount: Math.round(gain * 100) / 100 }],
+      entries: [
+        { what: hits.length ? '白忙半个月的开销' : (way.way || '打零工'), amount: Math.round(gain * 100) / 100 },
+        { what: '一个月的吃住', amount: -Math.round(inc / 24 * 100) / 100 },
+      ],
       assetsAdd: [], assetsDrop: [], debtsAdd: [], debtsClear: [],
-      standing: { 名声: hits.length ? 0 : 1, 关系: 0, 体力: -(6 + Math.floor(r() * 8)), 麻烦: hits.length ? 1 : 0 },
+      standing: { 名声: hits.length ? 0 : 2, 关系: 1, 体力: -(6 + Math.floor(r() * 8)), 麻烦: hits.length ? 1 : 0 },
       refused: hits.slice(0, 1).map(h => ({ what: h.word, why: E.sayAnachronism(h) })),
       options: optionsLocal(s),
     },
@@ -349,16 +423,16 @@ function runDayLocal(s, list) {
   };
 }
 
-/* ── 明天能走的三条路 ──────────────────────────────
- * 每天算完自动带回来一份（跟正文同一次调用，不额外花钱也不多等），
- * 头一天和玩家点「换三条」的时候才单独调一次模型。
+/* ── 下个月能走的三条路 ────────────────────────────
+ * 每个月算完自动带回来一份（跟正文同一次调用，不额外花钱也不多等），
+ * 头一个月和玩家点「换三条」的时候才单独调一次模型。
  * 断网、没密钥、模型没给，都退回 optionsLocal——照年卡里的路子拼，
  * 一分钱不花，也永远有三条。 */
 
 /** 照年卡里的挣钱路子拼三条：稳的、来钱最快的、另一条 */
 function optionsLocal(s, salt) {
   const c = card(s.year);
-  const r = rng((s.seed || 1) * 31 + s.day * 7919 + (salt || 0));
+  const r = rng((s.seed || 1) * 31 + s.n * 7919 + (salt || 0));
   const ways = (c.money || []).slice();
   if (!ways.length) return [];
   const byMoney = ways.slice().sort((a, b) => (b.ceilingYears || 0) - (a.ceilingYears || 0));
@@ -381,10 +455,10 @@ function optionsLocal(s, salt) {
 }
 
 const OPT_SYS = `你是《这一百年》的记事人。玩家落在中国近一百年里的某一年某一个月，
-在一座城里过三十天，每天写一份要做的事。现在给他三条明天能走的路。
+在一座城里过两年，一个月一步，每个月写一份要做的事。现在给他三条下个月能走的路。
 
-三条各有各的用处：一条是稳的（今天这条路接着做，或者今天碰上的那个人明天再去找），
-一条是搏一把的（本钱押得多、担点风险，成了能顶好几天），
+三条各有各的用处：一条是稳的（这个月这条路接着做，或者这个月碰上的那个人下月再去找），
+一条是搏一把的（本钱押得多、担点风险，成了能顶好几个月），
 一条是新路子（这一年这座城里另有的一条道）。
 
 每条都要有具体的人、地方、价钱：「去码头找活」不算，
@@ -392,20 +466,20 @@ const OPT_SYS = `你是《这一百年》的记事人。玩家落在中国近一
 只写那一年真有的事，不写那时候还没有的东西。不出现游戏用语。
 
 只输出一个 JSON 对象：
-{"options":[{"what":"明天能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]}`;
+{"options":[{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]}`;
 
 async function runOptions(s, opts = {}) {
   const OR = require('./tools/or.js');
   const c = card(s.year);
-  const cur = E.currencyAt(s.year, s.month, Math.min(s.day, E.DAYS));
-  const last = s.days[s.days.length - 1];
-  const user = `【${s.year} 年 ${s.month} 月 ${s.day} 日 · ${s.city}】${c.era}
+  const cur = E.currencyOf(s.year, s.month);
+  const last = s.months[s.months.length - 1];
+  const user = `【${s.year} 年 ${s.month} 月 · ${s.city}】${c.era}
 物价：${(c.prices || []).slice(0, 6).map(p => `${p.item} ${p.price}`).join('，')}
-挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头约 ${m.ceiling}）`).join('；')}
+挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头一个月约 ${m.ceiling}）`).join('；')}
 干不了的事：${(c.forbidden || []).map(f => f.what).join('；')}
-他手里 ${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(E.incomeAtDay(s.year, s.month, Math.min(s.day, E.DAYS)), cur)}），
+他手里 ${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(E.incomeOf(s.year, s.month), cur)}），
 东西：${s.assets.map(a => a.name).join('、') || '什么都没有'}，体力 ${s.standing.体力}，麻烦 ${s.standing.麻烦}。
-${last ? `昨天：${String(last.story || '').slice(0, 200)}` : '今天是头一天，他刚落地，谁也不认识。'}`;
+${last ? `上个月：${String(last.story || '').slice(0, 200)}` : '这是头一个月，他刚落地，谁也不认识。'}`;
 
   try {
     const text = await OR.call(opts.model || MODEL, OPT_SYS, user, {
@@ -418,4 +492,4 @@ ${last ? `昨天：${String(last.story || '').slice(0, 200)}` : '今天是头一
   return { options: optionsLocal(s, opts.salt), local: true };
 }
 
-module.exports = { runDay, runDayLocal, runOptions, optionsLocal, buildUser, card, SYS, MODEL };
+module.exports = { runMonth, runMonthLocal, runOptions, optionsLocal, buildUser, storyPicker, card, SYS, MODEL };

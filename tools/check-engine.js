@@ -4,6 +4,9 @@
  * 最要紧的一条是「什么都不干应该得零分」：跑遍 100 年 × 12 个月，
  * 开局就结算，分数必须贴着 0。分子分母只要有一处用错了钱，
  * 这条立刻红成天文数字——第一次跑出来 1948 年 8 月是 263 万分。
+ *
+ * 一局是二十四个月。换币算在那个月的月初：走进 1948 年 8 月，
+ * 手里的法币当场折成金圆券，这个月整月按新钱记。
  */
 const E = require('../engine.js');
 
@@ -11,93 +14,128 @@ let bad = 0;
 const fail = m => { bad++; console.log('  x ' + m); };
 const ok = m => console.log('  · ' + m);
 
+/** 从某年某月起走满二十四个月，每个月都记一笔（不写 months 的话整局封顶没法按走过的年份算） */
+function walk(year, month, each) {
+  const s = E.newRun({ year, month, nick: 'x', seed: year * 31 + month });
+  const events = [];
+  for (let i = 1; i <= E.MONTHS; i++) {
+    if (each) each(s, i);
+    s.months.push({ n: s.n, year: s.year, month: s.month });
+    if (i < E.MONTHS) events.push(...E.advanceTo(s, i + 1));
+    else s.n = E.MONTHS + 1;
+  }
+  return { s, events };
+}
+
 /* 1. 什么都不干 = 零分（持币的年份会因为通胀微亏，这是对的） */
 console.log('1. 什么都不干，100 年 × 12 月，分数应当贴着 0');
 {
-  let worst = { s: 0 }, worstNeg = { s: 0 };
+  let worst = { s: 0 }, worstNeg = { s: 0 }, n = 0;
   for (const Y of E.SPINE.years) for (let m = 1; m <= 12; m++) {
-    const s = E.newRun({ year: Y.year, month: m, nick: 'x', seed: 1 });
-    E.advanceTo(s, E.DAYS);                            // 走满三十天，路过换币那天就换钱
+    if (!E.startable(Y.year, m)) continue;
+    n++;
+    const { s } = walk(Y.year, m);
     const r = E.settle(s);
     if (!isFinite(r.score)) { fail(`${Y.year}-${m} 分数算不出来：${r.score}`); continue; }
     /* 上界给一点余地：通缩年份揣着钱不动，购买力确实会涨一点点。
      * 本钱只有 0.1 年的收入，所以两头都不该超过这个量级。 */
-    if (r.score > 0.03) fail(`${Y.year}-${m} 什么都没干却赚了 ${r.score.toFixed(4)} 年的收入`);
+    if (r.score > 0.05) fail(`${Y.year}-${m} 什么都没干却赚了 ${r.score.toFixed(4)} 年的收入`);
     if (r.score < -0.105) fail(`${Y.year}-${m} 什么都没干却亏了 ${(-r.score).toFixed(3)} 年的收入，可本钱只有 0.1 年`);
     if (r.score < worstNeg.s) worstNeg = { s: r.score, y: Y.year, m };
     if (Math.abs(r.score) > Math.abs(worst.s)) worst = { s: r.score, y: Y.year, m };
   }
-  ok(`亏得最多的是 ${worstNeg.y} 年 ${worstNeg.m} 月：${worstNeg.s.toFixed(4)} 年的收入（本钱被通胀吃掉的部分）`);
+  ok(`${n} 个开局都跑了；亏得最多的是 ${worstNeg.y} 年 ${worstNeg.m} 月：${worstNeg.s.toFixed(4)} 年的收入（本钱被通胀吃掉的部分）`);
 }
 
-/* 2. 赚到整一年的中位收入 = 1.00 分。
- *    但整局封顶在这一年的上限——1966–1976 的上限只有 0.8 年，
- *    那几年「一个月挣到一年的收入」本来就超出了这一年的顶，会被削到 0.8。
- *    所以期望值是 min(1, 这一年的上限)。 */
-console.log('2. 赚到一年的中位收入 = 1.00 分（上限低于 1 的年份削到上限）');
+/* 2. 开局就把一年的收入揣进兜里，当月结算 = 1.00 分 */
+console.log('2. 揣着一年的收入当月结算 = 1.00 分');
 {
-  let capped = 0;
+  let n = 0;
   for (const Y of E.SPINE.years) for (const m of [1, 6, 12]) {
+    if (!E.startable(Y.year, m)) continue;
     const s = E.newRun({ year: Y.year, month: m, nick: 'x', seed: 1 });
-    /* 第 1 天就把「一年的收入」揣进兜里，当天结算，不让物价插手 */
-    s.cash += E.incomeAtDay(Y.year, m, 1);
+    s.cash += E.incomeOf(Y.year, m);
+    s.months.push({ n: 1, year: Y.year, month: m });
     const r = E.settle(s);
-    const want = Math.min(1, Y.ceiling);
-    if (Math.abs(r.score - want) > 1e-6) fail(`${Y.year}-${m} 赚了整一年的收入，分数是 ${r.score.toFixed(6)}，该是 ${want}`);
-    if (r.cappedTotal) capped++;
+    if (Math.abs(r.score - 1) > 1e-6) fail(`${Y.year}-${m} 揣了整一年的收入，分数是 ${r.score.toFixed(6)}，该是 1`);
+    n++;
   }
-  ok(`1200 个组合都对；其中 ${capped} 个撞到了这一年的上限（上限低于 1 年的那些年份）`);
+  ok(`${n} 个组合都对`);
 }
 
-/* 2b. 任何一局都不可能超过它那一年的上限 —— 这条挡的是提示词注入 */
-console.log('2b. 整局封顶：天天顶格也超不过这一年的上限');
+/* 2b. 任何一局都不可能超过整局的上限 —— 这条挡的是提示词注入 */
+console.log('2b. 整局封顶：月月顶格也超不过「平均每月上限 × 6」');
 {
   let worst = 0, worstAt = '';
   for (const y of [1930, 1948, 1962, 1970, 1988, 2015]) {
-    const s = E.newRun({ year: y, month: 6, nick: 'x', seed: 1 });
-    for (let d = 1; d <= E.DAYS; d++) { E.applyDay(s, { entries: [{ what: '注入', amount: 1e12 }] }); E.advanceTo(s, s.day + 1); s.days.push({ day: d }); }
-    if (s.day > E.DAYS) s.day = E.DAYS;
+    const { s } = walk(y, 6, st => E.applyMonth(st, { entries: [{ what: '注入', amount: 1e13 }] }));
     const r = E.settle(s);
-    const ceil = E.yearOf(y).ceiling;
-    if (r.score > ceil + 1e-6) fail(`${y} 年天天顶格打出 ${r.score.toFixed(1)} 年，超过上限 ${ceil}`);
-    if (!r.cappedTotal) fail(`${y} 年天天顶格却没标 cappedTotal`);
-    if (r.score / ceil > worst) { worst = r.score / ceil; worstAt = `${y}(${r.score.toFixed(1)}/${ceil})`; }
+    if (r.score > r.ceiling + 1e-6) fail(`${y} 年月月顶格打出 ${r.score.toFixed(1)} 年，超过整局上限 ${r.ceiling.toFixed(1)}`);
+    if (r.capHits < E.MONTHS) fail(`${y} 年月月顶格，削顶只记了 ${r.capHits} 次，该是 ${E.MONTHS} 次`);
+    const ratio = r.score / r.ceiling;
+    if (ratio > worst) { worst = ratio; worstAt = `${y}(${r.score.toFixed(1)}/${r.ceiling.toFixed(1)})`; }
   }
-  ok(`六个年份天天顶格，全部被削到各自的上限，最贴边的是 ${worstAt}`);
+  ok(`六个年份月月顶格，全部压在各自的上限之内，最贴边的是 ${worstAt}`);
 }
 
-/* 3. 换币那天，手里的现金按公布的比价折过去 */
-console.log('3. 换币当天，现金要按比价折');
-for (const [y, mo, d] of [[1935, 11, 4], [1948, 8, 19], [1949, 5, 27], [1955, 3, 1]]) {
-  const s = E.newRun({ year: y, month: mo, nick: 'x', seed: 1 });
+/* 3. 走进换币的那个月，手里的现金按公布的比价折过去 */
+console.log('3. 走进换币那个月，现金要按比价折');
+for (const [y, mo] of [[1935, 11], [1948, 8], [1949, 5], [1955, 3]]) {
+  const pv = mo === 1 ? { year: y - 1, month: 12 } : { year: y, month: mo - 1 };
+  const s = E.newRun({ year: pv.year, month: pv.month, nick: 'x', seed: 1 });
   const before = s.cash, curBefore = s.currency;
-  s.day = d;
-  const ev = E.applySwitch(s);
-  if (!ev) { fail(`${y}-${mo}-${d} 该换币却没换`); continue; }
-  const want = before / ev.rate;
+  const ev = E.advanceTo(s, 2);
+  if (!ev.length) { fail(`${y}-${mo} 该换币却没换`); continue; }
+  const want = before / ev[0].rate;
   if (Math.abs(s.cash - want) > 1e-9) fail(`${y} 换币后现金 ${s.cash} 对不上 ${want}`);
-  ok(`${y}-${mo}-${d} ${E.CN[curBefore]} ${before.toPrecision(4)} → ${E.CN[s.currency]} ${s.cash.toPrecision(4)}（${ev.rate.toExponential(1)} 比 1）`);
+  else ok(`${y}-${mo} ${E.CN[curBefore]} ${before.toPrecision(4)} → ${E.CN[s.currency]} ${s.cash.toPrecision(4)}（${ev[0].rate.toExponential(1)} 比 1）`);
 }
 
-/* 4. 1949 年 5 月：攥着金圆券过换币那天，等于清零 */
-console.log('4. 1949 年 5 月攥着金圆券不动，换币那天要被清干净');
+/* 4. 1949 年 5 月：攥着金圆券走进那个月，等于清零 */
+console.log('4. 攥着金圆券走进 1949 年 5 月，要被清干净');
 {
-  const s = E.newRun({ year: 1949, month: 5, nick: 'x', seed: 1 });
-  E.advanceTo(s, 30);                                  // 5 月 27 日那天自动换钱
+  const s = E.newRun({ year: 1949, month: 4, nick: 'x', seed: 1 });
+  s.months.push({ n: 1, year: 1949, month: 4 });
+  E.advanceTo(s, 2);
+  s.months.push({ n: 2, year: s.year, month: s.month });
   const r = E.settle(s);
   /* 本钱就是 0.1 年的收入，全没了就是 −0.100，不可能更低 */
-  if (r.score > -0.0995) fail(`攥着金圆券过 5 月 27 日，只亏了 ${(-r.score).toFixed(4)} 年的收入，应该整份本钱都没了`);
+  if (r.score > -0.0995) fail(`攥着金圆券走进 5 月，只亏了 ${(-r.score).toFixed(4)} 年的收入，应该整份本钱都没了`);
   else ok(`亏了 ${(-r.score).toFixed(4)} 年的收入——0.1 年的本钱一分不剩，对`);
 }
 
-/* 5. 一天赚太多要被削回上限 */
-console.log('5. 一天赚过头要被削');
+/* 4b. 二十四个月里连撞两次换钱 —— 一局最多就是两次，这条路以前从来没走过 */
+console.log('4b. 1947 年 6 月开局：一局之内换两次钱');
+{
+  const { s, events } = walk(1947, 6);
+  if (events.length !== 2) fail(`1947-06 开局该撞两次换钱，实际 ${events.length} 次`);
+  if (!(s.year === 1949 && s.month === 5)) fail(`走完二十四个月该停在 1949 年 5 月，实际 ${s.year}-${s.month}`);
+  if (s.currency !== 'RMB1') fail(`收工手里该是人民币（旧），实际 ${E.CN[s.currency]}`);
+  let threw = null;
+  try { E.settle(s); } catch (e) { threw = e.message; }
+  if (threw) fail('连换两次钱之后结算报错：' + threw);
+  else {
+    const r = E.settle(s);
+    if (!(r.score < -0.0995)) fail(`攥着钱穿过两次换币，只亏了 ${(-r.score).toFixed(4)} 年，该把本钱赔光`);
+    else ok(`两次换钱（${events.map(e => e.cur).map(c => E.CN[c]).join(' → ')}），结算 ${r.scoreText}`);
+  }
+  /* 同一段日子，换成实物的那一个必须明显强过攥现金的 */
+  const g = walk(1947, 6, (st, i) => {
+    if (i === 1) E.applyMonth(st, { entries: [{ what: '买米', amount: -st.cash }], assetsAdd: [{ name: '米', kind: '实物', worth: st.cash }] });
+  });
+  const a = E.settle(s).score, b = E.settle(g.s).score;
+  if (!(b > a + 0.01)) fail(`穿过两次换币，囤货 ${b.toFixed(4)} 没比攥现金 ${a.toFixed(4)} 明显强`);
+  else ok(`攥现金 ${a.toFixed(4)} 年，换成米 ${b.toFixed(4)} 年——差 ${(b - a).toFixed(3)} 年的收入`);
+}
+
+/* 5. 一个月赚太多要被削回上限 */
+console.log('5. 一个月赚过头要被削');
 {
   const s = E.newRun({ year: 2015, month: 6, nick: 'x', seed: 1 });
-  const cap = E.dayCap(2015, 6);
+  const cap = E.monthCap(2015, 6);
   const before = E.netWorth(s);
-  const res = E.applyDay(s, { cash: cap * 100 });
-  if (!res.capped) fail('一天塞进一百倍上限的钱，没被削');
+  const res = E.applyMonth(s, { cash: cap * 100 });
+  if (!res.capped) fail('一个月塞进一百倍上限的钱，没被削');
   else if (Math.abs(E.netWorth(s) - before - cap) > 1e-6) fail(`削完之后多了 ${E.netWorth(s) - before}，应该正好是上限 ${cap}`);
   else ok(`塞 ${E.money(cap * 100, 'RMB')} 进去，削到 ${E.money(cap, 'RMB')}`);
 }
@@ -106,50 +144,44 @@ console.log('5. 一天赚过头要被削');
 console.log('6. 票证和权益算进家底');
 {
   const s = E.newRun({ year: 1962, month: 5, nick: 'x', seed: 1 });
-  /* 这两笔加起来 105，1962 年一天的上限是 147，不会被削——要验的是家底算法，不是上限 */
-  E.applyDay(s, { assetsAdd: [{ name: '全国粮票三十斤', kind: '票证', worth: 45 }, { name: '调回县城的名额', kind: '权益', worth: 60 }] });
+  /* 这两笔加起来 105，1962 年一个月的上限是七百多，不会被削——要验的是家底算法，不是上限 */
+  E.applyMonth(s, { assetsAdd: [{ name: '全国粮票三十斤', kind: '票证', worth: 45 }, { name: '调回县城的名额', kind: '权益', worth: 60 }] });
   const nw = E.netWorth(s);
   if (Math.abs(nw - (s.cash + 105)) > 1e-9) fail(`家底 ${nw} 没把票证和权益算进去（现金 ${s.cash}）`);
   else ok(`现金 ${s.cash.toFixed(2)} + 粮票 45 + 名额 60 = ${nw.toFixed(2)}`);
-  const r = E.settle(s);
-  ok(`1962 年 5 月这么一笔，值 ${r.scoreText}`);
+  s.months.push({ n: 1, year: 1962, month: 5 });
+  ok(`1962 年 5 月这么一笔，值 ${E.settle(s).scoreText}`);
 }
 
-/* 5b. 兜里没有的钱花不出去 —— 这条拦的是「一天扣掉三亿八」那类错 */
+/* 5b. 兜里没有的钱花不出去 —— 这条拦的是「一个月扣掉三亿八」那类错 */
 console.log('5b. 现金不许被花成负数');
 {
-  const s = E.newRun({ year: 1948, month: 8, nick: 'x', seed: 1 });
-  E.advanceTo(s, 19);                                  // 换币之后，手里只剩六十来块金圆券
+  const s = E.newRun({ year: 1948, month: 8, nick: 'x', seed: 1 });   // 月初就已经是金圆券
   const before = s.cash;
-  const r = E.applyDay(s, { entries: [{ what: '模型重复记的换钱损失', amount: -378e6 }, { what: '烧饼', amount: -0.5 }] });
+  const r = E.applyMonth(s, { entries: [{ what: '模型重复记的换钱损失', amount: -378e6 }, { what: '烧饼', amount: -0.5 }] });
   if (s.cash < -1e-9) fail(`现金被花成了 ${s.cash}`);
   else if (!(r.overspent > 0)) fail('压回去了却没报「钱不够」');
   else ok(`手里 ${E.money(before, s.currency)}，想花 3.78 亿 → 剩 ${E.money(s.cash, s.currency)}，${E.money(r.overspent, s.currency)} 没花成`);
-  E.advanceTo(s, 30);
+  s.months.push({ n: 1, year: 1948, month: 8 });
   const sc = E.settle(s).score;
   if (sc < -0.101) fail(`不欠债却亏了 ${(-sc).toFixed(3)} 年的收入，本钱只有 0.1 年`);
   else ok(`结算 ${E.fmtScore(sc)}——最多就是把本钱赔光`);
 }
 
 /* 5c. 不欠债的话，任何一年任何一个月都亏不过本钱 */
-console.log('5c. 不欠债就亏不过本钱：随便乱花一百局');
+console.log('5c. 不欠债就亏不过本钱：随便乱花四十局');
 {
   let worst = 0, worstAt = '';
   for (const y of [1930, 1943, 1948, 1949, 1955, 1962, 1976, 1988, 1994, 2015]) {
     for (const m of [1, 5, 8, 11]) {
-      const s = E.newRun({ year: y, month: m, nick: 'x', seed: y * 31 + m });
-      for (let d = 1; d <= E.DAYS; d++) {
-        E.applyDay(s, { entries: [{ what: '乱花', amount: -E.incomeAtDay(y, m, 1) * 1e4 }] });
-        E.advanceTo(s, s.day + 1);
-      }
-      if (s.day > E.DAYS) s.day = E.DAYS;
+      const { s } = walk(y, m, st => E.applyMonth(st, { entries: [{ what: '乱花', amount: -E.incomeOf(st.year, st.month) * 1e4 }] }));
       const sc = E.settle(s).score;
       if (sc < worst) { worst = sc; worstAt = `${y}-${m}`; }
       if (s.cash < -1e-9) fail(`${y}-${m} 现金变成了负数 ${s.cash}`);
     }
   }
   if (worst < -0.101) fail(`${worstAt} 亏了 ${(-worst).toFixed(3)} 年的收入，超过本钱`);
-  else ok(`40 局天天乱花，最惨的是 ${worstAt}：${E.fmtScore(worst)}`);
+  else ok(`40 局月月乱花，最惨的是 ${worstAt}：${E.fmtScore(worst)}`);
 }
 
 /* 3b. 换币的时候，实物按购买力换、现金按收兑价换 */
@@ -157,14 +189,18 @@ console.log('3b. 换币：攒东西的躲得过，攥现金的躲不过');
 /* strict=true 的那一年，收兑价明显低于购买力，囤货必须明显划算。
  * 1948 年 8 月不是这种情形——金圆券刚发的时候比价基本公道，
  * 真正吃人的是后面三个月的暴跌，那由物价指数负责，不由换币这一下。 */
-for (const [y, mo, d, strict] of [[1948, 8, 19, false], [1949, 5, 27, true]]) {
-  const cash = E.newRun({ year: y, month: mo, nick: 'x', seed: 1 });
-  const goods = E.newRun({ year: y, month: mo, nick: 'x', seed: 1 });
-  /* 一个把本钱全换成米，一个揣着现金不动 */
-  E.applyDay(goods, { entries: [{ what: '买米', amount: -goods.cash }], assetsAdd: [{ name: '两石米', kind: '实物', worth: goods.cash }] });
-  E.advanceTo(cash, 30); E.advanceTo(goods, 30);
+for (const [y, mo, strict] of [[1948, 8, false], [1949, 5, true]]) {
+  const pv = { year: y, month: mo - 1 };
+  const cash = E.newRun({ year: pv.year, month: pv.month, nick: 'x', seed: 1 });
+  const goods = E.newRun({ year: pv.year, month: pv.month, nick: 'x', seed: 1 });
+  E.applyMonth(goods, { entries: [{ what: '买米', amount: -goods.cash }], assetsAdd: [{ name: '两石米', kind: '实物', worth: goods.cash }] });
+  for (const st of [cash, goods]) {
+    st.months.push({ n: 1, year: st.year, month: st.month });
+    E.advanceTo(st, 2);
+    st.months.push({ n: 2, year: st.year, month: st.month });
+  }
   const a = E.settle(cash).score, b = E.settle(goods).score;
-  /* 容差 1%：1948 年公布的比价（三百万）跟我从收入锚点反解出来的（三百万零两千）
+  /* 容差 1‰：1948 年公布的比价（三百万）跟我从收入锚点反解出来的（三百万零两千）
    * 差千分之七，那是估算的噪声，不是设计上的差别。 */
   const tol = 0.001;
   if (b < a - tol) fail(`${y} 年换币：囤货 ${b.toFixed(4)} 反而不如攥现金 ${a.toFixed(4)}`);
@@ -173,36 +209,31 @@ for (const [y, mo, d, strict] of [[1948, 8, 19, false], [1949, 5, 27, true]]) {
     (b > a + 1e-9 ? `——差 ${(b - a).toFixed(4)} 年的收入` : '——这一年比价公道，两边一样'));
 }
 
-/* 5d. 一天的上限必须跟着换币走 */
-console.log('5d. 换币之后，一天的上限要按新钱算');
+/* 5d. 一个月的上限必须跟着换币走 */
+console.log('5d. 换币之后，一个月的上限要按新钱算');
 {
-  const before = E.dayCap(1948, 8, 1);
-  const after = E.dayCap(1948, 8, 25);
+  const before = E.monthCap(1948, 7);
+  const after = E.monthCap(1948, 8);
   const r = E.yearOf(1948).switch.rate;
   if (!(before / after > r * 0.5 && before / after < r * 2)) {
     fail(`换币前后的上限差了 ${(before / after).toExponential(2)} 倍，应该跟比价 ${r.toExponential(2)} 一个量级`);
   } else ok(`换币前 ${E.money(before, 'FABI')}，换币后 ${E.money(after, 'GOLDYUAN')}`);
 
   /* 拿它挡一遍「换币之后照旧用法币数目记账」那种错 */
-  const s = E.newRun({ year: 1948, month: 8, nick: 'x', seed: 2 });
-  E.advanceTo(s, 25);
-  for (let i = 0; i < 6; i++) { E.applyDay(s, { entries: [{ what: '照法币量级乱记的进账', amount: 5e7 }] }); E.advanceTo(s, s.day + 1); }
-  if (s.day > E.DAYS) s.day = E.DAYS;
-  const sc = E.settle(s).score;
-  /* 阈值直接读这一年的上限，别写死——上限改过一次（120 → 20），
-   * 写死的 130 留了六倍空子，dayCap 再退化六倍这条检查也不会响。 */
-  const ceil48 = E.yearOf(1948).ceiling;
-  if (sc > ceil48 + 1e-6) fail(`换币后天天记五千万，算出 ${sc.toFixed(1)} 年的收入，超过这一年的上限 ${ceil48}`);
-  else ok(`换币后天天记五千万，被上限压到 ${E.fmtScore(sc)}（这一年上限 ${ceil48}）`);
+  const { s } = walk(1948, 8, st => E.applyMonth(st, { entries: [{ what: '照法币量级乱记的进账', amount: 5e7 }] }));
+  const r2 = E.settle(s);
+  if (r2.score > r2.ceiling + 1e-6) fail(`换币后月月记五千万，算出 ${r2.score.toFixed(1)} 年的收入，超过整局上限 ${r2.ceiling.toFixed(1)}`);
+  else ok(`换币后月月记五千万，被上限压到 ${E.fmtScore(r2.score)}（整局上限 ${r2.ceiling.toFixed(1)}）`);
 }
 
-/* 6b. 漏掉换币直接结算，必须当场报错，不许静静算出个天文数字 */
-console.log('6b. 绕过 advanceTo 直接改天数，结算要报错');
+/* 6b. 绕过 advanceTo 直接改月份，结算要当场报错，不许静静算出个天文数字 */
+console.log('6b. 绕过 advanceTo 直接改月份，结算要报错');
 {
-  const s = E.newRun({ year: 1948, month: 8, nick: 'x', seed: 1 });
-  s.day = 30;                                          // 故意不走 advanceTo
+  const s = E.newRun({ year: 1948, month: 7, nick: 'x', seed: 1 });
+  s.month = 8; s.n = 2;                                // 故意不走 advanceTo，换币就漏了
+  s.months.push({ n: 1, year: 1948, month: 7 });
   let threw = false;
-  try { E.settle(s); } catch (err) { threw = /换币那天没走 advanceTo/.test(err.message); }
+  try { E.settle(s); } catch (err) { threw = /没走 advanceTo/.test(err.message); }
   if (!threw) fail('漏掉 1948 年 8 月的换币，结算居然没报错');
   else ok('报了错，没有算出二十八万年的收入');
 }
@@ -217,6 +248,17 @@ console.log('7. 清单字数');
   const c = E.checkList('a'.repeat(2000) + '干活');
   if (!c.ok) fail(`两千个英文字母被算进汉字数了：${c.n}`);
   else ok(`标点、英文、数字都不计入；${E.LIST_LIMIT} 个汉字封顶`);
+}
+
+/* 7b. 二十四个月要走得完：最晚只能从 2024 年 1 月开局 */
+console.log('7b. 开局月份的边界');
+{
+  const cases = [[2023, 12, true], [2024, 1, true], [2024, 2, false], [2025, 1, false], [1926, 1, true]];
+  for (const [y, m, want] of cases) {
+    if (E.startable(y, m) !== want) fail(`${y}-${m} 能不能开局判成了 ${!want}`);
+  }
+  const last = E.SPINE.years[E.SPINE.years.length - 1].year;
+  ok(`年卡到 ${last} 年 12 月为止，最晚从 2024 年 1 月开局`);
 }
 
 /* 8. 跨时代的东西一定要被认出来 */

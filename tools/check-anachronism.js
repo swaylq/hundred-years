@@ -74,7 +74,7 @@ async function one(c, i) {
   /* 第二层：模型收到裁定之后，真的顶回去了没有 */
   const s = E.newRun({ year: c.year, month: c.month, nick: '试', seed: 1234 + i });
   let r;
-  try { r = await SIM.runDay(s, c.list); }
+  try { r = await SIM.runMonth(s, c.list); }
   catch (err) { out.modelOk = false; out.why = '调模型出错：' + String(err.message).slice(0, 90); return out; }
 
   const refused = (r.delta.refused || []).map(x => `${x.what}${x.why}`).join(' ');

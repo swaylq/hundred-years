@@ -1,9 +1,9 @@
 'use strict';
 /* 端到端跑一遍网页并截图。服务端要先起着。
  *
- *   node tools/shoot.js [--out goal/shots] [--url http://127.0.0.1:8801] [--days 2]
- *     --days N   在网页上真打几天（每天都是一次模型调用，慢；默认 2）
- *     --fast     不打天，只截静态几屏
+ *   node tools/shoot.js [--out goal/shots] [--url http://127.0.0.1:8801] [--months 2]
+ *     --months N 在网页上真打几个月（每个月都是一次模型调用，慢；默认 2）
+ *     --fast     不打月，只截静态几屏
  *
  * 断言不过就退出码 1。截图存到 --out。
  */
@@ -25,7 +25,7 @@ const { chromium } = (() => {
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : (i >= 0 ? true : d); };
 const OUT = path.resolve(String(arg('out', path.join(__dirname, '..', 'goal', 'shots'))));
 const URL = String(arg('url', 'http://127.0.0.1:8801'));
-const DAYS = Number(arg('days', 2));
+const MONTHS = Number(arg('months', arg('days', 2)));
 const FAST = !!arg('fast');
 
 const fails = [];
@@ -102,23 +102,23 @@ async function noHScroll(page, where) {
   await snap(page, 'd-超字数被挡住');
 
   if (!FAST) {
-    console.log(`\n五、真打 ${DAYS} 天`);
-    for (let i = 1; i <= DAYS; i++) {
+    console.log(`\n五、真打 ${MONTHS} 个月`);
+    for (let i = 1; i <= MONTHS; i++) {
       await page.locator('#list').fill(
         i === 1
-          ? '早上去码头等活，找工头塞点门包，谈按件不按天。中午省一顿。下午打听哪里还招人，问清工钱管不管住。晚上找地方合租，租金压低些。'
-          : '接着昨天那条路做，做熟了就快。今天多问两家，看哪家给的价高。省着花，把钱攒下来。');
+          ? '月初去码头等活，找工头塞点门包，谈按件不按月。中间省着吃。再打听哪里还招人，问清工钱管不管住。月底前找地方合租，租金压低些。'
+          : '接着上个月那条路做，做熟了就快。这个月多问两家，看哪家给的价高。省着花，把钱攒下来。');
       await page.waitForTimeout(120);
       await page.locator('#send').click();
       await page.waitForFunction(
         d => document.querySelector('.bar .of')?.textContent.includes(`第 ${d + 1} /`),
         i, { timeout: 120000 });
       const story = (await page.locator('.story p').textContent()) || '';
-      check(story.length >= 60, `第 ${i} 天有正文（${story.length} 字）`);
+      check(story.length >= 60, `第 ${i} 个月有正文（${story.length} 字）`);
       const nEntry = await page.locator('.tally .e').count();
-      check(nEntry >= 1, `第 ${i} 天有 ${nEntry} 条分录`);
+      check(nEntry >= 1, `第 ${i} 个月有 ${nEntry} 条分录`);
     }
-    await snap(page, 'e-过完一天');
+    await snap(page, 'e-过完一个月');
   }
 
   if (!FAST) {
@@ -154,7 +154,7 @@ async function noHScroll(page, where) {
   {
     const post = async (p2, d) => (await fetch(URL + p2, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(d) })).json();
     const r = await post('/api/run', { year: 1930, month: 10, nick: '截图' });
-    for (let d = 1; d <= 30; d++) await post('/api/day', { id: r.id, token: r.token, list: '早上去码头等活，塞两角门包，谈按件不按天。晚上找同乡合租。' });
+    for (let d = 1; d <= 24; d++) await post('/api/month', { id: r.id, token: r.token, list: '月初去码头等活，塞两角门包，谈按件不按月。月底找同乡合租。' });
     const dp = await ctx.newPage();
     dp.on('pageerror', e => errors.push('结算页：' + String(e.message)));
     await dp.goto(URL, { waitUntil: 'networkidle' });
@@ -162,21 +162,21 @@ async function noHScroll(page, where) {
     await dp.reload({ waitUntil: 'networkidle' });
     await dp.waitForSelector('#s-play.on', { timeout: 15000 });
     const label = (await dp.locator('#send').textContent()).trim();
-    check(label === '三十天到了，去算账', `走满三十天之后按钮写的是「${label}」`);
+    check(label === '两年到了，去算账', `走满二十四个月之后按钮写的是「${label}」`);
     await dp.locator('#send').click();
     await dp.waitForSelector('#s-done.on', { timeout: 20000 });
     await dp.waitForTimeout(400);
     const num = (await dp.locator('.score-card .num').textContent()).trim();
     check(/^[−-]?\d/.test(num), `结算页有分数：${num}`);
     const nDays = await dp.locator('details.day').count();
-    check(nDays === 30, `结算页能回看 ${nDays} 天`);
+    check(nDays === 24, `结算页能回看 ${nDays} 个月`);
     const actTop = await dp.locator('.done-acts').boundingBox();
     const dayTop = await dp.locator('details.day').first().boundingBox();
-    check(actTop && dayTop && actTop.y < dayTop.y, '「再来一局」在三十天列表上面，不会被挤下去');
+    check(actTop && dayTop && actTop.y < dayTop.y, '「再来一局」在二十四个月的列表上面，不会被挤下去');
     await snap(dp, 'f2-结算');
     await dp.locator('details.day').nth(3).click();
     await dp.waitForTimeout(200);
-    check((await dp.locator('details.day[open] .daybox p').count()) > 0, '点开某一天能看到那天的正文');
+    check((await dp.locator('details.day[open] .daybox p').count()) > 0, '点开某个月能看到那个月的正文');
     await snap(dp, 'f3-回看某一天');
     await dp.close();
   }

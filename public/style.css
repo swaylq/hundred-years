@@ -286,7 +286,14 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .write textarea::placeholder { color: var(--muted); opacity: 1; }
 .write textarea:focus { outline: 2px solid var(--indigo); outline-offset: -1px; }
 .write textarea:disabled { color: var(--muted); background-image: none; }
-/* 明天能走的那几条路：夹在日历页里的三张纸条 */
+/* 正文边写边落的时候，末尾跟一个竖光标，让人看出还在写 */
+.story p.live::after {
+  content: ''; display: inline-block; width: 2px; height: 1em; margin-left: 2px;
+  background: var(--ink-2); vertical-align: -2px; animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* 下个月能走的那几条路：夹在日历页里的三张纸条 */
 .picks { margin: 0 0 12px; }
 .picks-head { display: flex; align-items: baseline; gap: 10px; font-size: 12.5px; color: var(--muted); margin-bottom: 7px; }
 .picks-head .more {

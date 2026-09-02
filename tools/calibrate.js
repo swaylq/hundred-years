@@ -4,7 +4,7 @@
  *   secret exec OPENROUTER_API_KEY -- node tools/calibrate.js [--per 5] [--jobs 10]
  *     --per N    每个年代打几局，默认 5
  *     --jobs N   同时打几局，默认 8
- *     --days N   每局只走前 N 天（试跑时压成本，默认走满 30）
+ *     --months N 每局只走前 N 个月（试跑时压成本，默认走满 24）
  *
  * 判据不是「各年代一样高」——那不可能也不该。判据是差别在一个量级里：
  * 没有哪个年代的中位数比全体中位数高 8 倍或低 1/8。
@@ -20,7 +20,7 @@ const ROOT = path.join(__dirname, '..');
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i >= 0 ? Number(process.argv[i + 1]) : d; };
 const PER = arg('per', 5);
 const JOBS = arg('jobs', 8);
-const DAYS = arg('days', E.DAYS);
+const MONTHS = arg('months', arg('days', E.MONTHS));
 const SPREAD = 8;                       // 允许的倍数
 
 const DECADES = [1920, 1930, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010];
@@ -31,26 +31,25 @@ const templateList = (s, c, r) => P.careful(s, c, r);
 const lazyList = s => P.lazy(s);
 
 async function playOne(year, month, seed, how = 'careful') {
-  const c = SIM.card(year);
   const s = E.newRun({ year, month, nick: '标定', seed });
   const r = rng(seed);
   let capped = 0, localDays = 0;
-  for (let day = 1; day <= DAYS; day++) {
+  for (let i = 1; i <= MONTHS; i++) {
+    const c = SIM.card(s.year);                      // 跨年之后换成那一年的年卡
     const list = how === 'lazy' ? lazyList(s) : templateList(s, c, r);
     let out;
-    try { out = await SIM.runDay(s, list); }
-    catch (err) { out = SIM.runDayLocal(s, list); localDays++; }
-    const res = E.applyDay(s, out.delta);
+    try { out = await SIM.runMonth(s, list); }
+    catch (err) { out = SIM.runMonthLocal(s, list); localDays++; }
+    const at = { n: s.n, year: s.year, month: s.month };
+    const res = E.applyMonth(s, out.delta);
     if (res.capped) capped++;
-    const tl = E.tallyLine(res.entries, E.currencyAt(year, month, s.day));
-    E.advanceTo(s, s.day + 1);
-    void tl;
-    s.days.push({ day, tally: tl });
+    const tl = E.tallyLine(res.entries, E.currencyOf(at.year, at.month));
+    s.months.push({ ...at, tally: tl });
+    if (i < MONTHS) E.advanceTo(s, i + 1); else s.n = E.MONTHS + 1;
   }
-  if (s.day > E.DAYS) s.day = E.DAYS;
   const R = E.settle(s);
-  /* 只走了一部分天数的话，按比例折算成三十天，好跟满局比 */
-  const score = DAYS === E.DAYS ? R.score : R.score * (E.DAYS / DAYS);
+  /* 只走了一部分月份的话，按比例折算成满局，好跟走满的比 */
+  const score = MONTHS === E.MONTHS ? R.score : R.score * (E.MONTHS / MONTHS);
   return { year, month, score, capped, localDays, ceiling: E.yearOf(year).ceiling };
 }
 

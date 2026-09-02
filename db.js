@@ -29,12 +29,20 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS runs_token ON runs(token);
 `);
 
-/* 老库里没有这两列，补上（SQLite 没有 ADD COLUMN IF NOT EXISTS） */
+/* 老库里没有这几列，补上（SQLite 没有 ADD COLUMN IF NOT EXISTS） */
 {
   const cols = new Set(db.prepare('PRAGMA table_info(runs)').all().map(c => c.name));
   if (!cols.has('year_earned')) db.exec('ALTER TABLE runs ADD COLUMN year_earned REAL');
   if (!cols.has('world_usd')) db.exec('ALTER TABLE runs ADD COLUMN world_usd REAL');
+  /* mode：这一局按什么规矩打的。按天走三十天的老局记 days30，
+   * 按月走二十四个月的新局记 months24。两种规矩的成绩不可比，
+   * 榜上只显示当前这一种；老局照旧留着，在「我的局」里看得到。 */
+  if (!cols.has('mode')) {
+    db.exec('ALTER TABLE runs ADD COLUMN mode TEXT');
+    db.exec("UPDATE runs SET mode = 'days30' WHERE mode IS NULL");
+  }
 }
+const MODE = 'months24';
 db.exec(`
   CREATE INDEX IF NOT EXISTS runs_world ON runs(status, world_usd DESC);
   CREATE INDEX IF NOT EXISTS runs_year  ON runs(status, year, year_earned DESC);
@@ -44,31 +52,31 @@ const id = () => crypto.randomBytes(9).toString('base64url');
 const now = () => Date.now();
 
 const q = {
-  ins: db.prepare('INSERT INTO runs (id,token,nick,year,month,state,status,created,updated) VALUES (?,?,?,?,?,?,?,?,?)'),
+  ins: db.prepare('INSERT INTO runs (id,token,nick,year,month,state,status,created,updated,mode) VALUES (?,?,?,?,?,?,?,?,?,?)'),
   get: db.prepare('SELECT * FROM runs WHERE id = ?'),
   upd: db.prepare('UPDATE runs SET state = ?, updated = ? WHERE id = ?'),
   fin: db.prepare('UPDATE runs SET state = ?, status = ?, score = ?, year_earned = ?, world_usd = ?, result = ?, updated = ? WHERE id = ?'),
-  mine: db.prepare('SELECT id,nick,year,month,status,score,created FROM runs WHERE token = ? ORDER BY created DESC LIMIT 30'),
+  mine: db.prepare('SELECT id,nick,year,month,status,score,created,mode FROM runs WHERE token = ? ORDER BY created DESC LIMIT 30'),
   /* 总榜：按「折成今天的美元」排 */
   boardWorld: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,updated FROM runs
-                     WHERE status = 'done' AND world_usd IS NOT NULL
+                     WHERE status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}'
                      ORDER BY world_usd DESC LIMIT ?`),
   /* 年榜：只跟同一年的人比，按当年那种钱净赚多少排 */
   boardYear: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,updated FROM runs
-                     WHERE status = 'done' AND year = ? AND year_earned IS NOT NULL
+                     WHERE status = 'done' AND year = ? AND year_earned IS NOT NULL AND mode = '${MODE}'
                      ORDER BY year_earned DESC LIMIT ?`),
-  yearsWithRuns: db.prepare(`SELECT year, COUNT(*) n FROM runs WHERE status = 'done' GROUP BY year ORDER BY year`),
-  countDone: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done'`),
-  rankWorld: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND world_usd > ?`),
-  rankYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND year = ? AND year_earned > ?`),
-  countYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND year = ?`),
+  yearsWithRuns: db.prepare(`SELECT year, COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' GROUP BY year ORDER BY year`),
+  countDone: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}'`),
+  rankWorld: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND world_usd > ?`),
+  rankYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND year = ? AND year_earned > ?`),
+  countYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND year = ?`),
 };
 
 function createRun(state, nick) {
   const rid = id();
   const token = crypto.randomBytes(16).toString('base64url');
   const t = now();
-  q.ins.run(rid, token, nick, state.year, state.month, JSON.stringify(state), 'playing', t, t);
+  q.ins.run(rid, token, nick, state.startYear || state.year, state.startMonth || state.month, JSON.stringify(state), 'playing', t, t, MODE);
   return { id: rid, token };
 }
 
