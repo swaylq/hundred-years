@@ -401,7 +401,8 @@ function renderMemo(m) {
     }
   }
   block('还没了结的', open.map(t => [`第 ${t.opened} 个月起`, t.what + (t.note ? ` —— ${t.note}` : '')]));
-  block('走过的路', (m.trail || []).map(t => [`${t.year} 年 ${t.month} 月`, t.say]));
+  /* 「走过的路」玩的时候不摆出来——二十四行压在旁边太乱（sway 2026-09-04）。
+     游戏照旧一条不少地记着，收工那一页每个月折起来的那一行就是它。 */
   /* 一个人一小段：名字一行，跟他之间发生过的事一个月一行。
      挤成一段读不下去——第 1 个月怎么认识的和第 20 个月什么交情，得看得出先后。 */
   if ((m.people || []).length) {
@@ -647,11 +648,16 @@ function monthCards(box, months, opts = {}) {
     const det = el('details', 'day' + (d.n > cut ? ' is-extra' : ''));
     const sum = el('summary');
     sum.appendChild(el('b', 'dn', `${d.year} 年 ${d.month} 月`));
-    sum.appendChild(el('span', 'dt', d.tally || ''));
+    /* 折起来的这一行就是那个月的月记——一眼扫得完这些年；账和正文点开再看。
+       玩的时候左边那一折里不摆月记（二十四行太乱），回顾的时候才摆。
+       老档没有月记，退回显示那一行账。 */
+    sum.appendChild(el('span', 'dt', d.say || d.tally || ''));
+    if (d.worth) sum.appendChild(el('em', 'dw', d.worth));
     det.appendChild(sum);
     const dbx = el('div', 'daybox');
     dbx.appendChild(el('div', 'mylist', '你写的：' + (d.list || '')));
     dbx.appendChild(el('p', '', d.story || ''));
+    if (d.say && d.tally) dbx.appendChild(el('div', 'note', d.tally));
     if (d.moved && d.moved.to) dbx.appendChild(el('div', 'note', `这个月你从${d.moved.from}到了${d.moved.to}。`));
     if (d.refused && d.refused.length) {
       const w = el('div', 'refused');

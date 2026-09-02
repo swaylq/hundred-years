@@ -151,7 +151,8 @@ async function noHScroll(page, where) {
     check(!!memo, '玩的时候翻得到「这一局记着的事」');
     if (memo) {
       check(/2 个月/.test(memo.概要), `折起来的那行写着走了几个月：${memo.概要.slice(0, 40)}`);
-      check(memo.正文.includes('走过的路'), '里头有「走过的路」这一段');
+      check(!memo.正文.includes('走过的路'), '玩的时候不摆「走过的路」（二十四行压在旁边太乱）');
+      check(/认识的人|还没了结的|练出来/.test(memo.正文), '该有的还在：认识的人／没了结的／练出来的');
       await snap(page, 'e3-记着的事');
     }
   }
@@ -222,6 +223,17 @@ async function noHScroll(page, where) {
     await dp.locator('details.day').nth(3).click();
     await dp.waitForTimeout(200);
     check((await dp.locator('details.day[open] .daybox p').count()) > 0, '点开某个月能看到那个月的正文');
+    /* 收工回顾：折起来的那一行就是那个月的月记，整段读得完，不许被省略号截掉 */
+    const 摘要 = await dp.evaluate(() => {
+      const d = document.querySelectorAll('details.day')[5];
+      const t = d.querySelector('.dt');
+      return { 字数: (t.textContent.match(/[\u4e00-\u9fff]/g) || []).length,
+               截了: getComputedStyle(t).textOverflow === 'ellipsis' && getComputedStyle(t).whiteSpace === 'nowrap',
+               有家底: !!d.querySelector('.dw') };
+    });
+    check(摘要.字数 > 25, `折起来那一行是那个月的月记（${摘要.字数} 个汉字），不是一行账`);
+    check(!摘要.截了, '月记整段读得完，没被省略号截掉');
+    check(摘要.有家底, '每个月右边跟着当月收工的家底');
     await snap(dp, 'f3-回看某一天');
     await dp.close();
   }

@@ -278,6 +278,8 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 #memo-body .row .d { white-space: normal; }
 .memo-who { font-size: 13px; color: var(--ink); margin: 10px 0 3px; }
 .memo-who:first-of-type { margin-top: 2px; }
+/* 结算页折起来那一行右边的家底 */
+.day summary .dw { font-style: normal; flex: 0 0 auto; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
 .memo-who.lost { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--rule-2); }
 
 .story { margin-bottom: 26px; }
@@ -386,12 +388,14 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .kv b { font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .done-acts { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 details.day { border-bottom: 1px dotted var(--rule); }
-details.day > summary { cursor: pointer; padding: 9px 0; display: flex; gap: 12px; align-items: baseline; font-size: 13px; list-style: none; }
+details.day > summary { cursor: pointer; padding: 9px 0; display: flex; gap: 12px; align-items: flex-start; font-size: 13px; list-style: none; }
 details.day > summary::-webkit-details-marker { display: none; }
 details.day > summary::before { content: '›'; color: var(--muted); transition: transform .15s; display: inline-block; }
 details.day[open] > summary::before { transform: rotate(90deg); }
 details.day .dn { font-weight: 400; color: var(--muted); flex: 0 0 4.4em; font-variant-numeric: tabular-nums; }
-details.day .dt { color: var(--ink-2); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 折起来那一行摆的是那个月的月记，收工回顾时整段读得完——不截断、让它折行。
+   老档没有月记，退回显示那一行账（还是长的，照样折行）。 */
+details.day .dt { color: var(--ink-2); flex: 1 1 auto; line-height: 1.75; }
 .daybox { padding: 4px 0 16px 1.4em; }
 .daybox .mylist { font-size: 13px; color: var(--muted); border-left: 2px solid var(--rule-2); padding: 6px 0 6px 12px; margin-bottom: 12px; white-space: pre-wrap; }
 .daybox p { font: 15.5px/1.95 var(--serif); margin: 0; white-space: pre-wrap; }

@@ -142,11 +142,18 @@ function view(s) {
 
 /** 一局走过的每一个月，给结算页回看用 */
 function monthList(s) {
-  return (s.months || []).map(d => ({
-    n: d.n, year: d.year, month: d.month,
-    list: d.list, story: d.story, tally: d.tally,
-    refused: d.refused || [], capped: !!d.capped,
-  }));
+  /* 「走过的路」那一句只在回顾的时候给——玩的时候摆在旁边太乱（sway 2026-09-04）。
+   * 结算页每个月折起来的那一行用它当摘要，一眼扫得完二十四个月。 */
+  const trail = new Map(((s.memo || {}).trail || []).map(t => [t.n, t]));
+  return (s.months || []).map(d => {
+    const t = trail.get(d.n);
+    return {
+      n: d.n, year: d.year, month: d.month,
+      list: d.list, story: d.story, tally: d.tally,
+      say: t ? t.say : '', worth: t ? t.worth : '',
+      refused: d.refused || [], capped: !!d.capped,
+    };
+  });
 }
 
 /** 老存档（按天走的那一版）读不动，好好说一声，别抛异常 */
