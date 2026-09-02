@@ -1,0 +1,9 @@
+# 跑出来的东西，不进版本库
+logs/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/.gen-cache.json
+data/years/_failed/
+goal/shots/
+node_modules/

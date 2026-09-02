@@ -1,0 +1,124 @@
+'use strict';
+/* 玩家写了跨时代的事，游戏必须把他顶回去。
+ *
+ *   secret exec OPENROUTER_API_KEY -- node tools/check-anachronism.js
+ *     --local   只验本地那道闸（不花钱，秒出）
+ *     --jobs N  并发，默认 4
+ *
+ * 两层都要过：
+ *   一、本地关键词表当场认出来（engine.scanAnachronism）——这层是确定性的，
+ *       不指望模型自己想起 1930 年没有手机。
+ *   二、模型收到裁定之后，refused 里要有这一条，正文里要写出他撞的那堵墙。
+ * 十二个场景，一个不过就退出码非 0。
+ */
+const path = require('path');
+const fs = require('fs');
+const E = require('../engine.js');
+const SIM = require('../sim.js');
+
+const LOCAL = process.argv.includes('--local');
+const JOBS = (() => { const i = process.argv.indexOf('--jobs'); return i >= 0 ? Number(process.argv[i + 1]) : 4; })();
+
+/* want: 应当被顶回去的那个词。null 表示这条是对照组，不该被拦。 */
+const CASES = [
+  { year: 1930, month: 5,  list: '我打算做一个手机应用，卖给上海的商行，收订阅费。', want: '手机应用' },
+  { year: 1943, month: 3,  list: '弄一台个人电脑，写一套记账的程序卖给几家商行。', want: '个人电脑' },
+  { year: 1958, month: 9,  list: '去银行办一张信用卡，先刷五百块进货。', want: '信用卡' },
+  { year: 1962, month: 5,  list: '注册一家私营企业，招十个工人做服装。', want: '私营企业' },
+  { year: 1934, month: 6,  list: '去交易所做标金，再看看纱布期货，本钱两百块大洋。', want: null },
+  { year: 1968, month: 4,  list: '在街口摆个摊卖凉粉，一天卖两百碗。', want: '摆摊' },
+  { year: 1975, month: 7,  list: '按揭买一套商品房，等它涨价再卖掉。', want: '商品房' },
+  { year: 1980, month: 6,  list: '开个网店，把这边的衣服卖到南方去。', want: '网店' },
+  { year: 1986, month: 2,  list: '用微信联系几个客户，把货款打过来。', want: '微信' },
+  { year: 1992, month: 1,  list: '买点比特币囤着，等它翻十倍。', want: '比特币' },
+  { year: 2003, month: 4,  list: '开个直播带货，一晚上卖三万块。', want: '直播带货' },
+  /* 两条对照组：写的是那一年真有的事，绝不能被拦 */
+  { year: 1985, month: 8,  list: '在街口摆个摊卖凉粉，一天卖两百碗，顺便打听哪里能批到便宜的绿豆。', want: null },
+  { year: 2015, month: 6,  list: '开个网店卖衣服，找人拍照修图，先上二十个款试试水。', want: null },
+];
+
+async function one(c, i) {
+  const out = { ...c, n: i + 1, localOk: false, modelOk: null, why: '' };
+
+  /* 第一层：本地关键词表 */
+  const hits = E.scanAnachronism(c.list, c.year);
+  /* 「摆个摊」是「摆摊」的一种写法，比对之前先把中间塞的那个字去掉；
+   * 条目本身的名字也算数（摆摊命中的是「个体户」这一条）。 */
+  const norm = w => String(w).replace(/(个|了|过|一个|了个)/g, '');
+  const words = hits.flatMap(h => [h.word, norm(h.word), h.name]);
+  if (c.want === null) {
+    out.localOk = hits.length === 0;
+    if (!out.localOk) out.why = `不该拦却拦了：${words.join('、')}`;
+  } else {
+    const want = norm(c.want);
+    out.localOk = words.some(w => w.includes(want) || want.includes(norm(w)));
+    if (!out.localOk) out.why = hits.length ? `拦到的是${hits.map(h => h.word).join('、')}，不是「${c.want}」` : '一个都没拦住';
+  }
+  if (LOCAL || !out.localOk) return out;
+
+  /* 第二层：模型收到裁定之后，真的顶回去了没有 */
+  const s = E.newRun({ year: c.year, month: c.month, nick: '试', seed: 1234 + i });
+  let r;
+  try { r = await SIM.runDay(s, c.list); }
+  catch (err) { out.modelOk = false; out.why = '调模型出错：' + String(err.message).slice(0, 90); return out; }
+
+  const refused = (r.delta.refused || []).map(x => `${x.what}${x.why}`).join(' ');
+  const story = String(r.delta.story || '');
+  if (c.want === null) {
+    /* 对照组：只查一件事——**有没有说「这东西那时候还没有」**。
+     * 别拿词表判语义：模型说「开网店缺少模特和专业修图，且尚未交付保证金进货」
+     * 是一条完全合理的生意理由，里面那个「尚未」跟年代无关，
+     * 上一版把它判成「对照组被当成跨时代顶回去了」，白红了两次。
+     * 现在只认「点名了这样东西 + 明说它那个年代没有」这一种组合。 */
+    const saidAbsent = new RegExp(`${c.list.match(/网店|摆摊|摆个摊|交易所|标金|期货/g)?.join('|') || '不可能出现的词'}`).test(refused) &&
+      /(这一?年|那时候|当时|眼下|如今)?[^。]{0,12}(还没有|尚未出现|还不存在|要到\s*\d{4}\s*年|\d{4}\s*年才有)/.test(refused);
+    out.modelOk = !saidAbsent;
+    if (!out.modelOk) out.why = `对照组被当成跨时代顶回去了：${refused.slice(0, 70)}`;
+  } else {
+    const mentioned = refused.includes(c.want) || story.includes(c.want);
+    /* 「有没有给理由」用字数判，不用词表判。
+     * 上一版列了二十来个词（没有/不存在/要到/犯法…），
+     * 结果模型写「私有经济被禁止，属于投机倒把，面临没收工具和拘留处罚」
+     * 反被判成「没说清楚」——那是一条完全正确的理由，只是没用到表里的词。
+     * 拿词表当语义判断用，等于没判断。
+     * 这里只机械地验两件事：提到了那样东西、并且给了一段像样的理由；
+     * 理由本身对不对，交给挑刺的人读，脚本不装作能判。 */
+    const why = (r.delta.refused || []).map(x => String(x.why || '')).join('');
+    const what = (r.delta.refused || []).map(x => String(x.what || '')).join('');
+    const substantive = why.length >= 10 && why !== what;
+    out.modelOk = mentioned && substantive;
+    if (!out.modelOk) {
+      out.why = !mentioned ? `正文和 refused 里都没提「${c.want}」`
+        : (why.length < 10 ? `refused 里的理由只有 ${why.length} 个字，等于没说` : '理由跟他想做的事一模一样，等于没说');
+    }
+  }
+  out.story = story.slice(0, 100);
+  out.refused = refused.slice(0, 120);
+  return out;
+}
+
+(async () => {
+  for (const c of CASES) {
+    if (!fs.existsSync(path.join(__dirname, '..', 'data', 'years', `${c.year}.json`))) {
+      console.error(`${c.year} 年的年卡还没生成，先跑 tools/gen-years.js`); process.exit(2);
+    }
+  }
+  const OR = require('./or.js');
+  const res = LOCAL
+    ? CASES.map((c, i) => one(c, i)).map(x => x)     // 本地是同步的，await 一下即可
+    : await OR.pool(CASES, JOBS, one);
+  const rows = await Promise.all(res);
+
+  let bad = 0;
+  for (const r of rows) {
+    const tag = r.want === null ? '对照' : '该拦';
+    const ok = r.localOk && (r.modelOk === null || r.modelOk);
+    if (!ok) bad++;
+    console.log(`${ok ? '✓' : '✗'} ${String(r.n).padStart(2)}. ${r.year}-${String(r.month).padStart(2, '0')} [${tag}] ${r.list.slice(0, 26)}…`);
+    console.log(`     本地 ${r.localOk ? '过' : '没过'}` + (r.modelOk === null ? '' : `  模型 ${r.modelOk ? '过' : '没过'}`) + (r.why ? `  —— ${r.why}` : ''));
+    if (!ok && r.refused) console.log(`     模型说：${r.refused}`);
+  }
+  console.log(`\n${rows.length - bad}/${rows.length} 过` + (LOCAL ? '（只验了本地那道闸）' : ''));
+  if (!LOCAL) console.log(OR.report());
+  process.exit(bad ? 1 : 0);
+})();

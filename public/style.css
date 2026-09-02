@@ -1,0 +1,311 @@
+/* 《这一百年》——账本的样子：纸、墨、一点印章红。
+   浅色深色两套，跟着系统走。 */
+
+:root {
+  --paper:   #f7f4ec;
+  --paper-2: #efeadd;
+  --card:    #fffdf8;
+  --ink:     #1b1815;
+  --ink-2:   #4a443b;
+  --muted:   #837a6b;
+  --rule:    #ded6c5;
+  --rule-2:  #cbc1ac;
+  --seal:    #a5322a;
+  --seal-dim:#c96c62;
+  --indigo:  #33505f;
+  --good:    #3f6b46;
+  --bad:     #9a3b32;
+  --shadow:  0 1px 2px rgba(40,32,20,.06), 0 8px 24px -12px rgba(40,32,20,.18);
+  --serif:   "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", Georgia, serif;
+  --sans:    -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+  --mono:    ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:   #15140f;
+    --paper-2: #1c1a14;
+    --card:    #201d16;
+    --ink:     #ece6d9;
+    --ink-2:   #c2baa9;
+    --muted:   #8d8474;
+    --rule:    #302c22;
+    --rule-2:  #423c2e;
+    --seal:    #d96155;
+    --seal-dim:#a3453c;
+    --indigo:  #8fb0c2;
+    --good:    #7fb489;
+    --bad:     #e07a6e;
+    --shadow:  0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.7 var(--sans);
+  -webkit-text-size-adjust: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ── 页眉 ───────────────────────────────── */
+#top {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  padding: 14px 18px 10px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+}
+#top h1 { margin: 0; font: 400 21px/1 var(--serif); letter-spacing: .16em; }
+#top h1 .t1 { color: var(--seal); }
+#top nav { display: flex; gap: 4px; margin-left: auto; }
+#top nav button {
+  border: 0; background: none; color: var(--muted);
+  font: 13px/1 var(--sans); padding: 7px 10px; border-radius: 6px; cursor: pointer;
+}
+#top nav button:hover { color: var(--ink); background: var(--paper-2); }
+#top nav button.on { color: var(--ink); background: var(--paper-2); box-shadow: inset 0 -2px 0 var(--seal); }
+
+main { max-width: 720px; margin: 0 auto; padding: 20px 18px 64px; }
+.screen { display: none; }
+.screen.on { display: block; animation: in .22s ease-out; }
+@keyframes in { from { opacity: 0; transform: translateY(4px); } }
+
+h2 { font: 400 19px/1.4 var(--serif); margin: 0 0 6px; letter-spacing: .04em; }
+h3.mh { font: 400 16px/1.4 var(--serif); margin: 30px 0 2px; letter-spacing: .04em; }
+.lede { color: var(--ink-2); margin: 0 0 22px; max-width: 46em; }
+.hint { color: var(--muted); font-size: 13px; margin: 2px 0 14px; }
+.foot { color: var(--muted); font-size: 12.5px; margin-top: 16px; }
+.nowrap { white-space: nowrap; }
+.wait { color: var(--muted); }
+
+button { font-family: inherit; }
+.primary {
+  background: var(--seal); color: #fff; border: 0; border-radius: 7px;
+  padding: 11px 20px; font-size: 15px; cursor: pointer; letter-spacing: .04em;
+}
+.primary:hover { filter: brightness(1.08); }
+.primary:disabled { background: var(--rule-2); color: var(--muted); cursor: not-allowed; filter: none; }
+.back {
+  border: 0; background: none; color: var(--muted); cursor: pointer;
+  padding: 4px 0; margin-bottom: 12px; font-size: 13px;
+}
+.back:hover { color: var(--ink); }
+[data-go="board"], [data-go="pick"] { font-family: inherit; }
+
+/* ── 一百年的格子 ───────────────────────── */
+.grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; }
+.decade { grid-column: 1 / -1; display: none; }
+.yr {
+  position: relative; aspect-ratio: 1 / .82;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 1px solid var(--rule); border-radius: 5px;
+  background: var(--card); color: var(--ink);
+  font: 400 14px/1 var(--mono); font-variant-numeric: tabular-nums;
+  cursor: pointer; padding: 0; transition: transform .1s, border-color .1s;
+}
+.yr:hover { border-color: var(--seal); transform: translateY(-1px); z-index: 2; }
+.yr:disabled { opacity: .3; cursor: not-allowed; }
+.yr .heat { position: absolute; inset: auto 0 0 0; height: 3px; border-radius: 0 0 4px 4px; background: var(--seal); }
+.yr.d0 .heat { opacity: .16 } .yr.d1 .heat { opacity: .34 }
+.yr.d2 .heat { opacity: .58 } .yr.d3 .heat { opacity: .85 }
+.yr .sw { position: absolute; top: 3px; right: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--indigo); }
+
+/* ── 年份详情 ───────────────────────────── */
+#year-head { border-bottom: 2px solid var(--ink); padding-bottom: 12px; margin-bottom: 16px; }
+#year-head .big { font: 400 46px/1 var(--serif); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+#year-head .era { color: var(--ink-2); margin-top: 8px; font-size: 15px; }
+#year-head .meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.flavor {
+  font: 15.5px/1.95 var(--serif); color: var(--ink);
+  background: var(--card); border-left: 3px solid var(--seal);
+  padding: 16px 18px; border-radius: 0 6px 6px 0; margin: 0 0 20px; box-shadow: var(--shadow);
+}
+.block { margin-bottom: 18px; }
+.block > h4 {
+  margin: 0 0 7px; font: 400 13px/1 var(--sans); color: var(--muted);
+  letter-spacing: .1em; text-transform: none;
+}
+.block ul { margin: 0; padding: 0; list-style: none; }
+.block li { padding: 5px 0; border-bottom: 1px dotted var(--rule); font-size: 14px; }
+.block li:last-child { border-bottom: 0; }
+.block li .who { color: var(--muted); font-size: 12.5px; }
+.pricegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 18px; }
+.pricegrid div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dotted var(--rule); font-size: 13.5px; }
+.pricegrid b {
+  font-weight: 400; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--ink-2); white-space: nowrap; flex: 0 0 auto;   /* 「3 银元」不许断成「3 银 / 元」 */
+}
+.pricegrid div > span { min-width: 0; }
+.tagrow { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag { font-size: 12.5px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--rule-2); color: var(--ink-2); }
+.tag.no { color: var(--muted); border-style: dashed; text-decoration: line-through; text-decoration-color: var(--rule-2); }
+.warn { border-left: 3px solid var(--indigo); padding: 10px 14px; background: var(--paper-2); border-radius: 0 6px 6px 0; font-size: 13.5px; color: var(--ink-2); }
+
+.months { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 10px; }
+.mo {
+  border: 1px solid var(--rule); background: var(--card); border-radius: 6px;
+  padding: 9px 4px 8px; cursor: pointer; text-align: center; color: var(--ink);
+}
+.mo:hover { border-color: var(--seal); }
+.mo.on { border-color: var(--seal); background: color-mix(in srgb, var(--seal) 9%, var(--card)); }
+.mo .n { font: 400 17px/1.2 var(--serif); font-variant-numeric: tabular-nums; }
+.mo .dot { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--seal); margin: 4px auto 0; }
+.mo .dot.off { visibility: hidden; }
+.mo-detail { margin-top: 10px; font-size: 13.5px; color: var(--ink-2); min-height: 1.7em; }
+.start-box { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+.start-box label { font-size: 13.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.start-box input {
+  font: 16px var(--sans); padding: 9px 11px; border: 1px solid var(--rule-2);
+  border-radius: 6px; background: var(--card); color: var(--ink); width: 160px;
+}
+
+/* ── 玩的界面 ───────────────────────────── */
+.bar {
+  position: sticky; top: 52px; z-index: 10;
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline;
+  padding: 11px 14px; margin-bottom: 16px;
+  background: var(--card); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--shadow);
+}
+.bar .date { font: 400 16px/1 var(--serif); font-variant-numeric: tabular-nums; }
+.bar .of { color: var(--muted); font-size: 12.5px; }
+.bar .cash { margin-left: auto; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 15px; }
+.bar .cash b { font-weight: 600; }
+.bar .prog { flex: 1 0 100%; height: 2px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.bar .prog i { display: block; height: 100%; background: var(--seal); transition: width .3s; }
+.bar .st { color: var(--muted); font-size: 12px; }
+
+.ref { margin-bottom: 18px; border: 1px solid var(--rule); border-radius: 8px; background: var(--card); }
+.ref > summary {
+  cursor: pointer; padding: 10px 14px; font-size: 13px; color: var(--muted); list-style: none;
+}
+.ref > summary::-webkit-details-marker { display: none; }
+.ref > summary::before { content: '›'; display: inline-block; margin-right: 7px; transition: transform .15s; }
+.ref[open] > summary::before { transform: rotate(90deg); }
+.ref[open] > summary { border-bottom: 1px solid var(--rule); }
+#ref-body { padding: 14px 14px 4px; }
+#ref-body .block:last-child { margin-bottom: 10px; }
+
+.story { margin-bottom: 20px; }
+.story .day-num { font: 400 12px/1 var(--sans); color: var(--muted); letter-spacing: .12em; margin-bottom: 8px; }
+.story p { font: 15.5px/2 var(--serif); margin: 0 0 12px; white-space: pre-wrap; }
+.story .tally {
+  font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+  border-top: 1px dotted var(--rule); padding-top: 9px; font-variant-numeric: tabular-nums;
+}
+.story .tally .e { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.story .tally .e b { font-weight: 400; color: var(--good); }
+.story .tally .e.out b { color: var(--bad); }
+.refused { border-left: 3px solid var(--bad); background: var(--paper-2); padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0; }
+.refused b { display: block; font-weight: 400; font-size: 12px; color: var(--bad); letter-spacing: .08em; margin-bottom: 5px; }
+.refused ul { margin: 0; padding: 0; }
+.refused li { font-size: 13.5px; color: var(--ink-2); list-style: none; padding: 2px 0; }
+.note { font-size: 12.5px; color: var(--muted); margin: 10px 0; }
+
+.write { border-top: 1px solid var(--rule); padding-top: 16px; }
+.write label { display: block; font: 400 13px/1 var(--sans); color: var(--muted); letter-spacing: .06em; margin-bottom: 8px; }
+.write textarea {
+  width: 100%; font: 16px/1.85 var(--sans); color: var(--ink);
+  background: var(--card); border: 1px solid var(--rule-2); border-radius: 8px;
+  padding: 13px 14px; resize: vertical; min-height: 150px;
+}
+.write textarea:focus { outline: 2px solid var(--seal); outline-offset: -1px; border-color: transparent; }
+.write-foot { display: flex; align-items: center; gap: 14px; margin-top: 11px; }
+.count { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.count.over { color: var(--bad); }
+.write-foot .primary { margin-left: auto; }
+
+.ledger { margin-top: 28px; border-top: 1px solid var(--rule); padding-top: 10px; }
+.ledger summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.ledger .row { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px dotted var(--rule); font-size: 13px; }
+.ledger .row .d { color: var(--muted); font-family: var(--mono); flex: 0 0 3.4em; }
+.ledger .row .t { color: var(--ink-2); }
+
+/* ── 结算 ───────────────────────────────── */
+.score-card { text-align: center; padding: 30px 20px 26px; border: 2px solid var(--ink); border-radius: 10px; margin-bottom: 22px; background: var(--card); }
+.score-card .who { color: var(--muted); font-size: 13px; letter-spacing: .1em; }
+.score-card .num { font: 400 44px/1.15 var(--serif); font-variant-numeric: tabular-nums; margin: 10px 0 2px; letter-spacing: -.01em; }
+.score-card .num.neg { color: var(--bad); }
+.score-card .unit { font-size: 14px; color: var(--ink-2); }
+.score-card .rank { margin-top: 16px; padding-top: 14px; border-top: 1px dotted var(--rule); font-size: 13.5px; color: var(--muted); }
+.score-card .rank b { color: var(--seal); font-size: 20px; font-family: var(--serif); font-weight: 400; }
+.score-card .rank { line-height: 1.9; }
+.kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 2px 20px; margin-bottom: 22px; }
+.kv div { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dotted var(--rule); font-size: 13.5px; }
+.kv span { color: var(--muted); }
+.kv b { font-weight: 400; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.done-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.done-acts button:not(.primary) {
+  border: 1px solid var(--rule-2); background: none; color: var(--ink-2);
+  border-radius: 7px; padding: 11px 18px; font-size: 15px; cursor: pointer;
+}
+details.day { border-bottom: 1px dotted var(--rule); }
+details.day > summary {
+  cursor: pointer; padding: 9px 0; display: flex; gap: 12px; align-items: baseline;
+  font-size: 13px; list-style: none;
+}
+details.day > summary::-webkit-details-marker { display: none; }
+details.day > summary::before { content: '›'; color: var(--muted); transition: transform .15s; display: inline-block; }
+details.day[open] > summary::before { transform: rotate(90deg); }
+details.day .dn { font-weight: 400; font-family: var(--mono); color: var(--muted); flex: 0 0 4.2em; }
+details.day .dt { color: var(--ink-2); font-family: var(--mono); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.daybox { padding: 4px 0 16px 1.4em; }
+.daybox .mylist {
+  font-size: 13px; color: var(--muted); border-left: 2px solid var(--rule-2);
+  padding: 6px 0 6px 12px; margin-bottom: 12px; white-space: pre-wrap;
+}
+.daybox p { font: 15px/1.95 var(--serif); margin: 0; white-space: pre-wrap; }
+
+/* ── 排行榜 ─────────────────────────────── */
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
+.tabs button {
+  border: 1px solid var(--rule); background: var(--card); color: var(--muted);
+  border-radius: 20px; padding: 5px 13px; font-size: 12.5px; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.tabs button.on { border-color: var(--seal); color: var(--seal); }
+.cap {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px;
+  font-size: 11px; background: var(--seal); color: #fff; vertical-align: 1px;
+}
+.score-card .num { word-break: keep-all; }
+table.board { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.board th { text-align: left; font-weight: 400; color: var(--muted); font-size: 12px; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--rule-2); letter-spacing: .06em; }
+table.board td { padding: 9px 8px 9px 0; border-bottom: 1px dotted var(--rule); vertical-align: baseline; }
+table.board td.r { font-family: var(--serif); font-size: 16px; color: var(--muted); width: 2.4em; font-variant-numeric: tabular-nums; }
+table.board tr:nth-child(-n+3) td.r { color: var(--seal); }
+table.board td.y { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.board td.s { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.empty { color: var(--muted); padding: 26px 0; text-align: center; font-size: 13.5px; }
+
+/* ── 提示条 ─────────────────────────────── */
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  background: var(--ink); color: var(--paper); padding: 11px 18px; border-radius: 8px;
+  font-size: 13.5px; z-index: 50; max-width: 88vw; box-shadow: var(--shadow);
+}
+
+/* ── 窄屏 ───────────────────────────────── */
+@media (max-width: 640px) {
+  main { padding: 16px 14px 56px; }
+  .grid { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .decade {
+    display: block; font: 400 11px/1 var(--mono); color: var(--muted);
+    letter-spacing: .1em; margin: 12px 0 2px; padding-bottom: 3px; border-bottom: 1px solid var(--rule);
+  }
+  .decade:first-child { margin-top: 0; }
+  .yr { aspect-ratio: 1 / .7; font-size: 13px; }
+  .months { grid-template-columns: repeat(4, 1fr); }
+  #year-head .big { font-size: 38px; }
+  .score-card .num { font-size: 32px; }
+  .bar { top: 48px; }
+  .bar .cash { margin-left: 0; flex: 1 0 100%; }
+  table.board td.c { display: none; }
+  table.board th.c { display: none; }
+}
