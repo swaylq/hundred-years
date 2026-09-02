@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e9e0c9">
 <title>这一百年</title>
 <link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body data-screen="pick">
 
 <header id="top">
-  <h1><span class="t1">这</span><span class="t2">一百年</span></h1>
+  <button class="brand" data-go="pick">这一百年</button>
   <nav>
     <button data-go="pick" class="on">挑一年</button>
     <button data-go="board">排行榜</button>
@@ -21,16 +22,22 @@
 
 <!-- 挑一年 -->
 <section id="s-pick" class="screen on">
-  <p class="lede">
-    挑一年，挑一个月，落进那时候的中国，过三十天。
-    每天写下你要做的事，看这个世界怎么回你。
-    三十天后算账：你赚到的钱，相当于那一年一个普通人多少年的收入。
-  </p>
-  <div id="grid" class="grid"><p class="wait">正在读一百年…</p></div>
-  <p class="foot">
-    格子下面那道红杠越深，那一年能挣到的越多——<span class="nowrap">但挣得多不等于好挣。</span>
-    右上角有个蓝点的年份，<span class="nowrap">那一年会换钱。</span>
-  </p>
+  <div class="pick">
+    <div class="hero-title">
+      <h1>这一百年</h1>
+      <span class="hero-seal" aria-hidden="true">这一百年</span>
+    </div>
+    <div class="pick-body">
+      <p class="lede-big">挑一年落进去，过三十天。</p>
+      <p class="lede">每天写下你要做的事，看那一年的中国怎么回你。三十天后算账：你赚到的钱，抵得上那时候一个普通人几年的收入。</p>
+      <div id="grid" class="century"><p class="wait">正在翻这一百年…</p></div>
+      <p id="grid-cap" class="cap-line">点一个年份，进去看看。</p>
+      <p class="legend">
+        <i class="lg-heat"></i>格子越红，那一年能挣的越多——但不等于好挣。
+        <i class="lg-dot"></i>带蓝点的年份，那一年会换钱。
+      </p>
+    </div>
+  </div>
 </section>
 
 <!-- 一年的详情 + 选月 -->
@@ -38,29 +45,34 @@
   <button class="back" data-go="pick">← 换一年</button>
   <div id="year-head"></div>
   <div id="year-body"></div>
-  <h3 class="mh">从哪个月开始</h3>
-  <p class="hint">同一年里，月份差得很远。选定就从那个月 1 号走到 30 号。</p>
+  <h3 class="mh">从哪个月落地</h3>
+  <p class="hint">同一年里，月份差得很远。选定了，就从那个月 1 号过到 30 号。</p>
   <div id="months" class="months"></div>
+  <div id="mo-detail" class="mo-detail">点一个月。带红点的月份，那个月出过事。</div>
   <div id="start-box" class="start-box" hidden>
-    <label>叫什么名字 <input id="nick" maxlength="16" placeholder="留个名号上榜"></label>
-    <button id="start" class="primary">进去</button>
+    <label>报个名号 <input id="nick" maxlength="16" placeholder="上榜用的名字"></label>
+    <button id="start" class="primary">动身</button>
   </div>
 </section>
 
 <!-- 玩 -->
 <section id="s-play" class="screen">
-  <div id="play-bar" class="bar"></div>
-  <details id="ref" class="ref"><summary>翻一下这一年：物价、能干什么、不能干什么</summary><div id="ref-body"></div></details>
-  <div id="play-story" class="story"></div>
-  <div id="play-write" class="write">
-    <label for="list" id="write-label">今天打算做什么</label>
-    <textarea id="list" rows="7" placeholder="写下来，越具体越有用。&#10;比如：早上去码头等活，问工头能不能预支半天工钱；&#10;中午去当铺问问那块表能当多少；&#10;晚上找同乡打听哪里招人。"></textarea>
-    <div class="write-foot">
-      <span id="count" class="count">0 / 500</span>
-      <button id="send" class="primary">过完这一天</button>
+  <div class="play">
+    <aside id="play-bar" class="bar"></aside>
+    <div class="play-main">
+      <div id="play-story" class="story"></div>
+      <div id="play-write" class="write">
+        <label for="list" id="write-label">今天打算做什么</label>
+        <textarea id="list" rows="6" placeholder="写下来，越具体越管用。&#10;比如：早上去码头等活，问工头能不能预支半天工钱；&#10;中午去当铺问问那块表能当多少；&#10;晚上找同乡打听哪里招人。"></textarea>
+        <div class="write-foot">
+          <span id="count" class="count">0 / 500 字</span>
+          <button id="send" class="primary">就这么过这一天</button>
+        </div>
+      </div>
+      <details id="ref" class="fold"><summary>翻翻这一年的底：东西什么价、能干什么、碰不得什么</summary><div id="ref-body"></div></details>
+      <details id="ledger" class="fold"><summary>翻翻这几天的账</summary><div id="ledger-body"></div></details>
     </div>
   </div>
-  <details id="ledger" class="ledger"><summary>这几天的账</summary><div id="ledger-body"></div></details>
 </section>
 
 <!-- 结算 -->
@@ -68,7 +80,7 @@
   <div id="done-body"></div>
   <div class="done-acts">
     <button class="primary" data-go="pick">再来一局</button>
-    <button data-go="board">看排行榜</button>
+    <button class="ghost-btn" data-go="board">看排行榜</button>
   </div>
   <div id="done-days"></div>
 </section>

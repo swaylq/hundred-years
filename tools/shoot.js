@@ -59,7 +59,7 @@ async function noHScroll(page, where) {
   console.log('\n二、一年的详情和选月');
   await page.locator('.yr:not([disabled])').first().click();
   await page.waitForSelector('#year-head .big', { timeout: 10000 });
-  await page.waitForFunction(() => !/读取中/.test(document.querySelector('#year-head .era')?.textContent || '读取中'), { timeout: 15000 });
+  await page.waitForSelector('.flavor', { timeout: 15000 });
   const yr = await page.locator('#year-head .big').textContent();
   check(/^\d{4}$/.test(yr.trim()), `年份标题是 ${yr.trim()}`);
   const flavor = (await page.locator('.flavor').textContent()) || '';
@@ -140,7 +140,7 @@ async function noHScroll(page, where) {
     await dp.reload({ waitUntil: 'networkidle' });
     await dp.waitForSelector('#s-play.on', { timeout: 15000 });
     const label = (await dp.locator('#send').textContent()).trim();
-    check(label === '去结算', `走满三十天之后按钮写的是「${label}」`);
+    check(label === '三十天到了，去算账', `走满三十天之后按钮写的是「${label}」`);
     await dp.locator('#send').click();
     await dp.waitForSelector('#s-done.on', { timeout: 20000 });
     await dp.waitForTimeout(400);
@@ -170,7 +170,7 @@ async function noHScroll(page, where) {
   await snap(m, 'g-手机-挑一年');
   await noHScroll(m, '手机挑一年');
   await m.locator('.yr:not([disabled])').first().click();
-  await m.waitForFunction(() => !/读取中/.test(document.querySelector('#year-head .era')?.textContent || '读取中'), { timeout: 15000 });
+  await m.waitForSelector('.flavor', { timeout: 15000 });
   await snap(m, 'h-手机-一年的详情');
   await noHScroll(m, '手机年份详情');
   /* 输入框字号必须 ≥16px，不然 iOS 一聚焦就把整页放大 */
