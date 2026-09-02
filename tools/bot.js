@@ -77,7 +77,7 @@ async function playOne(year, month, seed) {
     const res = E.applyMonth(s, out.delta);
     const memoAdd = E.applyMemo(s, out.delta, at);
     const tally = E.tallyLine(res.entries, curNow);
-    s.months.push({ ...at, list, story: out.delta.story, tally, refused: out.delta.refused || [], capped: res.capped });
+    s.months.push({ ...at, list, story: out.delta.story, tally, refused: out.delta.refused || [], capped: res.capped, missedGoods: res.missedGoods || null });
     const switched = i < E.MONTHS ? E.advanceTo(s, i + 1) : [E.closeOut(s)].filter(Boolean);
     log.write(JSON.stringify({
       n: at.n, year: at.year, month: at.month, list, story: out.delta.story,
@@ -89,6 +89,8 @@ async function playOne(year, month, seed) {
       options: out.delta.options || [],
       switched: switched.map(x => x.say),
       netWorth: E.netWorth(s), standing: { ...s.standing }, memoAdd, memo: s.memo,
+      assets: s.assets.map(a => ({ name: a.name, kind: a.kind, worth: a.worth })),
+      missedGoods: res.missedGoods || null,
     }) + '\n');
 
     if (!QUIET) {

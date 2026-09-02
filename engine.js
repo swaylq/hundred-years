@@ -372,11 +372,43 @@ function fixScale(s, delta) {
   return { zeros, k };
 }
 
+/* ── 家当：进货的钱不算花掉 ─────────────────────────
+ * 这一套是 sway 2026-09-04 点名要保住的：预付的货款、交的押金、屯的货、
+ * 盘下的摊位——钱出去了，东西还在他手里，所以 entries 记出账的同时
+ * assetsAdd 要把换回来的东西记上，家底才不会因为「进了一批货」凭空掉一截。
+ * 加上 reprice（实物每月跟着中位收入重标价）和换币时实物不按收兑价折，
+ * 「攒东西躲通胀」这一手才成立——那是 1948、1949 那两年唯一活得下来的路。
+ *
+ * 麻烦在于配对是**模型的活**，它在数目大的年份常忘。量过旧日志：
+ * 1948 那三局 33 个进货的月份里 15 个没记东西，1962/2015 两局 11 个一个没漏——
+ * 恰恰是最需要囤货的那两年漏得最多。
+ *
+ * 引擎不替它补货（补了会跟「当月买当月卖」重复记一遍），只认出来、
+ * 记在那个月上，下个月把这句话摆到提示词里让它自己补。 */
+const BUY_WORD = /货款|进货|买入|购入|囤|存货|预付|押金|盘下|置办|采买|定金|批发|收货/;
+const SELL_WORD = /卖|售|出货|所得|货款收|转手/;
+
+/** 这个月有没有「买了东西却没记下东西」。`wage` 是当月一个月的收入，用来滤掉零碎开销。 */
+function unpairedBuys(delta, wage) {
+  const ents = (delta.entries || []).filter(e => e && e.what != null && isFinite(Number(e.amount)));
+  const floor = Math.max(0, (Number(wage) || 0) / 4);          // 小于四分之一个月工钱的不算进货
+  const buys = ents.filter(e => Number(e.amount) < 0 && BUY_WORD.test(e.what) && -Number(e.amount) >= floor);
+  if (!buys.length) return null;
+  const spent = buys.reduce((t, e) => t - Number(e.amount), 0);
+  /* 当月买当月卖：卖出去的进账够大，就说明货已经出手了，本来就不该留在家当里 */
+  const sold = ents.filter(e => Number(e.amount) > 0 && SELL_WORD.test(e.what)).reduce((t, e) => t + Number(e.amount), 0);
+  if (sold >= spent * 0.8) return null;
+  const added = (delta.assetsAdd || []).reduce((t, a) => t + (Number(a && a.worth) || 0), 0);
+  if (added >= spent * 0.4) return null;                       // 记上了大半就算数
+  return { items: buys.map(e => ({ what: e.what, amount: Number(e.amount) })), spent, added, sold };
+}
+
 function applyMonth(s, delta) {
   const cap = monthCap(s.year, s.month);
   const before = netWorth(s);
   const flipped = fixSigns(delta);       // 一笔出账都没有？先把忘掉的负号补回去
   const rescaled = fixScale(s, delta);   // 整个月的账写小了几个数量级？补上再算
+  const missedGoods = unpairedBuys(delta, incomeOf(s.year, s.month) / 12);   // 进了货却没记下东西？
 
   const entries = (delta.entries || [])
     .filter(e => e && e.what != null && isFinite(Number(e.amount)))
@@ -467,7 +499,7 @@ function applyMonth(s, delta) {
     capped = true;
   }
 
-  return { capped, gained: Math.min(gained, cap), cash, entries, overspent, debtRefused, rescaled, flipped };
+  return { capped, gained: Math.min(gained, cap), cash, entries, overspent, debtRefused, rescaled, flipped, missedGoods };
 }
 
 /** 明天能走的那几条路，落库和上屏之前先修一遍。
@@ -962,7 +994,7 @@ module.exports = {
   cleanOptions,
   DAYS, MONTHS, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,
-  money, moneyIn, unitOf, fixScale, fixSigns,
+  money, moneyIn, unitOf, fixScale, fixSigns, unpairedBuys,
   currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchDueAfter, switchOnEntry, reprice, closeOut,
   startingCash, newRun, netWorth, applySwitch, advanceTo, applyMonth, tallyLine, settle, fmtScore, fmtUsd, WORLD,
   countHan, hasContent, checkList, checkPersona,

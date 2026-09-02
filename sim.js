@@ -76,6 +76,12 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
 真正花掉的只有：吃、住、路费、打点、修理、被罚被抢的。
 东西卖出去的时候，再用 assetsDrop 把它划掉，同时把卖的钱记成进账。
 
+**当月买当月就卖光了的，不用记 assetsAdd**——进账出账两笔已经把它说清楚了。
+要记的是**月底还压在他手里**的那些：没卖完的货、交出去还没退的押金、
+盘下的摊位、买的家伙什。**数目越大越容易漏，而数目大的年份恰恰最输不起**：
+1948、1949 那两年，钱一个月贬一半，攒着东西是唯一活得下来的路，
+漏记一次等于把他那个月的活白干了。
+
 **干了一个月活，就该有一个月的工钱。** 这条常被漏掉：开销你记得清清楚楚
 （吃饭、房钱、车钱），进账却经常忘了给。
 他实打实干了一整个月，进账就必须按资料里那条路子的行情记上，
@@ -361,6 +367,16 @@ function buildUser(s, list, extra = {}) {
 它顶不过那一年的条件，也变不出钱和门路来。正文里要让人看出他是这样的人。`
     : `【他是个什么人】玩家没写。就当他是个没什么特别的普通人：肯下力气，没什么门路。`;
 
+  /* 上个月进了货却没在 assetsAdd 里记下东西——那笔钱在账面上凭空蒸发了。
+   * 引擎不替它补（补了会跟「当月买当月卖」重复记一遍），把话摆到这儿让它自己补。 */
+  const missed = (s.months[s.months.length - 1] || {}).missedGoods;
+  const missedSay = missed
+    ? `\n**上个月这几笔进货没记下换回来的东西**：${missed.items.map(x => `${x.what} ${E.money(-x.amount, cur)}`).join('、')}——` +
+      `一共 ${both(missed.spent, cur)} 出去了，assetsAdd 里却只记了 ${E.money(missed.added, cur)} 的东西，` +
+      `这笔钱在他账面上凭空蒸发了。\n` +
+      `那批货要是还压在他手里，**这个月在 assetsAdd 里补记上**（名字写清楚、折成现在的价钱）；` +
+      `要是已经出手、被扣、被抢了，就在正文里交代一句它去哪了。别当没这回事。` : '';
+
   const refusedBefore = s.months.slice(-2).flatMap(d => (d.refused || []).map(r => r.what)).filter(Boolean);
 
   const monthEvents = (c.events || []).filter(e => e.month === s.month);
@@ -407,7 +423,7 @@ ${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).j
 【他现在的家底】
 手里的钱：${both(s.cash, cur)}（这一年一个普通人一年挣 ${both(income, cur)}）
 东西：${assets}
-欠债：${debts}
+欠债：${debts}${missedSay}
 名声 ${st.名声} · 关系 ${st.关系} · 体力 ${st.体力} · 麻烦 ${st.麻烦}${st.体力 < 25 ? '（他快垮了，这个月得歇）' : ''}${st.麻烦 >= 80 ? '（盯上他的人太多了，这个月该栽一次）' : ''}
 ${persona}
 【一直记着的事 —— 这一局从头到现在，游戏替他记着的】

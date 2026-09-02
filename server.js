@@ -386,6 +386,8 @@ async function runOneMonthInner(req, res, b, s) {
       n: s.n, year: s.year, month: s.month, list: String(b.list).slice(0, 2000),
       story: out.delta.story, tally, entries: res1.entries,
       refused: out.delta.refused || [], capped: res1.capped, local: usedLocal,
+      /* 进了货却没记下东西——下个月的提示词里要拿它提醒模型自己补上 */
+      missedGoods: res1.missedGoods || null,
     });
     /* 走完最后一个月就不再往前挪日历了：结算要按第 24 个月那个月份算。
      * closeOut 只做两件事：把 n 记成 MONTHS+1、最后一个月要是换币的月份就补折一次

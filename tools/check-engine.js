@@ -669,5 +669,55 @@ console.log('20. 练出来的本事攒着，废了也留着');
   } catch (e) { fail(`老档读不回来了：${e.message}`); }
 }
 
+/* 21. 家当这一套 —— sway 2026-09-04 点名要保住的，动它之前先读这一段。
+ *
+ *     承重的是四件事，缺一件「攒东西躲通胀」就不成立：
+ *       ① 进货配上 assetsAdd，家底不因为「进了一批货」掉一截
+ *       ② 实物每月跟着中位收入重新标价，现金和债权不跟
+ *       ③ 换币的时候实物躲得过、现金躲不过（第 3b 条在验）
+ *       ④ 票证和权益也算钱（第 6 条在验）
+ *     ①靠模型自觉配对，所以还有第五件：认出它没配对，下个月提醒它补。 */
+console.log('21. 家当：进货的钱不算花掉');
+{
+  /* ① 同一笔钱，配了 assetsAdd 家底不动；没配就掉一截 */
+  const 配了 = E.newRun({ year: 1936, month: 5, nick: 'x', seed: 1 });
+  const 没配 = E.newRun({ year: 1936, month: 5, nick: 'x', seed: 1 });
+  const 本钱 = Math.round(配了.cash / 2);
+  const 前 = E.netWorth(配了);
+  E.applyMonth(配了, { entries: [{ what: '进一批布的货款', amount: -本钱 }], assetsAdd: [{ name: '压在手里的布', kind: '实物', worth: 本钱 }] });
+  E.applyMonth(没配, { entries: [{ what: '进一批布的货款', amount: -本钱 }], assetsAdd: [] });
+  if (Math.abs(E.netWorth(配了) - 前) > 1e-6) fail(`配了 assetsAdd 家底还是动了：${前} → ${E.netWorth(配了)}`);
+  else if (Math.abs(E.netWorth(没配) - (前 - 本钱)) > 1e-6) fail('没配 assetsAdd 家底该掉一整笔本钱');
+  else ok(`同一笔进货：记了东西家底纹丝不动，没记就掉 ${E.money(本钱, 'SILVER')}——配对是承重的`);
+
+  /* ② 实物跟着中位收入走，现金和债权不跟 */
+  const r = E.newRun({ year: 1947, month: 6, nick: 'x', seed: 1 });
+  r.assets = [{ name: '两石米', kind: '实物', worth: 1000 }, { name: '老周的欠条', kind: '债权', worth: 1000 }];
+  const k = E.incomeOf(1947, 7) / E.incomeOf(1947, 6);
+  E.reprice(r, { year: 1947, month: 6 }, { year: 1947, month: 7 });
+  if (Math.abs(r.assets[0].worth - 1000 * k) > 1e-6) fail(`实物没跟着走：该 ${(1000 * k).toFixed(2)}，实际 ${r.assets[0].worth.toFixed(2)}`);
+  else if (r.assets[1].worth !== 1000) fail(`债权不该跟着涨，实际 ${r.assets[1].worth}`);
+  else ok(`1947 年 6→7 月，米的标价 ×${k.toFixed(3)} 跟着涨，欠条纹丝不动`);
+
+  /* ⑤ 认出「进了货没记东西」，别误伤当月买当月卖和零碎开销 */
+  const 用例 = [
+    ['进了一批货、没记东西', { entries: [{ what: '购买三十石大米货款', amount: -1800 }, { what: '一个月伙食', amount: -120 }], assetsAdd: [] }, true],
+    ['进了货也记了东西', { entries: [{ what: '购买三十石大米货款', amount: -1800 }], assetsAdd: [{ name: '仓里的米', worth: 1800 }] }, false],
+    ['当月买当月卖光了', { entries: [{ what: '购买大米货款', amount: -1800 }, { what: '大米分销所得', amount: 2600 }], assetsAdd: [] }, false],
+    ['只是零碎开销', { entries: [{ what: '买煤油及火柴', amount: -50 }, { what: '一个月房租', amount: -300 }], assetsAdd: [] }, false],
+    ['押金交出去没记', { entries: [{ what: '入伙押金', amount: -900 }], assetsAdd: [] }, true],
+    ['记上了大半', { entries: [{ what: '进货货款', amount: -2000 }], assetsAdd: [{ name: '货', worth: 1500 }] }, false],
+  ];
+  const 错 = 用例.filter(([, d, want]) => !!E.unpairedBuys(d, 1000) !== want).map(([n]) => n);
+  if (错.length) fail(`认漏了或者认错了：${错.join('、')}`);
+  else ok(`${用例.length} 个用例都判对（当月买当月卖、零碎开销都不误伤）`);
+
+  /* 认出来之后要挂在这个月上，下个月的提示词才拿得到 */
+  const t = E.newRun({ year: 1936, month: 5, nick: 'x', seed: 1 });
+  const res = E.applyMonth(t, { entries: [{ what: '进一批布的货款', amount: -Math.round(t.cash / 2) }], assetsAdd: [] });
+  if (!res.missedGoods) fail('applyMonth 没把「进了货没记东西」报出来');
+  else ok(`applyMonth 报出来了：${res.missedGoods.items[0].what}，下个月提示词里会摆到模型眼前`);
+}
+
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');
 process.exit(bad ? 1 : 0);
