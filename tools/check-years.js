@@ -87,6 +87,10 @@ function checkCard(card, spineYear) {
     bad(`prices 至少 ${MIN.prices} 条，现在 ${card.prices ? card.prices.length : 0} 条`);
   } else for (const [i, p] of card.prices.entries()) {
     if (!p.item || !p.price) { bad(`prices[${i}] 缺 item 或 price`); continue; }
+    /* item 是物价表上那一列的名字，要短。考据和折算方法写进 note 或 sources——
+     * 有一版把「一斤大米（年中的估值——按 1942 年 1 月到 1943 年 9 月米价涨 435%……）」
+     * 整句塞进 item，91 个字，界面上那一格直接炸开。 */
+    if (String(p.item).length > 14) bad(`prices[${i}] 的 item「${String(p.item).slice(0, 20)}…」有 ${String(p.item).length} 字，超过 14——考据写到 note 里，item 只留名字`);
     if (!ok.some(u => String(p.price).includes(u))) {
       bad(`prices[${i}]「${p.item} ${p.price}」没用当年的钱（当年是 ${cur.map(c => CN[c]).join(' / ')}）`);
     }

@@ -128,6 +128,17 @@ async function noHScroll(page, where) {
   check(hasBoard > 0, '排行榜出得来（有榜或者有「还没人打完」）');
   await snap(page, 'f-排行榜');
 
+  {
+    const tabCount = await page.locator('#board-tabs button').count();
+    check(tabCount >= 1, `榜上有 ${tabCount} 个页签（总榜 + 有成绩的年份）`);
+    if (tabCount > 1) {
+      await page.locator('#board-tabs button').nth(1).click();
+      await page.waitForTimeout(700);
+      check(await page.locator('table.board, .empty').count() > 0, '点年份能切到那一年的年榜');
+      await snap(page, 'f1-年榜');
+    }
+  }
+
   console.log('\n六之二、结算页（用接口另打一局，不然要在网页上点三十次）');
   {
     const post = async (p2, d) => (await fetch(URL + p2, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(d) })).json();

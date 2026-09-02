@@ -155,10 +155,19 @@ function blockPrices(title, rows) {
     const main = (m ? m[1] : s).trim(), note = (m && m[2] ? m[2] : '').trim();
     d.appendChild(el('span', '', p.item));
     d.appendChild(el('b', main.length > 12 ? 'long' : '', main));
-    if (note) d.appendChild(el('small', 'pnote', note));
+    /* 两个来源合成那行小字：
+       ① price 里括号那截（上面刚拆出来的）
+       ② 独立的 note 字段——考据太长时从 item 挪过来的那些
+          （「这是哪个市的价」「按什么折算的」「是不是估的」） */
+    const small = [note, p.note].filter(Boolean).join(' ');
+    if (small) d.appendChild(el('small', 'pnote', small));
     g.appendChild(d);
   }
-  b.appendChild(g); return b;
+  b.appendChild(g);
+  if (rows.some(p => p.note)) {
+    b.appendChild(el('p', 'hint', '价钱底下的小字，是这个数从哪儿来的、是不是估的。'));
+  }
+  return b;
 }
 function blockTags(title, items, no) {
   const b = el('div', 'block'); b.appendChild(el('h4', '', title));
