@@ -412,7 +412,10 @@ function buildUser(s, list, extra = {}) {
    * 数目差几百万倍，除以当月的年收入之后两头才比得了。 */
   const yearsNow = E.netWorth(s) / income;
   const yearsStart = s.startWorth / (s.startIncome || E.incomeOf(s.startYear, s.startMonth));
-  const yearsWant = yearsStart + 4 * (s.n - 1) / E.MONTHS;      // 二十四个月攒够四年的收入
+  /* 尺子的**斜率**：二十四个月攒够四年的收入。这里的 E.MONTHS 是斜率的分母，
+   * 不是「这一局有多长」——接着走下去的局照这个速度一直往上，别换成 lastMonthOf，
+   * 换了等于告诉模型「他第 25 个月起就不长了」。 */
+  const yearsWant = yearsStart + 4 * (s.n - 1) / E.MONTHS;
   const behind = s.n > 3 && yearsNow < yearsWant * 0.75;
 
   /* 玩家开局写的那一句「他是个什么人」，整局不变，每个月都要带上——
@@ -514,7 +517,8 @@ function buildUser(s, list, extra = {}) {
 
   return `${compactCard(c, sy, s.month, s.city)}
 
-【这个月】${s.year} 年 ${s.month} 月，是他这两年里的第 ${s.n} 个月，一共 ${E.MONTHS} 个月。
+【这个月】${s.year} 年 ${s.month} 月，是他落地之后的第 ${s.n} 个月，一共 ${E.lastMonthOf(s)} 个月。${
+  s.phase === 'extra' ? `头二十四个月的账已经结过了，他没走，接着在这儿过下去——现在过的是往后这几年。` : ''}
 ${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).join('；')}` : ''}${crossed}${swThis}${swPast}
 
 【他现在的家底】
