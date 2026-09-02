@@ -205,13 +205,23 @@ function pickMonth(m, btn) {
   $('#start-box').hidden = false;
 }
 
+/* 设定框的字数：跟清单一个数法，只数汉字，标点和数字不计 */
+const HAN = /[\u4e00-\u9fff\u3400-\u4dbf]/gu;
+$('#persona').addEventListener('input', () => {
+  const n = ($('#persona').value.match(HAN) || []).length;
+  const el2 = $('#persona-count');
+  el2.textContent = `${n} / 50 字`;
+  el2.classList.toggle('over', n > 50);
+});
+
 $('#start').addEventListener('click', async () => {
   if (!pickedMonth) return toast('先挑一个月');
   const btn = $('#start'); const was = btn.textContent;
   btn.disabled = true; btn.textContent = '正在落地…';
   try {
     const nick = $('#nick').value.trim();
-    const d = await post('/api/run', { year: picked, month: pickedMonth, nick });
+    const persona = $('#persona').value.trim();
+    const d = await post('/api/run', { year: picked, month: pickedMonth, nick, persona });
     token = d.token; localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(RUN_KEY, d.id);
     run = { id: d.id, state: d.state };
@@ -259,7 +269,6 @@ function renderPlay(last, opts = {}) {
   const s = run.state;
   const now = Math.min(s.n, s.months);
   const done = !!s.finished || s.n > s.months;
-  const st = s.standing || {};
 
   /* 左边那一栏：日历页、二十四道刻度、家底、四条杠 */
   const ticks = Array.from({ length: s.months }, (_, i) =>
@@ -267,7 +276,6 @@ function renderPlay(last, opts = {}) {
   const subs = [`现金 <b>${esc(s.cashText)}</b>`];
   if (s.assets && s.assets.length) subs.push(`家当 <b>${s.assets.map(a => esc(a.name) + ' ' + esc(a.worthText)).join('，')}</b>`);
   if (s.debts && s.debts.length) subs.push(`欠着 <b>${s.debts.map(d => esc(d.who) + ' ' + esc(d.amountText)).join('，')}</b>`);
-  const meter = (k, cls) => `<div class="meter ${cls}"><span>${k}</span><i><b style="width:${Number(st[k]) || 0}%"></b></i><em>${Number(st[k]) || 0}</em></div>`;
   $('#play-bar').innerHTML =
     `<div class="cal">
        <div class="cal-top">${s.year} 年</div>
@@ -275,8 +283,8 @@ function renderPlay(last, opts = {}) {
        <div class="cal-foot"><span class="of">第 ${now} / ${s.months} 个月</span> · ${esc(s.city)}</div>
      </div>
      <div class="ticks">${ticks}</div>
-     <div class="money"><span class="lab">家底</span><b class="cash">${esc(s.netWorthText)}</b><div class="sub">${subs.join('<br>')}</div></div>
-     <div class="meters">${meter('体力', 'm-body')}${meter('名声', 'm-name')}${meter('关系', 'm-ties')}${st.麻烦 > 0 ? meter('麻烦', 'm-trouble') : ''}</div>`;
+     <div class="money"><span class="lab">家底</span><b class="cash">${esc(s.netWorthText)}</b><div class="sub">${subs.join('<br>')}</div></div>` +
+    (s.persona ? `<div class="who-line">${esc(s.persona)}</div>` : '');
 
   /* 正文 */
   const box = $('#play-story'); box.innerHTML = '';

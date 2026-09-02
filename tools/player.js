@@ -67,8 +67,6 @@ function careful(s, c, r) {
     t += `留意有没有更划算的主顾，谈得拢就换。`;
   }
 
-  if (s.standing.体力 < 40) t += `身上乏得厉害，这个月少接些活，睡足吃饱，别把身子干垮了。`;
-  if (s.standing.麻烦 > 50) t += `最近盯上我的人多了，这个月低调些，钱不露白，别惹事。`;
   if (s.assets.length) t += `手里有${s.assets.map(a => a.name).join('、')}，能变成钱或者能生钱的就用起来。`;
   return t;
 }

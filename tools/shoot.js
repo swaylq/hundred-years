@@ -85,9 +85,27 @@ async function noHScroll(page, where) {
   await page.locator('.mo').nth(9).click();                 // 第 10 月
   check(!(await page.locator('#start-box').isHidden()), '选了月份之后出现开局的入口');
   await page.locator('#nick').fill('截图');
+
+  /* 主角设定：先拿超人的写法试一次，必须被顶回去、还留在开局那一屏 */
+  await page.locator('#persona').fill('会一身好武功，能以一敌百');
+  await page.locator('#start').click();
+  await page.waitForTimeout(1200);
+  check(await page.locator('#s-play.on').count() === 0, '写「会武功」开不了局，还停在挑年份那一屏');
+  check((await page.locator('#toast').textContent()).includes('武功'), '顶回去的时候说清楚了为什么');
+  /* 上面那一下是故意讨来的 400，从「资源加载失败」的名单里摘掉，别的照旧算失败 */
+  { const i = failed.findIndex(x => /400 .*\/api\/run/.test(x)); if (i >= 0) failed.splice(i, 1); }
+
+  const PERSONA = '做事踏实，嘴笨，认死理，不会来事';
+  await page.locator('#persona').fill(PERSONA);
+  await page.waitForTimeout(120);
+  await snap(page, 'b2-开局那一屏');
+  check((await page.locator('#persona-count').textContent()).startsWith('13 /'), '设定框只数汉字，标点不计（13 个汉字 + 3 个逗号）');
   await page.locator('#start').click();
   await page.waitForSelector('#s-play.on', { timeout: 15000 });
   await page.waitForSelector('.bar .cash', { timeout: 10000 });
+  /* 这一局只有钱：左栏不许再有那四条杠 */
+  check(await page.locator('.bar .meter').count() === 0, '左栏没有体力/名声/关系/麻烦那四条杠了');
+  check((await page.locator('.bar .who-line').textContent()).includes('认死理'), '左栏最下面写着他是个什么人');
   await snap(page, 'c-开局');
 
   console.log('\n四、清单超字数要被挡住');
@@ -202,6 +220,33 @@ async function noHScroll(page, where) {
     return t ? parseFloat(getComputedStyle(t).fontSize) : 0;
   });
   check(fs16 >= 16, `手机上输入框字号 ${fs16}px（低于 16 会被 iOS 放大整页）`);
+  /* 设定框也要够大——它跟名号框并排在开局那一屏上 */
+  const fsP = await m.evaluate(() => {
+    const t = document.querySelector('#persona');
+    return t ? parseFloat(getComputedStyle(t).fontSize) : 0;
+  });
+  check(fsP >= 16, `手机上设定框字号 ${fsP}px`);
+
+  /* 手机上真开一局，看左栏那一块：撤了四条杠、添了「他是个什么人」那一行，
+     手机版的 grid-template-areas 跟着改过，得看一眼有没有挤版。 */
+  await m.locator('#nick').fill('手机');
+  await m.locator('#persona').fill('做事踏实，嘴笨，认死理');
+  await m.locator('#start').click();
+  await m.waitForSelector('#s-play.on', { timeout: 15000 });
+  await m.waitForSelector('.bar .cash', { timeout: 10000 });
+  await snap(m, 'i-手机-开局');
+  await noHScroll(m, '手机开局');
+  check(await m.locator('.bar .meter').count() === 0, '手机上也没有那四条杠了');
+  {
+    /* 左栏那一行小字不许跟上面的家底叠在一起 */
+    const box = await m.evaluate(() => {
+      const w = document.querySelector('.bar .who-line'), mo = document.querySelector('.bar .money');
+      if (!w || !mo) return null;
+      const a = w.getBoundingClientRect(), b = mo.getBoundingClientRect();
+      return { 叠了: a.top < b.bottom - 1, 高: Math.round(a.height) };
+    });
+    check(box && !box.叠了 && box.高 > 0, box ? `他是个什么人那一行在家底下面，高 ${box.高}px` : '手机上找不到那一行');
+  }
 
   console.log('\n八、页面本身');
   check(errors.length === 0, errors.length ? `控制台报错 ${errors.length} 条：${errors[0].slice(0, 90)}` : '没有 JS 报错');

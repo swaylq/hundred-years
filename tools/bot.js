@@ -39,7 +39,7 @@ async function modelList(s, c) {
 不要写这一年还没有的东西。只输出清单本身，不要解释。`;
   const user = `${s.year} 年 ${s.month} 月，第 ${s.n} 个月，你在${s.city}。
 手里 ${E.money(s.cash, s.currency)}（这一年一个普通人一年挣 ${E.money(E.incomeOf(s.year, s.month), s.currency)}）。
-东西：${s.assets.map(a => a.name).join('、') || '没有'}。体力 ${s.standing.体力}。
+东西：${s.assets.map(a => a.name).join('、') || '没有'}。
 这一年能挣钱的路子：${(c.money || []).map(m => m.way).join('、')}。
 这一年干不了：${(c.forbidden || []).map(f => f.what).join('、')}。
 前两个月：${s.months.slice(-2).map(d => (d.tally || '')).join(' / ') || '刚来'}
@@ -86,7 +86,7 @@ async function playOne(year, month, seed) {
       flipped: res.flipped ? res.flipped.flipped : [],
       options: out.delta.options || [],
       switched: switched.map(x => x.say),
-      netWorth: E.netWorth(s), standing: { ...s.standing },
+      netWorth: E.netWorth(s),
     }) + '\n');
 
     if (!QUIET) {

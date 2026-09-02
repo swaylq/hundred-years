@@ -377,5 +377,73 @@ console.log('12. 服务商回的原话不许印到页面上');
   else ok(`${赋值.length} 处 out.why 全是写死的中文句子，异常原话只进服务端日志`);
 }
 
+/* 13. 主角设定：五十个汉字封顶，明摆着的超人写法顶回去 */
+console.log('13. 主角设定的闸');
+{
+  const 该收 = [
+    '做事踏实，嘴笨，认死理，不会来事',
+    '记性好，算账快，脸皮薄，不好意思讨价还价',
+    '胆子大，敢赌，跟谁都聊得来，就是坐不住',
+    '', '   ',
+  ];
+  const 该退 = [
+    ['会一身好武功，能以一敌百', '武功'],
+    ['过目不忘，账本看一眼就记住', '过目不忘'],
+    ['我是穿越来的，脑子里带着系统', '穿越'],
+    ['家里是本地首富，继承了万贯家产', '安家底'],
+    ['很'.repeat(51), '超字数'],
+  ];
+  let 错 = [];
+  for (const t of 该收) if (!E.checkPersona(t).ok) 错.push(`「${t.slice(0, 12)}」本该收下`);
+  for (const [t, why] of 该退) if (E.checkPersona(t).ok) 错.push(`「${t.slice(0, 12)}」（${why}）本该顶回去`);
+  /* 顶回去的那几条，回话要说清楚该改哪儿，不能只回一句「不行」 */
+  for (const [t] of 该退) {
+    const r = E.checkPersona(t);
+    if (!r.ok && (!r.say || r.say.length < 8)) 错.push(`顶回「${t.slice(0, 10)}」时没说清楚为什么`);
+  }
+  if (错.length) 错.forEach(fail);
+  else ok(`${该收.length} 条正常写法收下、${该退.length} 条超人写法顶回去，每条都说清了该改哪儿`);
+
+  /* 五十个汉字是硬线：标点和数字不计，跟清单一个数法 */
+  const 五十 = '普'.repeat(50) + '，。！？1234567890abc';
+  if (!E.checkPersona(五十).ok) fail('正好五十个汉字加一堆标点，该收下');
+  else if (E.checkPersona('普'.repeat(51)).ok) fail('五十一个汉字该顶回去');
+  else ok('五十个汉字封顶，标点、数字、字母不计入');
+
+  /* 收下的那句要真进存档，不然设定写了等于没写 */
+  const s1 = E.newRun({ year: 1936, month: 5, nick: 'x', persona: '嘴笨，认死理' });
+  if (s1.persona !== '嘴笨，认死理') fail(`设定没进存档，存的是「${s1.persona}」`);
+  else if (E.newRun({ year: 1936, month: 5, nick: 'x', persona: '会武功' }).persona !== '')
+    fail('顶回去的设定不该进存档');
+  else ok('收下的设定进存档、顶回去的不进');
+}
+
+/* 14. 这一局只有钱：四条杠不许从任何一条路上再冒出来。
+ *     静态扫源码——玩家看不看得见那四条杠，取决于存档里有没有那几个字段，
+ *     跑一局是看不出来的（老档里还留着它们）。 */
+console.log('14. 除了钱没有别的属性');
+{
+  const fs2 = require('fs'), path2 = require('path');
+  const root = path2.join(__dirname, '..');
+  const 禁 = /\.standing\b|["'「]standing["'」]|\bstanding\s*[:=]|名声\s*\$?\{|体力\s*[:：]\s*\d/;
+  const 中招 = [];
+  for (const f of ['engine.js', 'sim.js', 'server.js', 'public/app.js', 'tools/bot.js', 'tools/player.js']) {
+    const src = fs2.readFileSync(path2.join(root, f), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      const 代码 = line.replace(/\/\*.*?\*\//g, '').replace(/^\s*\*.*$/, '').replace(/\/\/.*$/, '');
+      if (禁.test(代码)) 中招.push(`${f}:${i + 1} ${代码.trim().slice(0, 60)}`);
+    });
+  }
+  if (中招.length) 中招.forEach(x => fail(`四条杠又冒出来了：${x}`));
+  else ok('六个文件的代码里都没有名声/关系/体力/麻烦这几条槽了（注释里说明改动史不算）');
+
+  /* 老档里还带着 standing，不能因此读不回来 */
+  const 老档 = { ...E.newRun({ year: 1962, month: 5, nick: 'x' }), standing: { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 } };
+  try {
+    E.applyMonth(老档, { entries: [{ what: '做工', amount: 40 }], standing: { 体力: -9 } });
+    ok('老档带着 standing 也照样走得动，模型回的 standing 直接扔掉');
+  } catch (e) { fail(`老档读不回来了：${e.message}`); }
+}
+
 console.log(bad ? `\n没过，${bad} 条` : '\n全过');
 process.exit(bad ? 1 : 0);

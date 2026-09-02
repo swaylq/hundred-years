@@ -181,7 +181,7 @@ function money(n, cur) { return moneyIn(n, unitOf(n), cur); }
  *  一开局就是三十万年的收入。 */
 function startingCash(year, month) { return incomeOf(year, month) / 10; }
 
-function newRun({ year, month, nick, seed }) {
+function newRun({ year, month, nick, seed, persona }) {
   const Y = yearOf(year);
   const cur = currencyOf(year, month);
   const cash = startingCash(year, month);
@@ -201,7 +201,10 @@ function newRun({ year, month, nick, seed }) {
     cash,
     assets: [],
     debts: [],
-    standing: { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 },
+    /* 玩家自己写的一句话：他是个什么人。整局不变，每个月都拼进提示词。
+     * 除了钱，这一局再没有别的槽——名声、关系、体力、麻烦四条杠 2026-09-02 撤了，
+     * 它们的作用改由钱和正文里的事承担（罚款、货被没收、被关几天挣不到钱）。 */
+    persona: checkPersona(persona).text || '',
     startWorth: netWorth({ cash, assets: [], debts: [] }),
     startIncome: incomeOf(year, month),
     months: [],
@@ -307,8 +310,7 @@ function applySwitch(s, sw) {
 
 /** delta 形状（模型输出的就是这个）：
  *  { story, entries:[{what,amount}], assetsAdd:[{name,kind,worth,note}], assetsDrop:[name],
- *    debtsAdd:[{who,amount,note}], debtsClear:[who],
- *    standing:{名声,关系,体力,麻烦}, refused:[{what,why}] }
+ *    debtsAdd:[{who,amount,note}], debtsClear:[who], refused:[{what,why}] }
  *
  *  现金变化是把 entries 逐条加起来得出的，**不用模型自己报的那个总数**。
  *  让模型既写正文又心算总账，两边必然对不上：实测过一次，
@@ -428,11 +430,7 @@ function applyMonth(s, delta) {
     if (i >= 0) s.debts.splice(i, 1);
   }
 
-  const st = delta.standing || {};
-  for (const k of ['名声', '关系', '体力', '麻烦']) {
-    if (st[k] === undefined) continue;
-    s.standing[k] = Math.max(0, Math.min(100, s.standing[k] + (Number(st[k]) || 0)));
-  }
+  /* 模型要是还按老格式回了 standing，直接扔掉：这一局只有钱。 */
 
   /* 一个月赚太多就削回上限。按比例压这个月新增的那几项（现金进账、新添的东西），
    * 不是从现金里一把扣掉——那样会把兜里的钱压成负数，账面看着莫名其妙。 */
@@ -638,12 +636,45 @@ function checkList(text) {
   return { ok: true, n };
 }
 
+/* ── 主角是个什么人 ──────────────────────────────────
+ * 玩家开局写一句自己的长处和脾气，整局不变，每个月都拼进提示词。
+ * 「不能超出正常人」靠两道闸：这里这道硬闸挡掉明摆着的超人设定，
+ * 提示词里那道软闸负责把「胆子大」读成敢赌、而不是刀枪不入。 */
+const PERSONA_LIMIT = 50;
+
+/* 四类顶回去的写法。分开列是为了回话不一样——玩家得知道该改哪儿。 */
+const PERSONA_NO = [
+  { re: /武功|武艺|内力|真气|轻功|点穴|气功|刀枪不入|飞檐走壁|力大无穷|天生神力|以一敌百|百步穿杨/,
+    say: '这是个普通人，不会武功，也没有神力' },
+  { re: /过目不忘|过耳不忘|一目十行|心算如神|预知|未卜先知|读心|摄魂|催眠|透视|算无遗策|从不出错|永远不会错|无所不知|精通一切|样样精通/,
+    say: '本事要在常人的范围里——记性好可以，过目不忘不行' },
+  { re: /穿越|重生|系统|金手指|外挂|开挂|异能|超能力|特异功能|法术|魔法|灵力|修仙|长生|不老|不死|时间循环|存档|读档/,
+    say: '这里没有超能力，也没有重来一次的机会' },
+  { re: /首富|大亨|巨富|富二代|官二代|家财万贯|腰缠万贯|富可敌国|继承[^。，]{0,6}(家产|遗产|万贯|家业)|背景深厚|后台很硬|上头有人|通天的关系/,
+    say: '开局的本钱和人脉由那一年定，设定里给自己安家底不算数' },
+];
+
+/** 检一句主角设定。空着也行——不写就是个没什么特别的普通人。 */
+function checkPersona(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return { ok: true, n: 0, text: '' };
+  const n = countHan(t);
+  if (n > PERSONA_LIMIT) {
+    return { ok: false, n, text: '', say: `写了 ${n} 个字，超出 ${n - PERSONA_LIMIT} 个。上限是 ${PERSONA_LIMIT} 个汉字（标点和数字不算）。` };
+  }
+  for (const r of PERSONA_NO) {
+    if (r.re.test(t)) return { ok: false, n, text: '', say: `${r.say}。换个说法再写。` };
+  }
+  /* 汉字数已经卡住了，这里只是给存档一个原始长度的上限 */
+  return { ok: true, n, text: t.slice(0, 160) };
+}
+
 module.exports = {
   cleanOptions,
-  DAYS, MONTHS, LIST_LIMIT, CN, SPINE, TL,
+  DAYS, MONTHS, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,
   money, moneyIn, unitOf, fixScale, fixSigns,
   currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchDueAfter, switchOnEntry, reprice, closeOut,
   startingCash, newRun, netWorth, applySwitch, advanceTo, applyMonth, tallyLine, settle, fmtScore, fmtUsd, WORLD,
-  countHan, hasContent, checkList,
+  countHan, hasContent, checkList, checkPersona,
 };

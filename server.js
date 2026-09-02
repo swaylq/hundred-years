@@ -124,7 +124,7 @@ function view(s) {
     cash: s.cash, cashText: E.money(s.cash, cur),
     assets: s.assets.map(a => ({ ...a, worthText: E.money(a.worth, cur) })),
     debts: s.debts.map(d => ({ ...d, amountText: E.money(d.amount, cur) })),
-    standing: s.standing,
+    persona: s.persona || '',
     netWorth: E.netWorth(s), netWorthText: E.money(E.netWorth(s), cur),
     income: E.incomeOf(s.year, s.month),
     incomeText: E.money(E.incomeOf(s.year, s.month), cur),
@@ -186,7 +186,10 @@ const routes = {
     /* 一局二十四个月，走到头不能超出 2025 年 12 月 */
     if (!E.startable(year, month)) return oops(res, 400, `从这个月起走不满 ${E.MONTHS} 个月——最晚只能从 2024 年 1 月开局`);
     const nick = String(b.nick || '').trim().slice(0, 16) || '无名';
-    const s = E.newRun({ year, month, nick });
+    /* 主角设定：玩家写的一句「他是个什么人」，50 个汉字封顶，明摆着的超人写法顶回去 */
+    const per = E.checkPersona(b.persona);
+    if (!per.ok) return json(res, 400, { error: per.say, count: per.n, limit: E.PERSONA_LIMIT });
+    const s = E.newRun({ year, month, nick, persona: per.text });
     s.options = SIM.optionsLocal(s);
     const { id, token } = DB.createRun(s, nick);
     json(res, 200, { id, token, state: view(s), flavor: SIM.card(year).flavor });
