@@ -363,9 +363,14 @@ const routes = {
   },
 
   /* 一局的详情：谁都点得进来看，只给结过账的局，回的东西里没有 token 也没有存档原文。 */
+  /* 一局的详情：清单、二十四个月的正文、他记着的人和事、开局写的那句「他是个什么人」。
+   * **只给开局的那个人看**（sway 2026-09-03）——榜上留名号、落点和成绩就够了，
+   * 具体怎么走的是他自己的事。认人靠开局发的那串 token，跟写这一局用的是同一串。 */
   'GET /api/detail': async (req, res, q) => {
-    const row = DB.getRow(String(q.id || ''));
+    const id = String(q.id || '');
+    const row = DB.getRow(id);
     if (!row) return oops(res, 404, '没有这一局');
+    if (!DB.loadRun(id, String(q.token || ''))) return oops(res, 403, '这一局是别人的，榜上只看得到成绩');
     if (row.mode && row.mode !== 'months24') return oops(res, 409, '这是按天走的老局，看不了详情');
     if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，走完了才看得到');
     let st = null;
@@ -408,8 +413,9 @@ const routes = {
       const rows = DB.boardExtra(limit);
       return json(res, 200, {
         scope: 'extra', year: null, total: DB.extraCount(), yearsWithRuns: DB.yearsWithRuns(),
+        /* 榜上不发 id：点不进去，也没有可以拿去试的口子 */
         rows: rows.map((r, i) => ({
-          rank: i + 1, id: r.id, nick: r.nick, year: r.year, month: r.month,
+          rank: i + 1, nick: r.nick, year: r.year, month: r.month,
           months: E.MONTHS + (r.extra_months || 0), extraMonths: r.extra_months || 0,
           yearEarned: r.extra_year_earned, yearEarnedText: r.extra_result?.yearEarnedText || null,
           worldUsd: r.extra_world_usd, worldUsdText: E.fmtUsd(r.extra_world_usd || 0),
@@ -427,7 +433,7 @@ const routes = {
       total: year ? DB.doneInYear(year) : DB.doneCount(),
       yearsWithRuns: DB.yearsWithRuns(),
       rows: rows.map((r, i) => ({
-        rank: i + 1, id: r.id, nick: r.nick, year: r.year, month: r.month,
+        rank: i + 1, nick: r.nick, year: r.year, month: r.month,
         yearEarned: r.year_earned,
         yearEarnedText: r.result?.yearEarnedText || null,
         worldUsd: r.world_usd,

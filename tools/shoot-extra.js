@@ -71,9 +71,14 @@ const noH = async (p, w) => { const r = await p.evaluate(() => ({ d: document.do
   await noH(page, '后传榜');
   await snap(page, '3-board-extra');
 
-  /* 4. 点一行进详情 */
-  console.log('4. 一局的详情');
-  await page.click('#board-body tbody tr:first-child');
+  /* 4. 详情只从「我的局」进得来：榜上那些是别人写的东西，点不进去 */
+  console.log('4. 一局的详情（榜上点不进去，只有自己那几局点得进去）');
+  check(await page.locator('#board-body tbody tr.mine-go').count() === 0, '榜上的行点不进去了');
+  const code = await page.evaluate(u => fetch(u).then(r => r.status), `${URL}/api/detail?id=${encodeURIComponent(arg('done'))}`);
+  check(code === 403, `不带 token 直接要别人的详情 → ${code}（该是 403）`);
+  await page.click('#top nav button[data-go="mine"]');
+  await page.waitForSelector('#s-mine.on table.board');
+  await page.click('#mine-body tbody tr:has-text("后传也走完了")');
   await page.waitForSelector('#s-detail.on');
   await page.waitForSelector('#detail-body .score-card');
   const det = await page.locator('#detail-body').innerText();

@@ -765,16 +765,15 @@ async function extendRun(btn, room, id) {
   }
 }
 
-/* ── 一局的详情 ────────────────────────── */
-let detailBack = 'mine', detailMine = false;
-async function openDetail(id, back, mine) {
-  detailBack = back || 'mine';
-  detailMine = !!mine;
+/* ── 一局的详情 ──────────────────────────
+   只从「我的局」进得来：清单和正文是玩的人自己的东西，榜上点不进任何一局。
+   服务端也认这串 token，光有 id 拿不到详情。 */
+async function openDetail(id) {
   const box = $('#detail-body');
   box.innerHTML = '<p class="wait">正在翻这一局…</p>';
   go('detail');
   try {
-    renderDetail(await api('/api/detail?id=' + encodeURIComponent(id)), id);
+    renderDetail(await api(`/api/detail?id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}`), id);
   } catch (e) {
     box.innerHTML = '';
     box.appendChild(el('p', 'empty', '看不了这一局：' + e.message));
@@ -791,7 +790,7 @@ function renderDetail(d, id) {
   box.appendChild(scoreKv(r));
 
   if (d.review) { const w = el('div', 'review'); renderReview(w, d.review); box.appendChild(w); }
-  else if (detailMine) {
+  else {
     /* 自己的局、还没写过收梢——补写一篇 */
     const w = el('div', 'review'); box.appendChild(w);
     const b = el('button', 'ghost-btn', '写一篇收梢');
@@ -808,13 +807,11 @@ function renderDetail(d, id) {
     if (d.extraReview) { const w = el('div', 'review'); renderReview(w, d.extraReview); box.appendChild(w); }
   } else if (d.extraStatus === 'playing') {
     box.appendChild(el('p', 'note', `这一局还在走后传——两年之后又接着走了 ${Math.max(0, d.months.length - d.mainMonths)} 个月，还没收工。`));
-    if (detailMine) {
-      const b = el('button', 'primary', '接着往下走');
-      b.addEventListener('click', () => resume(id));
-      box.appendChild(b);
-    }
-  } else if (detailMine && !d.extraStatus) {
-    /* 结过账、还没接后传，而且是自己的局：在这儿也能接下去 */
+    const b = el('button', 'primary', '接着往下走');
+    b.addEventListener('click', () => resume(id));
+    box.appendChild(b);
+  } else if (!d.extraStatus) {
+    /* 结过账、还没接后传：在这儿也能接下去 */
     const w = el('div', 'more-box'); box.appendChild(w);
     renderExtendBox(r, { into: w, id, extraRoom: d.extraRoom });
   }
@@ -824,7 +821,7 @@ function renderDetail(d, id) {
     monthCards(box, d.months, { mainMonths: d.mainMonths });
   }
 }
-$('#detail-back').addEventListener('click', () => go(detailBack));
+$('#detail-back').addEventListener('click', () => go('mine'));
 
 const fmtUsdCN = n => {
   const a = Math.abs(n), s = n < 0 ? '−' : '';
@@ -896,8 +893,6 @@ async function loadBoard() {
          <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
          <td class="c">${esc(r.city || '')}</td>
          <td class="s">${esc(r.worldUsdText || '')}</td>`;
-    /* 每一行点得进去，读别人那两年是怎么过的 */
-    if (r.id) { tr.classList.add('mine-go'); tr.addEventListener('click', () => openDetail(r.id, 'board')); }
     tb.appendChild(tr);
   }
   t.appendChild(tb); box.appendChild(t);
@@ -906,7 +901,7 @@ async function loadBoard() {
     : boardYear
     ? '同一年出发的放在一起比，按当年那种钱净赚多少排。'
     : '各年的钱不是一种钱，先折成当年的美元，再按世界经济折到今天来比。') +
-    '点哪一行，看那一局是怎么过的。'));
+    '榜上只列成绩：谁具体怎么走的、写了什么，只有他自己在「我的局」里看得到。'));
 }
 
 /* ── 我的局 ────────────────────────────── */
@@ -938,7 +933,7 @@ async function loadMine() {
       <td>${where}${done && !old ? '<span class="go-in">看详情 ›</span>' : ''}</td>
       <td class="s">${sc == null ? '—' : (Math.abs(sc) < 10 ? sc.toFixed(2) : sc.toFixed(1))}</td>`;
     if (!old && r.extra_status === 'playing') { tr.classList.add('mine-go'); tr.addEventListener('click', () => resume(r.id)); }
-    else if (!old && done) { tr.classList.add('mine-go'); tr.addEventListener('click', () => openDetail(r.id, 'mine', true)); }
+    else if (!old && done) { tr.classList.add('mine-go'); tr.addEventListener('click', () => openDetail(r.id)); }
     else if (!old) { tr.classList.add('mine-go'); tr.addEventListener('click', () => resume(r.id)); }
     tb.appendChild(tr);
   }
