@@ -91,7 +91,7 @@ console.log('2. 1947-06 那一局，第 24 个月正好是换币的 1949 年 5 �
   else ok(`两年那一份记着 ${r1.months} 个月、${r1.scoreText}；接着走完是 ${r2.months} 个月、${r2.scoreText}`);
 }
 
-/* 3. 走得久的局也不封顶：接着走的月份照实往上加（2026-09-05 撤了整局封顶）——— */
+/* 3. 走得久的局也不封顶：接着走的月份照实往上加（2026-09-03 撤了整局封顶）——— */
 console.log('3. 不封顶：84 个月照实累加，比 24 个月多出一大截');
 {
   const each = st => E.applyMonth(st, { entries: [{ what: '做到头的一个月', amount: E.monthTop(st.year, st.month) }] });

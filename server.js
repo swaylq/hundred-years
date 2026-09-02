@@ -542,7 +542,7 @@ async function runOneMonthInner(req, res, b, s) {
       story: out.delta.story, tally, entries: res1.entries,
       refused: out.delta.refused || [], local: usedLocal,
       /* 这个月挣得超过了「那一年做到头的一个月」。以前这里是削顶的记号，
-       * 2026-09-05 不削了，留着它只为在界面上给这个月一句话。 */
+       * 2026-09-03 不削了，留着它只为在界面上给这个月一句话。 */
       overTop: res1.gained > E.monthTop(s.year, s.month),
       moved: moved || null,
       luck: sd.luck, fresh: Math.round(sd.fresh * 100) / 100,

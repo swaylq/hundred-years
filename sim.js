@@ -414,7 +414,7 @@ function buildUser(s, list, extra = {}) {
   const good = income / 6 * (1 + 0.25 * sd.fresh);  // 做顺了的一个月：两个月的收入
   const big = income / 2 * (1 + 0.3 * sd.fresh);    // 谈成一笔：半年的收入
   const wage = income / 12;                     // 老老实实做一个月工
-  const topThis = E.monthTop(s.year, s.month);   // 这一年做到头的一个月，一把尺子（2026-09-05 起不再是闸）
+  const topThis = E.monthTop(s.year, s.month);   // 这一年做到头的一个月，一把尺子（2026-09-03 起不再是闸）
   /* 奖励要落在**撞上奇遇的那几个月**，不是每个月的底薪都抬一截：
    * 底薪抬五成的那一版，1962 那一局二十四个月光靠「做顺了」就摸到了那一年的天花板，
    * 正文写得像模像样，钱却全是「做顺了」堆出来的，看不出他做成了什么。 */

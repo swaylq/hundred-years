@@ -63,7 +63,7 @@ console.log('2. 揣着一年的收入当月结算 = 1.00 分');
   ok(`${n} 个组合都对`);
 }
 
-/* 2b. 没有上限了（2026-09-05 sway 定的）：月月做到头，二十四个月照实累加 */
+/* 2b. 没有上限了（2026-09-03 sway 定的）：月月做到头，二十四个月照实累加 */
 console.log('2b. 不封顶：月月做到头，整局照实累加');
 {
   const { s } = walk(2015, 6, st => E.applyMonth(st, { entries: [{ what: '做到头的一个月', amount: E.monthTop(st.year, st.month) }] }));
