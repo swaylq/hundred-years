@@ -45,7 +45,7 @@ async function playOne(year, month, seed, how = 'careful') {
     if (res.capped) capped++;
     const tl = E.tallyLine(res.entries, E.currencyOf(at.year, at.month));
     s.months.push({ ...at, tally: tl });
-    if (i < MONTHS) E.advanceTo(s, i + 1); else s.n = E.MONTHS + 1;
+    if (i < MONTHS) E.advanceTo(s, i + 1); else E.closeOut(s);
   }
   const R = E.settle(s);
   /* 只走了一部分月份的话，按比例折算成满局，好跟走满的比 */

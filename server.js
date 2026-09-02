@@ -374,8 +374,9 @@ async function runOneMonthInner(req, res, b, s) {
       refused: out.delta.refused || [], capped: res1.capped, local: usedLocal,
     });
     /* 走完最后一个月就不再往前挪日历了：结算要按第 24 个月那个月份算。
-     * 只把 n 记成 MONTHS+1，界面据此显示「走完了」。 */
-    const switched = s.n < E.MONTHS ? E.advanceTo(s, s.n + 1) : (s.n = E.MONTHS + 1, []);
+     * closeOut 只做两件事：把 n 记成 MONTHS+1、最后一个月要是换币的月份就补折一次
+     * （不折的话，正好停在 1949 年 5 月的人能攥着一堆该作废的钱走人）。 */
+    const switched = s.n < E.MONTHS ? E.advanceTo(s, s.n + 1) : [E.closeOut(s)].filter(Boolean);
     /* 三条路跟正文是同一次调用回来的：不多花一次钱，也不让他多等。
      * 模型没给或者给了空的，就退回照年卡拼的那份——界面上永远有三条。
      * 放在推进之后：这三条说的是下个月，本地那份也该照下个月的年份拼。 */

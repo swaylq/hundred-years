@@ -187,11 +187,21 @@ function pickMonth(m, btn) {
   btn.classList.add('on');
   const ev = m.events.length ? `这个月的事：${m.events.join('；')}。` : '这个月没什么大事。';
   /* 二十四个月之后是哪一年哪一月，当场算给他看 */
-  const t = (picked * 12 + m.month - 1) + 23;
+  const a0 = picked * 12 + m.month - 1;
+  const t = a0 + 23;
   const to = `${Math.floor(t / 12)} 年 ${t % 12 + 1} 月`;
+  /* 这二十四个月里会不会撞上换钱——年份格子上那颗蓝点说的就是这件事，
+     但撞不撞得上要看落在哪个月，得在这儿说清楚，别让人白点。 */
+  const sw = [];
+  for (const y of (years || [])) {
+    if (!y.switch) continue;
+    const k = y.year * 12 + y.switch.month - 1;
+    if (k >= a0 && k <= t) sw.push(`${y.year} 年 ${y.switch.month} 月${y.switch.day > 1 ? `（${y.switch.day} 日，那个月底折）` : ''}换钱`);
+  }
   $('#mo-detail').innerHTML =
     `<b>${picked} 年 ${m.month} 月</b>起，一直走到 <b>${to}</b>，一共二十四个月。手里的钱是${esc(m.currency)}。<br>` +
-    `你揣着 ${esc(m.startCash)} 落地——那时候一个普通人一年挣 ${esc(m.incomeText)}。<br>${esc(ev)}`;
+    `你揣着 ${esc(m.startCash)} 落地——那时候一个普通人一年挣 ${esc(m.incomeText)}。<br>${esc(ev)}` +
+    (sw.length ? `<br><b>这两年里会换钱：${esc(sw.join('；'))}</b>——攥着现钞的那天会被收走大半，换成东西的躲得过。` : '');
   $('#start-box').hidden = false;
 }
 

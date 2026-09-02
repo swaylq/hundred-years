@@ -239,21 +239,25 @@ function buildUser(s, list, extra = {}) {
 
   const monthEvents = (c.events || []).filter(e => e.month === s.month);
 
-  /* 换币算在那个月的月初：走进这个月，游戏已经把他手里的钱折过了。
-   * 所以这个月的账从头到尾都用新钱记，别再记一笔「换钱的损失」。 */
-  const swNow = E.switchOn(s.year, s.month);
+  /* 换币那天在月中的（1948-08-19 这种），这个月整月按旧钱过，月底那一下才折——
+   * 「早上买得起两个烧饼、下午买不起」的就是这个月，得让他亲历。
+   * 换币那天是 1 号的（1955-03-01），进门就已经是新钱了。 */
+  const swNow = E.switchDueAfter(s.year, s.month);
   const pv = prevMonth(s.year, s.month);
-  const swLast = s.n > 1 ? E.switchOn(pv.year, pv.month) : null;
+  const swLast = s.n > 1
+    ? (E.switchDueAfter(pv.year, pv.month) || E.switchOnEntry(s.year, s.month))
+    : E.switchOnEntry(s.year, s.month);
   const swThis = swNow
-    ? `\n**这个月换钱**：${swNow.say}\n` +
-      `上面「他现在的家底」那个数**已经是折算之后的${E.CN[swNow.to]}了**，游戏替他换好了。\n` +
-      `所以：正文里要写这件事（他排了多久的队、柜台上怎么说、手里那叠旧钞变成了什么），` +
-      `但 **entries 里绝对不许再记一笔「换钱的损失」**——那等于同一笔钱扣两遍。\n` +
-      `这个月的账一律用${E.CN[swNow.to]}的数目：一个普通人一年挣 ${E.money(income, cur)}，` +
-      `一顿饭、一次车钱都是个位数或者几十。前几个月那些${E.CN[swNow.from]}的数目不要再照着写。` : '';
+    ? `\n**就是这个月换钱**：${swNow.say}\n` +
+      `这个月的账**从头到尾还是用${E.CN[swNow.from]}记**（上面写的数目都是${E.CN[swNow.from]}）——` +
+      `他是拿着旧钱过完这个月的，月底折成${E.CN[swNow.to]}由游戏自己做。\n` +
+      `**entries 里绝对不许记一笔「换钱的损失」**，那等于同一笔钱扣两遍。\n` +
+      `正文里必须写这件事：消息哪天传开的、他排了多久的队、柜台上怎么说、` +
+      `手里那叠钞票从买得起什么变成买不起什么。这是他这两年里最要紧的一个月之一。` : '';
   const swPast = swLast
-    ? `\n**上个月才换的钱，现在用的是${E.CN[swLast.to]}，不是${E.CN[swLast.from]}。**\n` +
-      `一个普通人一年挣 ${E.money(income, cur)}，前几个月那些${E.CN[swLast.from]}的数目不要再照着写。` : '';
+    ? `\n**钱刚换过，现在用的是${E.CN[swLast.to]}，不是${E.CN[swLast.from]}。**\n` +
+      `一个普通人一年挣 ${E.money(income, cur)}，一顿饭、一次车钱都是个位数或者几十。` +
+      `前几个月那些${E.CN[swLast.from]}的数目不要再照着写。` : '';
 
   /* 跨年：物价、能干的事、犯不犯法全变了，得让他知道。 */
   const crossed = s.n > 1 && s.month === 1

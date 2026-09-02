@@ -122,13 +122,18 @@ function incomeAtDay(year, month, day) {
 /* ── 按月算的那一套 ────────────────────────────────
  * 一局是二十四个月，不再是三十天。月内的天数只在物价插值里还用得着。
  *
- * **换币算在那个月的月初**：走进 1948 年 8 月，手里的法币当场折成金圆券，
- * 这个月整月按新钱记。真实历史上兑换有个把月的限期，游戏把它压成一个瞬间——
- * 换来的是每个月只有一种钱，账不会一半旧一半新。正文里照旧写他去排队兑换。
- * spine 里每个月本来就记着那个月流通的钱、当月的年收入和购买力，直接取就是。 */
-const currencyOf = (year, month) => yearOf(year).months[month - 1].currency;
-const incomeOf = (year, month) => yearOf(year).months[month - 1].income;
-const worthOf = (year, month) => yearOf(year).months[month - 1].worth;
+ * **换币算在那个月的月底**：整个 1948 年 8 月都按法币过（早上买得起两个烧饼、
+ * 下午买不起的就是这个月），月底结账那一下才折成金圆券。
+ * 这么定有两条理由：走进八月的人和从八月开局的人经历一样；
+ * 而「那一下」正是这个游戏最想让人经历的东西——月初就折完，从八月开局的人
+ * 什么也遇不上，可年份格子上那颗蓝点偏偏就在邀请他从那儿开局。
+ *
+ * 所以三个按月的口子一律取那个月 **1 号**的视角：换币的月份拿到的是旧钱的
+ * 币种、旧钱的年收入、旧钱的购买力。spine 整月记的是新钱，别直接拿。
+ * 一局最后一个月要是撞上换币，收工前由 closeOut 补折一次，谁也躲不掉。 */
+const currencyOf = (year, month) => currencyAt(year, month, 1);
+const incomeOf = (year, month) => incomeAtDay(year, month, 1);
+const worthOf = (year, month) => worthAt(year, month, 1);
 
 /** 下一个月是几年几月 */
 function nextMonth(year, month) { return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 }; }
@@ -219,25 +224,43 @@ function monthCap(year, month) {
  *
  * 原来实物那一档根本没换，1948 年 8 月囤了货的玩家，
  * 账面上就顶着一亿七千万「金圆券」的米走完了后半个月。 */
-/** 走进这个月的时候要不要换钱 */
-function switchOn(year, month) {
+/** 走完这个月的时候要不要换钱。
+ *  换币那天在月中（1935-11-04、1948-08-19、1949-05-27），这个月整月按旧钱过，
+ *  月底那一下才折——「早上买得起两个烧饼、下午买不起」的就是这个月。 */
+function switchDueAfter(year, month) {
   const sw = yearOf(year).switch;
-  return sw && sw.month === month ? sw : null;
+  return sw && sw.month === month && sw.day > 1 ? sw : null;
 }
 
-/** 走过一个月：先把实物按物价重新标价，再看要不要换钱。
+/** 走进这个月的时候就要换钱：换币那天正好是 1 号（1955-03-01），
+ *  这个月一天都没有旧钱可用，spine 整月记的也是新钱，只能进门就折。 */
+function switchOnEntry(year, month) {
+  const sw = yearOf(year).switch;
+  return sw && sw.month === month && sw.day <= 1 ? sw : null;
+}
+
+/** 走过一个月：把实物按新一个月的行情重新标价。
  *
- *  **实物的名义价钱必须跟着物价走。** 一石米还是那一石米，可它的标价
+ *  **实物的名义价钱必须跟着钱的贬值走。** 一石米还是那一石米，可它的标价
  *  1948 年 6 月是一千万法币、8 月是五千八百万。原来只在换币那一下折一次，
  *  中间的月份纹丝不动——于是 1947 年买米囤两年，账面上跟攥着现金一样惨，
  *  而囤货躲通胀本来就是那两年最要紧的一手。
- *  换算系数就是两个月的购买力之比，它自带换币的比价，所以换币那一下
- *  实物不必再单独折一次（折两次就是把米也按收兑价抢走了）。
  *
- *  现金、债权、欠债不跟物价走：它们的名义数目本来就是死的，
+ *  **换算系数用「中位年收入」之比，不用物价指数。** 物价指数每年 1 月都重置成 1，
+ *  只在一年之内可比；一局跨两三个日历年，拿它跨年一除就会算出「米涨了三千七百万倍」
+ *  （真跑出来过：1947 年 6 月囤的米，到 1949 年 5 月值 75 年的收入）。
+ *  中位收入是这份数据里唯一一条跨年连续的名义序列（build-spine 专门校验过
+ *  1 月接不接得上 12 月），换币那一下它自己也断档，所以拿它当尺子最省事，
+ *  实物也不用再为换币单独折一次。
+ *
+ *  这么定的代价说清楚：**实物保的是「相当于几个月工钱」那份价值**。
+ *  1948 年物价跑得比工钱快六倍，真实世界里囤货的人是赚的，这里只做到不亏。
+ *  相对攥现金（1949 年被十万比一收走）的差距照旧巨大，那一手仍旧成立。
+ *
+ *  现金、债权、欠债不跟着走：它们的名义数目本来就是死的，
  *  真实价值缩水由「除以当月年收入」那一步自然体现。 */
 function reprice(s, from, to) {
-  const k = worthOf(from.year, from.month) / worthOf(to.year, to.month);
+  const k = incomeOf(to.year, to.month) / incomeOf(from.year, from.month);
   if (!isFinite(k) || k <= 0) return;
   for (const a of s.assets) {
     if (a.kind === '债权' || a.kind === '现金类') continue;
@@ -385,15 +408,36 @@ function advanceTo(s, n) {
   const events = [];
   while (s.n < n) {
     const from = { year: s.year, month: s.month };
+    const sw = switchDueAfter(from.year, from.month);       // 上个月过完了，该折钱吗
     const at = nextMonth(s.year, s.month);
     s.n++;
     s.year = at.year; s.month = at.month;
-    reprice(s, from, at);                                   // 手里的东西按新一个月的物价重新标价
-    const ev = applySwitch(s, switchOn(s.year, s.month));   // 走进换币的月份，现金当场折
+    reprice(s, from, at);                                   // 手里的东西按新一个月的行情重新标价
+    const ev = applySwitch(s, sw || switchOnEntry(at.year, at.month));
     if (ev) events.push(ev);
     else s.currency = currencyOf(s.year, s.month);
   }
   return events;
+}
+
+/** 走完最后一个月，收工。最后一个月要是换币的月份，这里补折一次——
+ *  不折的话，从 1947 年 6 月开局、正好停在 1949 年 5 月的人，
+ *  攥着一堆该作废的钱走人，别人却被清了个干净。
+ *  折过之后这个月的钱、年收入、购买力都改用新钱那一套（endSwitched 记着这件事）。 */
+function closeOut(s) {
+  const sw = switchDueAfter(s.year, s.month);
+  s.n = MONTHS + 1;
+  if (!sw) return null;
+  /* 实物也要按「换币之后」的标价重算，尺子跟 reprice 一样是中位收入：
+   * incomeOf 是这个月 1 号（旧钱）的年收入，spine 整月记的那个是新钱的。 */
+  const k = yearOf(s.year).months[s.month - 1].income / incomeOf(s.year, s.month);
+  for (const a of s.assets) {
+    if (a.kind === '债权' || a.kind === '现金类') continue;
+    a.worth *= k;
+  }
+  const ev = applySwitch(s, sw);
+  s.endSwitched = true;
+  return ev;
 }
 
 /** 把分录写成一行账，界面上显示的就是这行。
@@ -416,7 +460,7 @@ function settle(s) {
   /* 防呆：手里的钱必须跟当前这个月该流通的钱对得上。
    * 对不上说明有人绕过 advanceTo 直接改了月份，把换币漏掉了——
    * 这种错不报出来的话，1948 年 8 月会算出二十八万年的收入。 */
-  const should = currencyOf(s.year, s.month);
+  const should = s.endSwitched ? yearOf(s.year).switch.to : currencyOf(s.year, s.month);
   if (s.currency !== should) {
     throw new Error(`${s.year} 年 ${s.month} 月手里该是${CN[should]}，这一局记的却是${CN[s.currency]}——` +
       `换币那个月没走 advanceTo。`);
@@ -424,7 +468,9 @@ function settle(s) {
 
   const startYear = s.startYear, startMonth = s.startMonth;
   const startIncome = s.startIncome || incomeOf(startYear, startMonth);
-  const nowIncome = incomeOf(s.year, s.month);
+  /* 收工那个月要是在月底折过钱，手里已经是新钱了，分母也得换成新钱的年收入
+   * （spine 整月记的就是新钱那一档）。两边不是一种钱，分数会差几百万倍。 */
+  const nowIncome = s.endSwitched ? incomeAt(s.year, s.month) : incomeOf(s.year, s.month);
   const nw = netWorth(s);
 
   /* 分数 = 两头各自「家底相当于几年的收入」之差。
@@ -454,7 +500,7 @@ function settle(s) {
    *         那时候整个世界经济只有今天的二十一分之一，折到今天就是两万多。
    */
   const startCur = currencyOf(startYear, startMonth);
-  const endCur = currencyOf(s.year, s.month);
+  const endCur = s.currency;
   const incomeReal = startIncome * worthOf(startYear, startMonth);   // 开局那个月的年收入，折到那一年 1 月
   const gainReal = years * incomeReal;
   const W = WORLD.years[String(startYear)];
@@ -532,7 +578,7 @@ module.exports = {
   cleanOptions,
   DAYS, MONTHS, LIST_LIMIT, CN, SPINE, TL,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay, money,
-  currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchOn, reprice,
+  currencyOf, incomeOf, worthOf, nextMonth, startable, monthCap, switchDueAfter, switchOnEntry, reprice, closeOut,
   startingCash, newRun, netWorth, applySwitch, advanceTo, applyMonth, tallyLine, settle, fmtScore, fmtUsd, WORLD,
   countHan, hasContent, checkList,
 };
