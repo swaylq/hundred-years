@@ -269,15 +269,22 @@ function renderPlay(last, opts = {}) {
   const s = run.state;
   const now = Math.min(s.n, s.months);
   const done = !!s.finished || s.n > s.months;
-  const st = s.standing || {};
   const traits = ((s.memo || {}).traits || []).filter(t => !t.lost);
 
   /* 左边那一栏：日历页、二十四道刻度、家底、四条杠 */
-  const meter = (k, cls) => `<div class="meter ${cls}"><span>${k}</span><i><b style="width:${Number(st[k]) || 0}%"></b></i><em>${Number(st[k]) || 0}</em></div>`;
   const ticks = Array.from({ length: s.months }, (_, i) =>
     `<i class="${i < s.n - 1 || done ? 'on' : (i === s.n - 1 ? 'now' : '')}"></i>`).join('');
+  /* 家当摊开写会把整块挤爆——真跑出来过一屏二十多样、把日历都顶出屏幕。
+     只摆最值钱的三样，其余折进「还有 N 样」，点开才展开。 */
   const subs = [`现金 <b>${esc(s.cashText)}</b>`];
-  if (s.assets && s.assets.length) subs.push(`家当 <b>${s.assets.map(a => esc(a.name) + ' ' + esc(a.worthText)).join('，')}</b>`);
+  if (s.assets && s.assets.length) {
+    const all = [...s.assets].sort((x, y) => (y.worth || 0) - (x.worth || 0));
+    const 摆 = all.slice(0, 3), 藏 = all.slice(3);
+    const one = a => esc(a.name) + ' ' + esc(a.worthText);
+    subs.push(`家当 <b>${摆.map(one).join('，')}</b>` + (藏.length
+      ? `<details class="more-assets"><summary>还有 ${藏.length} 样</summary><b>${藏.map(one).join('，')}</b></details>`
+      : ''));
+  }
   if (s.debts && s.debts.length) subs.push(`欠着 <b>${s.debts.map(d => esc(d.who) + ' ' + esc(d.amountText)).join('，')}</b>`);
   $('#play-bar').innerHTML =
     `<div class="cal">
@@ -286,9 +293,9 @@ function renderPlay(last, opts = {}) {
        <div class="cal-foot"><span class="of">第 ${now} / ${s.months} 个月</span> · ${esc(s.city)}</div>
      </div>
      <div class="ticks" style="grid-template-columns:repeat(${Math.min(s.months, 30)},1fr)">${ticks}</div>
-     <div class="money"><span class="lab">家底</span><b class="cash">${esc(s.netWorthText)}</b><div class="sub">${subs.join('<br>')}</div></div>
-     <div class="meters">${meter('体力', 'm-body')}${meter('名声', 'm-name')}${meter('关系', 'm-ties')}${st.麻烦 > 0 ? meter('麻烦', 'm-trouble') : ''}</div>` +
-    /* 他这两年练出来、挣下来的——这一栏是自由度看得见的地方，比四条杠更该占位置 */
+     <div class="money"><span class="lab">家底</span><b class="cash">${esc(s.netWorthText)}</b><div class="sub">${subs.join('<br>')}</div></div>` +
+    /* 屏幕上只有钱这一个数（sway 2026-09-04）。身手、脑子、摊子多大、手底下多少人，
+       全在下面这一栏的文字里默默攒着，照样影响往后走得动什么，只是不摆成数值。 */
     (traits.length ? `<div class="traits"><span class="lab">这两年练出来的</span>${
       traits.map(t => `<i title="${esc((t.notes || []).map(x => x.note).join('；'))}">${esc(t.what)}</i>`).join('')}</div>` : '') +
     (s.persona ? `<div class="who-line">${esc(s.persona)}</div>` : '');

@@ -248,14 +248,13 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .money .sub { color: var(--muted); font-size: 12.5px; margin-top: 7px; line-height: 1.65; }
 .money .sub b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 
-/* 四条杠 */
-.meters { display: grid; gap: 8px; padding: 2px 2px 0; }
-.meter { display: grid; grid-template-columns: 2.6em 1fr 2.2em; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
-.meter i { display: block; height: 5px; background: var(--rule); border-radius: 3px; overflow: hidden; }
-.meter i b { display: block; height: 100%; background: var(--ink-2); border-radius: 3px; transition: width .45s; }
-.meter em { font-style: normal; text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.meter.m-trouble { color: var(--seal-ink); }
-.meter.m-trouble i b { background: var(--seal); }
+/* 家当多了就折起来：只摆最值钱的三样，其余点开看 */
+.more-assets { margin-top: 3px; }
+.more-assets > summary { cursor: pointer; color: var(--muted); font-weight: 400; list-style: none; font-size: 12px; }
+.more-assets > summary::-webkit-details-marker { display: none; }
+.more-assets > summary::before { content: '＋ '; }
+.more-assets[open] > summary::before { content: '－ '; }
+.more-assets b { display: block; margin-top: 3px; font-weight: 400; }
 
 /* 他这两年练出来、挣下来的：一样一个小牌子，鼠标停上去看细节 */
 .traits { padding: 2px 2px 0; }
@@ -432,7 +431,7 @@ table.board tr.mine-go:hover td { background: color-mix(in srgb, var(--ink) 4%, 
   .play { grid-template-columns: 1fr; gap: 20px; }
   .bar {
     position: static;
-    grid-template-columns: auto 1fr; grid-template-areas: "cal money" "ticks ticks" "meters meters" "traits traits" "who who";
+    grid-template-columns: auto 1fr; grid-template-areas: "cal money" "ticks ticks" "traits traits" "who who";
     gap: 10px 14px; padding: 12px 14px; background: var(--sheet); border-radius: 3px; box-shadow: var(--shadow);
     border-top: 3px dashed var(--rule-2);
   }
@@ -446,7 +445,6 @@ table.board tr.mine-go:hover td { background: color-mix(in srgb, var(--ink) 4%, 
   .ticks { grid-area: ticks; }
   .money { grid-area: money; box-shadow: none; padding: 0; background: none; text-align: right; }
   .money .cash { font-size: 20px; }
-  .meters { grid-area: meters; grid-template-columns: 1fr 1fr; gap: 6px 18px; padding: 0; }
   .traits { grid-area: traits; padding: 0; }
   .who-line { grid-area: who; padding: 8px 0 0; }
 }

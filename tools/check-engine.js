@@ -442,41 +442,44 @@ console.log('13. 主角设定的闸');
   else ok('收下的设定进存档、顶回去的不进');
 }
 
-/* 14. 四条杠回来了（2026-09-03 晚 sway 要回来的），但**记分只看家底** */
-console.log('14. 四条杠回来了，可它们不进分数');
+/* 14. 屏幕上只有钱这一个数。
+ *
+ *     这一条来回改过三次（09-03 撤 → 当晚加回 → 09-04 又撤），**定在这儿了**：
+ *     sway「移除名声，关系，麻烦，只保留金钱一个数值……主角的武力值聪明值都是默默积累的」。
+ *     身手、脑子、摊子多大、手底下多少人，全在 memo.traits 的文字里攒着。
+ *     静态扫源码——玩家看不看得见那几条槽，取决于存档里有没有那几个字段，
+ *     跑一局是看不出来的（老档里还留着它们）。 */
+console.log('14. 只有钱这一个数');
 {
   const s = E.newRun({ year: 1936, month: 5, nick: 'x' });
-  const 该有 = { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 };
-  if (JSON.stringify(s.standing) !== JSON.stringify(该有)) fail(`开局那四个数不对：${JSON.stringify(s.standing)}`);
-  else ok(`开局 ${Object.entries(该有).map(([k, v]) => k + ' ' + v).join(' · ')}`);
+  if (s.standing) fail(`开局还带着 standing：${JSON.stringify(s.standing)}`);
+  else ok('开局的存档里没有名声/关系/体力/麻烦这几个字段');
 
-  /* 模型给的是增量，夹在 0..100 之间 */
-  E.applyMonth(s, { entries: [{ what: '做工', amount: 10 }], standing: { 体力: -95, 麻烦: 150, 名声: 3 } });
-  if (s.standing.体力 !== 0) fail(`体力该压到 0，实际 ${s.standing.体力}`);
-  else if (s.standing.麻烦 !== 100) fail(`麻烦该封到 100，实际 ${s.standing.麻烦}`);
-  else if (s.standing.名声 !== 13) fail(`名声该是 13，实际 ${s.standing.名声}`);
-  else ok('模型给的是变化量，夹在 0 到 100 之间（−95 压到 0，+150 封到 100）');
+  const fs2 = require('fs'), path2 = require('path');
+  const root = path2.join(__dirname, '..');
+  const 禁 = /\.standing\b|["'「]standing["'」]|\bstanding\s*[:=]/;
+  const 中招 = [];
+  for (const f of ['engine.js', 'sim.js', 'server.js', 'public/app.js', 'tools/bot.js', 'tools/player.js']) {
+    const src = fs2.readFileSync(path2.join(root, f), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      const 代码 = line.replace(/\/\*.*?\*\//g, '').replace(/^\s*\*.*$/, '').replace(/\/\/.*$/, '');
+      if (禁.test(代码)) 中招.push(`${f}:${i + 1} ${代码.trim().slice(0, 60)}`);
+    });
+  }
+  if (中招.length) 中招.forEach(x => fail(`那几条槽又冒出来了：${x}`));
+  else ok('六个文件的代码里都没有 standing 了（注释里说明改动史不算）');
 
-  /* 记分只看家底：四条杠差到天上去，分数也必须一模一样 */
-  const mk = st => {
-    const r = E.newRun({ year: 1936, month: 5, nick: 'x', seed: 1 });
-    Object.assign(r.standing, st);
-    r.cash *= 3;
-    for (let i = 1; i <= E.MONTHS; i++) { r.months.push({ n: r.n, year: r.year, month: r.month }); if (i < E.MONTHS) E.advanceTo(r, i + 1); else E.closeOut(r); }
-    return E.settle(r).score;
-  };
-  const 高 = mk({ 名声: 100, 关系: 100, 体力: 100, 麻烦: 0 });
-  const 低 = mk({ 名声: 0, 关系: 0, 体力: 1, 麻烦: 100 });
-  if (高 !== 低) fail(`四条杠影响了分数：满杠 ${高}、空杠 ${低}`);
-  else ok('名声关系体力麻烦拉满和拉爆，分数一模一样——记分只看家底');
+  /* 界面上也不许再有那几条杠 */
+  const 前端 = fs2.readFileSync(path2.join(root, 'public/app.js'), 'utf8')
+    + fs2.readFileSync(path2.join(root, 'public/style.css'), 'utf8');
+  if (/\bmeter\b|class="meters"|\.meters\s*\{/.test(前端)) fail('界面上那几条杠还在');
+  else ok('界面上没有那几条杠了');
 
-  /* 09-03 白天那半天开的局没有 standing，读回来不许炸 */
-  const 老档 = E.newRun({ year: 1962, month: 5, nick: 'x' });
-  delete 老档.standing;
+  /* 老档带着 standing，读回来不许炸 */
+  const 老档 = { ...E.newRun({ year: 1962, month: 5, nick: 'x' }), standing: { 名声: 10, 关系: 10, 体力: 80, 麻烦: 0 } };
   try {
     E.applyMonth(老档, { entries: [{ what: '做工', amount: 40 }], standing: { 体力: -9 } });
-    if (老档.standing.体力 !== 71) fail(`老档补默认值之后该是 71，实际 ${老档.standing.体力}`);
-    else ok('撤掉四条杠那半天开的老档，进来先补默认值再往上加');
+    ok('老档带着 standing 也照样走得动，模型回的 standing 直接扔掉');
   } catch (e) { fail(`老档读不回来了：${e.message}`); }
 }
 

@@ -103,8 +103,8 @@ async function noHScroll(page, where) {
   await page.locator('#start').click();
   await page.waitForSelector('#s-play.on', { timeout: 15000 });
   await page.waitForSelector('.bar .cash', { timeout: 10000 });
-  /* 四条杠 09-03 晚又要回来了：三条常驻，麻烦是 0 的时候不显示 */
-  check(await page.locator('.bar .meter').count() === 3, `左栏有那几条杠（数到 ${await page.locator('.bar .meter').count()} 条；麻烦是 0 时不显示）`);
+  /* 屏幕上只有钱这一个数（sway 2026-09-04，第三次也是最后一次定） */
+  check(await page.locator('.bar .meter').count() === 0, '左栏只有钱，没有名声/关系/体力/麻烦那几条杠');
   check((await page.locator('.bar .who-line').textContent()).includes('认死理'), '左栏最下面写着他是个什么人');
   await snap(page, 'c-开局');
 
@@ -166,6 +166,18 @@ async function noHScroll(page, where) {
     });
     if (tr.存了.length) check(tr.显示了, `攒出了 ${tr.存了.length} 样本事，左栏显示了：${tr.存了.join('、')}`);
     else ok(`走了两个月还没攒出本事来，左栏也就没这一栏（正常）`);
+  }
+
+  /* 家当多了要折起来——真跑出来过一屏二十多样，把日历顶出了屏幕 */
+  {
+    const 家当 = await page.evaluate(() => {
+      const s2 = window.__lastState || null;
+      const sub = document.querySelector('.bar .money .sub');
+      const box = document.querySelector('.bar .money');
+      return { 有折叠: !!document.querySelector('.more-assets'),
+               左栏高: Math.round(document.querySelector('#play-bar').getBoundingClientRect().height) };
+    });
+    check(家当.左栏高 < 900, `左栏高 ${家当.左栏高}px，没被家当撑爆（家当超过三样就折起来）`);
   }
 
   console.log('\n五之二、翻一下这一年');
@@ -275,7 +287,7 @@ async function noHScroll(page, where) {
   await m.waitForSelector('.bar .cash', { timeout: 10000 });
   await snap(m, 'i-手机-开局');
   await noHScroll(m, '手机开局');
-  check(await m.locator('.bar .meter').count() === 3, '手机上那几条杠也在');
+  check(await m.locator('.bar .meter').count() === 0, '手机上也只有钱这一个数');
   {
     /* 左栏那一行小字不许跟上面的家底叠在一起 */
     const box = await m.evaluate(() => {
