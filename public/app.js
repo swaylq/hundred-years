@@ -345,7 +345,7 @@ function renderPlay(last, opts = {}) {
   }
   if (last.overTop) box.appendChild(el('div', 'note', '这个月挣得比这一年寻常挣得到的多出不少——全记进家底了。'));
   if (last.overspent) box.appendChild(el('div', 'note', `兜里的钱不够，有 ${last.overspent} 的开销没花成。`));
-  if (last.local) box.appendChild(el('div', 'note', '这个月没经过大模型，是照固定的规矩粗算的' + (last.why ? `（${last.why}）` : '') + '。'));
+  if (last.local) box.appendChild(el('div', 'note', '这个月算得糙，是照固定的规矩估的' + (last.why ? `（${last.why}）` : '') + '。'));
 
   /* 写清单 */
   $('#list').disabled = done;
@@ -704,7 +704,7 @@ function renderReview(box, rv) {
     m.appendChild(el('p', '', rv.missed));
     box.appendChild(m);
   }
-  if (rv.local) box.appendChild(el('p', 'note', '这一篇没经过大模型，是照账上的数拼的。'));
+  if (rv.local) box.appendChild(el('p', 'note', '这一篇是照账上的数拼的，没细写。'));
 }
 
 async function fetchReview(id, extra, into) {
