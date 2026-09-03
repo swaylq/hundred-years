@@ -8,3 +8,6 @@ data/years/_failed/
 goal/shots/
 node_modules/
 goal/shots-extra/
+
+# 会话之间协调用的内部笔记，留在本机，不进公开仓库
+.SESSIONS.md
