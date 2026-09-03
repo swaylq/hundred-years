@@ -44,7 +44,10 @@
 <section id="s-year" class="screen">
   <button class="back" data-go="pick">← 换一年</button>
   <div id="year-head"></div>
-  <div id="year-body"></div>
+  <!-- 开场白和换钱提醒摆在挑月份上面：一个是钩子，一个是挑哪个月的依据。
+       这一年的资料（在发生什么、物价、路子、祸事）挪到动身之后，
+       想细看的往下翻——sway 2026-09-04：动身操作放在「这一年在发生什么」前面。 -->
+  <div id="year-intro"></div>
   <h3 class="mh">从哪个月落地</h3>
   <p class="hint">同一年里，月份差得很远。选定了，就从那个月起往后走二十四个月。</p>
   <div id="months" class="months"></div>
@@ -58,6 +61,7 @@
     <p class="who-say">写你的长处和脾气，五十个汉字以内，不写也行。它改的是你做事的方式和别人怎么待你，不会凭空多给钱——写个普通人，这里没有武功也没有超能力。</p>
     <button id="start" class="primary">动身</button>
   </div>
+  <div id="year-body"></div>
 </section>
 
 <!-- 玩 -->

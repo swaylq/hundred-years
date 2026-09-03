@@ -92,7 +92,7 @@ async function openYear(y) {
   go('year');
   const head = $('#year-head');
   head.innerHTML = `<div class="big">${y}</div><div class="era">正在翻到这一年…</div>`;
-  $('#year-body').innerHTML = ''; $('#months').innerHTML = ''; $('#start-box').hidden = true;
+  $('#year-body').innerHTML = ''; $('#year-intro').innerHTML = ''; $('#months').innerHTML = ''; $('#start-box').hidden = true;
   $('#mo-detail').textContent = '点一个月。带红点的月份，那个月出过事。';
   let d;
   try { d = await api('/api/year?y=' + y); }
@@ -106,17 +106,18 @@ async function openYear(y) {
      <div class="mood">${esc(c.economy.mood)}（${esc(c.economy.number)}）</div>
      <div class="chips">
        <span class="chip">落在${esc(d.city)}</span>
-       <span class="chip chip-top">做到头的一个月：约 ${d.ceiling} 年的收入</span>
        ${d.switch ? `<span class="chip chip-sw">${d.switch.month} 月换钱</span>` : ''}
      </div>`;
 
-  const body = $('#year-body'); body.innerHTML = '';
-  body.appendChild(el('div', 'flavor', c.flavor));
-  if (d.switch) body.appendChild(el('div', 'warn', `这一年 ${d.switch.month} 月 ${d.switch.day} 日换钱：${d.switch.say}`));
+  /* 开场白和换钱提醒在挑月份上面，别的资料在动身按钮下面 */
+  const intro = $('#year-intro'); intro.innerHTML = '';
+  intro.appendChild(el('div', 'flavor', c.flavor));
+  if (d.switch) intro.appendChild(el('div', 'warn', `这一年 ${d.switch.month} 月 ${d.switch.day} 日换钱：${d.switch.say}`));
 
+  const body = $('#year-body'); body.innerHTML = '';
   body.appendChild(blockList('这一年在发生什么', (c.events || []).map(e => [`${e.month} 月`, e.text])));
   body.appendChild(blockPrices('东西什么价', c.prices || []));
-  body.appendChild(blockList('挣钱的路子', (c.money || []).map(m => [m.way, `${m.who}，做到头一个月约 ${m.ceiling}`])));
+  body.appendChild(blockList('挣钱的路子', (c.money || []).map(m => [m.way, m.who])));
   body.appendChild(blockList('这一年干不了的事', (c.forbidden || []).map(f => [f.what, f.why])));
   body.appendChild(blockTags('手边有的', (c.tech['日常'] || []).concat(c.tech['稀罕'] || []), false));
   body.appendChild(blockTags('这一年还没有', c.tech['没有'] || [], true));
@@ -249,7 +250,7 @@ async function loadRef(year) {
     const c = d.card;
     box.innerHTML = '';
     box.appendChild(blockPrices('东西什么价', c.prices || []));
-    box.appendChild(blockList('挣钱的路子', (c.money || []).map(m => [m.way, `${m.who}，做到头约 ${m.ceiling}`])));
+    box.appendChild(blockList('挣钱的路子', (c.money || []).map(m => [m.way, m.who])));
     box.appendChild(blockList('干不了的事', (c.forbidden || []).map(f => [f.what, f.why])));
     box.appendChild(blockTags('这一年还没有', c.tech['没有'] || [], true));
     refFor = year;
@@ -342,7 +343,7 @@ function renderPlay(last, opts = {}) {
     for (const r of last.refused) ul.appendChild(el('li', '', `${r.what} — ${r.why}`));
     w.appendChild(ul); box.appendChild(w);
   }
-  if (last.overTop) box.appendChild(el('div', 'note', '这个月挣得超过了那一年做到头的一个月——全记进家底了。'));
+  if (last.overTop) box.appendChild(el('div', 'note', '这个月挣得比这一年寻常挣得到的多出不少——全记进家底了。'));
   if (last.overspent) box.appendChild(el('div', 'note', `兜里的钱不够，有 ${last.overspent} 的开销没花成。`));
   if (last.local) box.appendChild(el('div', 'note', '这个月没经过大模型，是照固定的规矩粗算的' + (last.why ? `（${last.why}）` : '') + '。'));
 

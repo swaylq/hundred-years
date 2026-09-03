@@ -775,9 +775,8 @@ function optionsLocal(s, salt) {
   /* 年卡里的句子有的自带句号，也常带一句「（估算，非直接调查数）」这样的注脚——
    * 那是写年卡时给自己看的，摆到屏幕上只会占地方。 */
   const tail = x => String(x || '').replace(/[（(][^）)]*[）)]/g, '').replace(/[。；，、\s]+$/, '');
-  /* 年卡里的「做到头约多少」常是两三句，取头一句就够，剩下的塞不进一张纸条 */
-  const money1 = w => tail(String(w.ceiling || '').split(/[；;]/)[0]).slice(0, 24);
-  const one = (w, label) => w && { what: tail(w.way).slice(0, 40), why: (label + (money1(w) ? `。做到头约${money1(w)}` : '')).slice(0, 46) };
+  /* 纸条上不写「做到头约多少」——那是给模型的尺子，不是给玩家看的许诺（sway 2026-09-04） */
+  const one = (w, label) => w && { what: tail(w.way).slice(0, 40), why: label.slice(0, 46) };
   return [
     one(steady, '稳当'),
     one(rich, '来钱最快，也最容易出事'),

@@ -81,6 +81,25 @@ async function noHScroll(page, where) {
   check(nMonths === 12, `十二个月都能选（数到 ${nMonths} 个）`);
   await snap(page, 'b-一年的详情');
 
+  /* 动身放在「这一年在发生什么」前面（sway 2026-09-04）：
+     挑月份那块必须排在年份资料上面，不然人得先翻过一整页物价才找得到入口。 */
+  {
+    const y = await page.evaluate(() => {
+      const top = el => Math.round(el.getBoundingClientRect().top + window.scrollY);
+      const 资料 = [...document.querySelectorAll('#year-body h4, #year-body .block h4')]
+        .find(h => h.textContent.includes('这一年在发生什么'));
+      return { 挑月份: top(document.querySelector('#months')),
+               动身框: top(document.querySelector('#start-box')),
+               资料: 资料 ? top(资料) : null,
+               开场白: top(document.querySelector('#year-intro .flavor')) };
+    });
+    check(y.资料 != null && y.挑月份 < y.资料, `挑月份（${y.挑月份}px）排在「这一年在发生什么」（${y.资料}px）上面`);
+    check(y.开场白 < y.挑月份, '开场白还在最前面（一个是钩子，一个是挑哪个月的依据）');
+  }
+
+  check(!(await page.locator('.chip-top').count()), '年份头上没有「做到头的一个月」那个牌子了');
+  check(!/做到头/.test(await page.locator('#s-year').innerText()), '整页找不到「做到头」这个说法了');
+
   console.log('\n三、选月开局');
   await page.locator('.mo').nth(9).click();                 // 第 10 月
   check(!(await page.locator('#start-box').isHidden()), '选了月份之后出现开局的入口');

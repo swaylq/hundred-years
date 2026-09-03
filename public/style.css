@@ -169,7 +169,6 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 #year-head .mood { color: var(--ink-2); font-size: 13.5px; }
 #year-head .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .chip { font-size: 12.5px; padding: 3px 9px; border: 1px solid var(--rule-2); border-radius: 3px; color: var(--ink-2); background: var(--sheet); line-height: 1.5; }
-.chip-top { border-color: var(--seal); color: var(--seal-ink); }
 .chip-sw { border-color: var(--indigo); color: var(--indigo); }
 
 .flavor {
@@ -211,7 +210,9 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
   font-size: 14px; color: var(--ink-2); line-height: 1.85;
 }
 .mo-detail b { color: var(--ink); font-weight: 500; font-family: var(--serif); }
-.start-box { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+/* 一行一件事，全部左对齐。原来是 flex-wrap，动身按钮会挤到说明文字右边，
+   紧挨着下面「这一年在发生什么」的标题，看着像是那一段的一部分。 */
+.start-box { display: grid; gap: 12px; justify-items: start; margin: 18px 0 34px; padding-bottom: 26px; border-bottom: 1px solid var(--rule); }
 .start-box label { font-size: 13.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
 .start-box input {
   font: 16px var(--sans); padding: 10px 12px; border: 1px solid var(--rule-2);
@@ -265,11 +266,11 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 /* 左栏最下面那一行小字：玩家开局写的「他是个什么人」 */
 .who-line { font-size: 12.5px; line-height: 1.6; color: var(--muted); padding: 2px 2px 0; border-top: 1px solid var(--rule); margin-top: 2px; padding-top: 8px; }
 /* 开局那一屏的设定框：五十个汉字要占满一行，跟名号挤在一起就只看得见末尾几个字 */
-.start-box .who { flex: 1 1 100%; display: grid; gap: 4px; align-items: stretch; }
+.start-box .who { width: 100%; display: grid; gap: 4px; align-items: stretch; }
 .start-box .who input { width: 100%; }
 .start-box .who .count { justify-self: end; font-size: 12px; color: var(--muted); }
 .start-box .who .count.over { color: var(--seal-ink); }
-.start-box .who-say { flex: 1 1 100%; font-size: 12.5px; line-height: 1.65; color: var(--muted); margin: -4px 0 0; max-width: 62ch; }
+.start-box .who-say { font-size: 12.5px; line-height: 1.65; color: var(--muted); margin: -4px 0 0; max-width: 62ch; }
 
 /* 记着的事那一折：小标题 + 「谁 / 什么」两栏，跟账本那一折同一个骨架 */
 .memo-h { font-size: 12.5px; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
