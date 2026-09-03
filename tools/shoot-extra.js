@@ -3,7 +3,7 @@
  * 结算 + 收梢 → 接着走下去 → 后传榜 → 一局的详情。
  * 先跑 tools/seed-extra.js 塞好局，再起服务。
  *
- *   node tools/shoot-extra.js --url http://127.0.0.1:8899 --token <t> --ready <id> --extra <id> --done <id>
+ *   node tools/shoot-extra.js --url http://127.0.0.1:8899 --token <t> --ready <id> --extra <id> --done <id> --fresh <id>
  */
 const path = require('path'), fs = require('fs');
 const { chromium } = (() => {
@@ -71,11 +71,45 @@ const noH = async (p, w) => { const r = await p.evaluate(() => ({ d: document.do
   await noH(page, '后传榜');
   await snap(page, '3-board-extra');
 
-  /* 4. 详情只从「我的局」进得来：榜上那些是别人写的东西，点不进去 */
-  console.log('4. 一局的详情（榜上点不进去，只有自己那几局点得进去）');
-  check(await page.locator('#board-body tbody tr.mine-go').count() === 0, '榜上的行点不进去了');
+  /* 4. 榜上每一行点得进去：看得到成绩和收梢，看不到每个月写了什么（sway 2026-09-03） */
+  console.log('4. 榜上点进去的面板（成绩 + 收梢；清单和正文不在里面）');
+  check(await page.locator('#board-body tbody tr.peek').count() >= 1, '后传榜上的行点得进去');
+  await page.click('#board-body tbody tr.peek >> nth=0');
+  await page.waitForSelector('#s-detail.on #detail-body .score-card');
+  await page.waitForSelector('#detail-body #peek-rev .rev-title', { timeout: 10000 });
+  const pk = await page.locator('#detail-body').innerText();
+  check(await page.locator('#detail-body .score-card').count() === 2, '面板上两张成绩单：两年那一份 + 后传那一份');
+  check(await page.locator('#detail-body .review .rev-title').count() === 2, '两篇收梢都在');
+  check(await page.locator('#detail-body details.day').count() === 0, '面板上没有一个月的正文');
+  check(!/码头找工头|你写的|嘴甜会来事/.test(pk), '清单原文、「你写的」、他写的自我介绍都不在面板上');
+  check(await page.locator('#detail-body .peek-mine button').count() === 1, '自己的局：面板上多一颗「看每个月写了什么」');
+  await noH(page, '榜上面板');
+  await snap(page, '4-peek');
+  await page.click('#detail-body .peek-mine button');
+  await page.waitForSelector('#detail-body details.day');
+  check(await page.locator('#detail-body details.day').count() === 84, '点过去是自己那一局的全部 84 个月');
+  await page.click('#detail-back');
+  await page.waitForSelector('#s-board.on');
+  check(true, '从榜上进来的，「回去」回到榜');
+
+  /* 收梢没写过的局（阿丁，不是「我的」）：面板先摆成绩，收梢在后台写，几秒后自己出来 */
+  await page.click('#board-tabs button:has-text("总榜")');
+  await page.waitForSelector('#board-body tbody tr:has-text("阿丁")');
+  await page.click('#board-body tbody tr:has-text("阿丁")');
+  await page.waitForSelector('#s-detail.on #detail-body .score-card');
+  check(await page.locator('#peek-rev .rev-wait').count() === 1, '没写过收梢的局：成绩先出来，收梢那格显示正在写');
+  check(await page.locator('#detail-body .peek-mine').count() === 0, '别人的局：没有「看每个月写了什么」');
+  await page.waitForSelector('#peek-rev .rev-title', { timeout: 15000 });
+  check(true, '几秒之后收梢自己出来了：' + (await page.locator('#peek-rev .rev-title').innerText()));
+  await snap(page, '4b-peek-fresh');
+
+  /* 光有 id 拿不到别人写的东西 */
   const code = await page.evaluate(u => fetch(u).then(r => r.status), `${URL}/api/detail?id=${encodeURIComponent(arg('done'))}`);
   check(code === 403, `不带 token 直接要别人的详情 → ${code}（该是 403）`);
+  const pj = await page.evaluate(u => fetch(u).then(r => r.json()), `${URL}/api/peek?id=${encodeURIComponent(arg('done'))}`);
+  check(!!(pj.result && pj.review) && pj.mine === false && !('months' in pj) && !('persona' in pj) && !('memo' in pj),
+    '不带 token 的 /api/peek：有成绩有收梢，没有 months / persona / memo，mine=false');
+  check(!JSON.stringify(pj).includes('码头找工头'), '/api/peek 回的东西里搜不到清单原文');
   await page.click('#top nav button[data-go="mine"]');
   await page.waitForSelector('#s-mine.on table.board');
   await page.click('#mine-body tbody tr:has-text("后传也走完了")');
@@ -95,7 +129,19 @@ const noH = async (p, w) => { const r = await p.evaluate(() => ({ d: document.do
   console.log('5. 手机宽度');
   const m = await b.newPage({ viewport: { width: 390, height: 844 } });
   m.on('pageerror', e => { fails.push('手机页报错 ' + e.message); });
-  await m.goto(URL + '/#');
+  await m.goto(URL);
+  /* 没 token 的人（就是榜上的看客）：点一行进面板，没有「看每个月写了什么」 */
+  await m.click('#top nav button[data-go="board"]');
+  await m.waitForSelector('#board-body tbody tr.peek');
+  await noH(m, '手机 · 排行榜');
+  await m.click('#board-body tbody tr.peek >> nth=0');
+  await m.waitForSelector('#s-detail.on .score-card');
+  check(await m.locator('#detail-body .peek-mine').count() === 0, '手机 · 没 token 点进榜上的面板：没有「看每个月写了什么」');
+  check(await m.locator('#detail-body details.day').count() === 0, '手机 · 面板上没有一个月的正文');
+  await noH(m, '手机 · 榜上面板');
+  await snap(m, '6-m-peek');
+  await m.click('#detail-back');
+  await m.waitForSelector('#s-board.on');
   await m.evaluate(t => localStorage.setItem('hy.token', t), arg('token'));
   await m.goto(URL);
   await m.click('#top nav button[data-go="mine"]');
@@ -103,7 +149,7 @@ const noH = async (p, w) => { const r = await p.evaluate(() => ({ d: document.do
   const mine = await m.locator('#mine-body').innerText();
   check(/看详情/.test(mine), '「我的局」里结过账的那几行给了「看详情」');
   await noH(m, '手机 · 我的局');
-  await snap(m, '6-m-mine');
+  await snap(m, '6b-m-mine');
   await m.click('#mine-body tbody tr:has-text("看详情")');
   await m.waitForSelector('#s-detail.on .score-card');
   await noH(m, '手机 · 详情页');

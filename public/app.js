@@ -774,11 +774,13 @@ async function extendRun(btn, room, id) {
 }
 
 /* ── 一局的详情 ──────────────────────────
-   只从「我的局」进得来：清单和正文是玩的人自己的东西，榜上点不进任何一局。
-   服务端也认这串 token，光有 id 拿不到详情。 */
-async function openDetail(id) {
+   清单和正文是玩的人自己的东西，只有自己的局进得来（从「我的局」，或榜上面板里那颗
+   「看每个月写了什么」）。服务端也认这串 token，光有 id 拿不到详情。 */
+let detailBack = 'mine';
+async function openDetail(id, back = 'mine') {
   const box = $('#detail-body');
   box.innerHTML = '<p class="wait">正在翻这一局…</p>';
+  detailBack = back;
   go('detail');
   try {
     renderDetail(await api(`/api/detail?id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}`), id);
@@ -829,7 +831,80 @@ function renderDetail(d, id) {
     monthCards(box, d.months, { mainMonths: d.mainMonths });
   }
 }
-$('#detail-back').addEventListener('click', () => go('mine'));
+$('#detail-back').addEventListener('click', () => go(detailBack));
+
+/* ── 榜上点进来的面板 ────────────────────
+   谁都看得到：成绩单 + 记事人写的收梢。没有清单、没有正文、没有他记着的人和事——
+   那些只在自己的局里看得到（sway 2026-09-03）。
+   收梢还没写的局，服务端在后台写，这边先把成绩摆出来，每隔几秒问一次。 */
+let peekFor = null;
+const peekUrl = id => `/api/peek?id=${encodeURIComponent(id)}${token ? '&token=' + encodeURIComponent(token) : ''}`;
+async function openPeek(id) {
+  const box = $('#detail-body');
+  box.innerHTML = '<p class="wait">正在翻这一局…</p>';
+  detailBack = 'board'; peekFor = id;
+  go('detail');
+  try {
+    const d = await api(peekUrl(id));
+    if (peekFor !== id) return;
+    renderPeek(d, id);
+    if (d.writing || d.extraWriting) setTimeout(() => peekPoll(id, 1), 4000);
+  } catch (e) {
+    box.innerHTML = '';
+    box.appendChild(el('p', 'empty', '看不了这一局：' + e.message));
+  }
+}
+
+/* 收梢写好了没——只往那两个框里填，不整页重画，免得人正读着成绩单页面跳一下 */
+async function peekPoll(id, tries) {
+  if (peekFor !== id || document.body.dataset.screen !== 'detail') return;
+  try {
+    const d = await api(peekUrl(id));
+    if (peekFor !== id) return;
+    if (d.review && $('#peek-rev')) renderReview($('#peek-rev'), d.review);
+    if (d.extraReview && $('#peek-rev-x')) renderReview($('#peek-rev-x'), d.extraReview);
+    if ((d.writing || d.extraWriting) && tries < 30) setTimeout(() => peekPoll(id, tries + 1), 4000);
+    else if (d.writing || d.extraWriting) {
+      for (const k of ['#peek-rev', '#peek-rev-x']) if ($(k) && $(k).querySelector('.rev-wait')) {
+        $(k).innerHTML = ''; $(k).appendChild(el('p', 'note', '收梢还没写出来，过会儿再来看。'));
+      }
+    }
+  } catch (e) {}
+}
+
+function renderPeek(d, id) {
+  const box = $('#detail-body'); box.innerHTML = '';
+  const r = d.result;
+  box.appendChild(el('h2', 'det-h', `${d.nick} 的 ${r.year} 年`));
+  box.appendChild(el('p', 'det-who', '从榜上点进来看得到的是这些：成绩，和记事人给这一局写的收梢。他每个月写了什么、遇上了什么，只有他自己看得到。'));
+
+  box.appendChild(scoreCard(r, d.rank, {}));
+  box.appendChild(scoreKv(r));
+
+  const w = el('div', 'review'); w.id = 'peek-rev'; box.appendChild(w);
+  if (d.review) renderReview(w, d.review);
+  else w.appendChild(el('div', 'rev-wait', '这一局的收梢还没写过，正在写'));
+
+  if (d.extraStatus === 'done' && d.extraResult) {
+    box.appendChild(el('h3', 'mh', '后传'));
+    box.appendChild(el('p', 'hint', '两年结完账之后接着走的那些年。上面那份成绩是封住的，这一份单独上后传榜。'));
+    box.appendChild(scoreCard(d.extraResult, d.extraRank, { extra: true }));
+    box.appendChild(scoreKv(d.extraResult));
+    const wx = el('div', 'review'); wx.id = 'peek-rev-x'; box.appendChild(wx);
+    if (d.extraReview) renderReview(wx, d.extraReview);
+    else wx.appendChild(el('div', 'rev-wait', '后传的收梢还没写过，正在写'));
+  } else if (d.extraStatus === 'playing') {
+    box.appendChild(el('p', 'note', '这一局还在走后传，后面那几年还没收工。'));
+  }
+
+  if (d.mine) {
+    const act = el('div', 'peek-mine');
+    act.appendChild(el('p', 'hint', '这一局是你自己的。'));
+    const b = el('button', 'ghost-btn', '看每个月写了什么 ›');
+    b.addEventListener('click', () => openDetail(id, 'board'));
+    act.appendChild(b); box.appendChild(act);
+  }
+}
 
 const fmtUsdCN = n => {
   const a = Math.abs(n), s = n < 0 ? '−' : '';
@@ -887,20 +962,24 @@ async function loadBoard() {
   const tb = el('tbody');
   for (const r of d.rows) {
     const tr = el('tr');
+    /* 名号后面那个小字是给手机的——没有鼠标悬停，不标出来没人知道这一行点得动 */
+    const who = `${esc(r.nick)}<span class="go-in">收梢 ›</span>`;
     tr.innerHTML = boardScope === 'extra'
-      ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}</td>
+      ? `<td class="r">${r.rank}</td><td>${who}</td>
          <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
          <td class="c">${esc(r.city || '')}</td>
          <td class="c y">${Math.round((r.months || 0) / 12 * 10) / 10} 年</td>
          <td class="s">${esc(r.worldUsdText || '')}</td>`
       : boardYear
-      ? `<td class="r">${r.rank}</td><td>${esc(r.nick)}</td>
+      ? `<td class="r">${r.rank}</td><td>${who}</td>
          <td class="y">${r.month} 月</td><td class="c">${esc(r.city || '')}</td>
          <td class="s">${esc(r.yearEarnedText || '')}</td>`
-      : `<td class="r">${r.rank}</td><td>${esc(r.nick)}</td>
+      : `<td class="r">${r.rank}</td><td>${who}</td>
          <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
          <td class="c">${esc(r.city || '')}</td>
          <td class="s">${esc(r.worldUsdText || '')}</td>`;
+    /* 每一行点得进去，看的是成绩和收梢（/api/peek）；他每个月写了什么不在里面 */
+    if (r.id) { tr.classList.add('peek'); tr.addEventListener('click', () => openPeek(r.id)); }
     tb.appendChild(tr);
   }
   t.appendChild(tb); box.appendChild(t);
@@ -909,7 +988,7 @@ async function loadBoard() {
     : boardYear
     ? '同一年出发的放在一起比，按当年那种钱净赚多少排。'
     : '各年的钱不是一种钱，先折成当年的美元，再按世界经济折到今天来比。') +
-    '榜上只列成绩：谁具体怎么走的、写了什么，只有他自己在「我的局」里看得到。'));
+    '点哪一行，看他这一局的成绩和收梢——记事人写的那一篇。他每个月写了什么，只有他自己在「我的局」里看得到。'));
 }
 
 /* ── 我的局 ────────────────────────────── */

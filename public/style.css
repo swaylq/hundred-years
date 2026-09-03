@@ -415,8 +415,8 @@ table.board td.r { font: 500 17px/1 var(--serif); color: var(--muted); width: 2.
 table.board tr:nth-child(-n+3) td.r { color: var(--seal-ink); }
 table.board td.y { font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.board td.s { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-table.board tr.mine-go { cursor: pointer; }
-table.board tr.mine-go:hover td { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+table.board tr.mine-go, table.board tr.peek { cursor: pointer; }
+table.board tr.mine-go:hover td, table.board tr.peek:hover td { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .empty { color: var(--muted); padding: 26px 0 8px; text-align: center; font-size: 13.5px; }
 .empty-act { text-align: center; padding-bottom: 20px; }
 
@@ -543,7 +543,10 @@ details.day.is-extra .dn { color: var(--indigo); }
 .det-who { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
 #s-detail .review { margin-top: 20px; }
 .go-in { color: var(--muted); font-size: 12px; margin-left: 8px; white-space: nowrap; }
-table.board tr.mine-go:hover .go-in { color: var(--seal-ink); }
+table.board tr.mine-go:hover .go-in, table.board tr.peek:hover .go-in { color: var(--seal-ink); }
+/* 榜上点进来的面板：自己的局才有这一颗「看每个月写了什么」 */
+.peek-mine { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 22px 0 8px; padding-top: 16px; border-top: 1px dotted var(--rule-2); }
+.peek-mine .hint { margin: 0; }
 
 @media (max-width: 720px) {
   .review { padding: 20px 16px; }

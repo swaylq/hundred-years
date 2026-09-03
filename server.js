@@ -166,6 +166,36 @@ const mainRanks = r => ({
 });
 const extraRanks = r => ({ rankExtra: DB.rankExtra(r.worldUsd), ofExtra: DB.extraCount() });
 
+/** 给一局的一段（两年那一段，或后传那一段）写一篇收梢。一段只写一次，写完存库里。
+ *  结算页（POST /api/review）和榜上点进来的面板（GET /api/peek）都走这儿：
+ *  谁先要，谁触发那一次调用，之后端的都是同一份。
+ *  回 { review }；别人正在写就回 { writing: true }；这一段还没结账回 { error, code }。 */
+async function writeReview(id, row, s, extra, req) {
+  const have = extra ? row.extra_review : row.review;
+  if (have) return { review: JSON.parse(have), cached: true };
+  const rj = extra ? row.extra_result : row.result;
+  if (!rj) return { error: '这一段还没结账，写不了总评', code: 400 };
+  const lock = (extra ? 'revx:' : 'rev:') + id;
+  if (busy.has(lock)) return { writing: true };
+  busy.add(lock);
+  try {
+    const r = JSON.parse(rj);
+    /* 两年那一篇只看前二十四个月——玩家要是已经接着往下走了，
+     * 后面那些月份不该混进两年的收梢里。 */
+    const src = (!extra && s.months.length > E.MONTHS) ? { ...s, months: s.months.slice(0, E.MONTHS) } : s;
+    let rev;
+    if (HAS_KEY && rateOk(clientIp(req)).ok) {
+      try { rev = await SIM.runReview(src, r); }
+      catch (err) {
+        console.error('总评退回本地：', String(err.message).slice(0, 300));
+        rev = SIM.reviewLocal(src, r); rev.local = true;
+      }
+    } else { rev = SIM.reviewLocal(src, r); rev.local = true; }
+    DB.saveReview(id, JSON.stringify(rev), extra);
+    return { review: rev };
+  } finally { busy.delete(lock); }
+}
+
 /* ── 路由 ──────────────────────────────────────────── */
 const routes = {
   'GET /api/health': async (req, res) => json(res, 200, {
@@ -328,43 +358,62 @@ const routes = {
     });
   },
 
-  /* 收梢的那一篇总评。一局只写一次，写完存库里，再问端的是同一份。 */
+  /* 收梢的那一篇总评。一局只写一次，写完存库里，再问端的是同一份。
+   * 写的活在 writeReview 里，榜上点进来的面板（GET /api/peek）也走它。 */
   'POST /api/review': async (req, res) => {
     const b = await readBody(req);
     const found = DB.loadRun(String(b.id || ''), String(b.token || ''));
     if (!found) return oops(res, 404, '找不到这一局');
     const s = found.state, row = found.row;
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
-    const extra = !!b.extra;
-    const have = extra ? row.extra_review : row.review;
-    if (have) return json(res, 200, { review: JSON.parse(have), cached: true });
-    const rj = extra ? row.extra_result : row.result;
-    if (!rj) return oops(res, 400, '这一段还没结账，写不了总评');
-    const lock = 'rev:' + b.id;
-    if (busy.has(lock)) return oops(res, 409, '总评正在写，等它出来');
-    busy.add(lock);
-    try {
-      const r = JSON.parse(rj);
-      /* 两年那一篇只看前二十四个月——玩家要是已经接着往下走了，
-       * 后面那些月份不该混进两年的收梢里。 */
-      const src = (!extra && s.months.length > E.MONTHS) ? { ...s, months: s.months.slice(0, E.MONTHS) } : s;
-      let rev;
-      if (HAS_KEY && rateOk(clientIp(req)).ok) {
-        try { rev = await SIM.runReview(src, r); }
-        catch (err) {
-          console.error('总评退回本地：', String(err.message).slice(0, 300));
-          rev = SIM.reviewLocal(src, r); rev.local = true;
-        }
-      } else { rev = SIM.reviewLocal(src, r); rev.local = true; }
-      DB.saveReview(b.id, JSON.stringify(rev), extra);
-      json(res, 200, { review: rev });
-    } finally { busy.delete(lock); }
+    const out = await writeReview(String(b.id), row, s, !!b.extra, req);
+    if (out.error) return oops(res, out.code, out.error);
+    if (out.writing) return oops(res, 409, '总评正在写，等它出来');
+    json(res, 200, out);
   },
 
-  /* 一局的详情：谁都点得进来看，只给结过账的局，回的东西里没有 token 也没有存档原文。 */
+  /* 榜上点进来看的那一块：成绩单 + 收梢的总评，谁都看得到，不用 token（sway 2026-09-03 晚些时候：
+   * 「排行榜每个人可以点击进去，看到 AI 总结的面板」）。
+   * **不给清单、不给正文、不给他记着的人和事、不给「他是个什么人」**——那些是玩的人自己写的，
+   * 只在 /api/detail 里、认得 token 才给（同一天早些时候定的）。收梢是记事人写的一篇话，
+   * 是「总结」，不是「走过的路」。
+   * 还没写过收梢的局，谁先点进来谁触发那一次写——写在后台，这边先把成绩端出去，
+   * 回 writing:true 让前端过几秒再来问；写完存库里，往后端的都是同一份。 */
+  'GET /api/peek': async (req, res, q) => {
+    const id = String(q.id || '');
+    const row = DB.getRow(id);
+    if (!row) return oops(res, 404, '没有这一局');
+    if (row.mode && row.mode !== 'months24') return oops(res, 409, '这是按天走的老局，看不了');
+    if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，走完了才看得到');
+    let st = null;
+    try { st = JSON.parse(row.state); } catch (e) {}
+    if (!st || isOldRun(st)) return oops(res, 409, OLD_SAY);
+    const result = JSON.parse(row.result);
+    /* 自己的局：面板上多一颗「看每个月写了什么」，点过去走 /api/detail */
+    const mine = !!(q.token && DB.loadRun(id, String(q.token)));
+    const swallow = err => console.error('榜上要的收梢没写成：', String(err && err.message).slice(0, 200));
+    const review = row.review ? JSON.parse(row.review) : null;
+    if (!review) writeReview(id, row, st, false, req).catch(swallow);
+    const xDone = row.extra_status === 'done' && !!row.extra_result;
+    const extraReview = xDone && row.extra_review ? JSON.parse(row.extra_review) : null;
+    if (xDone && !extraReview) writeReview(id, row, st, true, req).catch(swallow);
+    json(res, 200, {
+      id: row.id, nick: row.nick, year: row.year, month: row.month, city: st.city,
+      created: row.created, updated: row.updated, mine,
+      result, rank: mainRanks(result),
+      review, writing: !review,
+      extraStatus: row.extra_status || null,
+      extraTo: row.extra_months || 0,
+      extraResult: xDone ? JSON.parse(row.extra_result) : null,
+      extraReview, extraWriting: xDone && !extraReview,
+      extraRank: row.extra_world_usd != null ? extraRanks({ worldUsd: row.extra_world_usd }) : null,
+    });
+  },
+
   /* 一局的详情：清单、二十四个月的正文、他记着的人和事、开局写的那句「他是个什么人」。
-   * **只给开局的那个人看**（sway 2026-09-03）——榜上留名号、落点和成绩就够了，
-   * 具体怎么走的是他自己的事。认人靠开局发的那串 token，跟写这一局用的是同一串。 */
+   * **只给开局的那个人看**（sway 2026-09-03）——具体怎么走的是他自己的事。
+   * 认人靠开局发的那串 token，跟写这一局用的是同一串。
+   * 别人从榜上点进来看的是 /api/peek：只有成绩和收梢，没有这些。 */
   'GET /api/detail': async (req, res, q) => {
     const id = String(q.id || '');
     const row = DB.getRow(id);
@@ -412,9 +461,10 @@ const routes = {
       const rows = DB.boardExtra(limit);
       return json(res, 200, {
         scope: 'extra', year: null, total: DB.extraCount(), yearsWithRuns: DB.yearsWithRuns(),
-        /* 榜上不发 id：点不进去，也没有可以拿去试的口子 */
+        /* 榜上发 id 只为了点进 /api/peek 看成绩和收梢；拿着 id 能试的别的口子
+         * （detail / load / story / review / month）全都要 token，对不上一律 403 或 404。 */
         rows: rows.map((r, i) => ({
-          rank: i + 1, nick: r.nick, year: r.year, month: r.month,
+          rank: i + 1, id: r.id, nick: r.nick, year: r.year, month: r.month,
           months: E.MONTHS + (r.extra_months || 0), extraMonths: r.extra_months || 0,
           yearEarned: r.extra_year_earned, yearEarnedText: r.extra_result?.yearEarnedText || null,
           worldUsd: r.extra_world_usd, worldUsdText: E.fmtUsd(r.extra_world_usd || 0),
@@ -432,7 +482,7 @@ const routes = {
       total: year ? DB.doneInYear(year) : DB.doneCount(),
       yearsWithRuns: DB.yearsWithRuns(),
       rows: rows.map((r, i) => ({
-        rank: i + 1, nick: r.nick, year: r.year, month: r.month,
+        rank: i + 1, id: r.id, nick: r.nick, year: r.year, month: r.month,
         yearEarned: r.year_earned,
         yearEarnedText: r.result?.yearEarnedText || null,
         worldUsd: r.world_usd,

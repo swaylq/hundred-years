@@ -4,6 +4,7 @@
  *
  *   HY_DB=/tmp/hy-shot.db node tools/seed-extra.js
  * 打出一行 token，浏览器里塞进 localStorage 就认得出这几局是「我的」。
+ * 四局：A 走完没结账、B 后传也走完、C 结完账没接后传、D 结完账但收梢没写过（也不是「我的」）。
  */
 const E = require('../engine.js');
 const SIM = require('../sim.js');
@@ -76,8 +77,17 @@ c.status = 'done';
 DB.finishRun(rc.id, c, r1c);
 DB.saveReview(rc.id, JSON.stringify(SIM.reviewLocal(c, r1c)), false);
 
-/* 三局用同一个 token，界面上才都算「我的局」 */
+/* D：两年结完账，**收梢从来没写过**，而且不是「我的」——榜上点进来要触发后台写那一篇 */
+const d = newOne(1994, 3, '阿丁', '心眼多，会算账');
+play(d, E.MONTHS);
+const rd = DB.createRun(d, d.nick);
+const r1d = E.settle(d);
+r1d.endWorthText = E.money(r1d.endWorth, r1d.currency); r1d.currencyName = E.CN[r1d.currency];
+d.status = 'done';
+DB.finishRun(rd.id, d, r1d);
+
+/* 前三局用同一个 token，界面上才都算「我的局」；D 留着它自己的 */
 const tok = ra.token;
 for (const id of [rb.id, rc.id]) DB.db.prepare('UPDATE runs SET token = ? WHERE id = ?').run(tok, id);
 
-console.log(JSON.stringify({ token: tok, ready: ra.id, extra: rb.id, done: rc.id, db: DB.FILE }));
+console.log(JSON.stringify({ token: tok, ready: ra.id, extra: rb.id, done: rc.id, fresh: rd.id, db: DB.FILE }));
