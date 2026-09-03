@@ -28,13 +28,13 @@
       <span class="hero-seal" aria-hidden="true">这一百年</span>
     </div>
     <div class="pick-body">
-      <p class="lede-big">选个年份，在这个时代里过上两年。</p>
-      <p class="lede">每月写计划决定怎么过，一共二十四个月。看那时的环境怎么反馈你，两年后算总账，看看你的积蓄相当于当时普通人几年不吃不喝的收入。</p>
-      <div id="grid" class="century"><p class="wait">正在调取当年的数据…</p></div>
-      <p id="grid-cap" class="cap-line">点个年份，看看那一年有什么。</p>
+      <p class="lede-big">选个年份，落进那座城，过两年日子。</p>
+      <p class="lede">每个月写下你的打算，看那个时代的中国怎么回应。两年后结账，看看你攒下的钱抵得上当年普通人几年收入。</p>
+      <div id="grid" class="century"><p class="wait">正往那个年月赶，稍等。</p></div>
+      <p id="grid-cap" class="cap-line">点一个年份，进去看看。</p>
       <p class="legend">
-        <i class="lg-heat"></i>颜色越深，钱越好赚，但容易碰上麻烦事。
-        <i class="lg-dot"></i>蓝点年份：这一年发生过货币改革。
+        <i class="lg-heat"></i>颜色越深，那一年的机会越多，但这不代表钱好挣，全看你怎么折腾。
+        <i class="lg-dot"></i>带蓝点的年份：这一年发生过货币改革。
       </p>
     </div>
   </div>
@@ -42,24 +42,24 @@
 
 <!-- 一年的详情 + 选月 -->
 <section id="s-year" class="screen">
-  <button class="back" data-go="pick">← 换个年份</button>
+  <button class="back" data-go="pick">← 返回</button>
   <div id="year-head"></div>
   <!-- 开场白和换钱提醒摆在挑月份上面：一个是钩子，一个是挑哪个月的依据。
        这一年的资料（在发生什么、物价、路子、祸事）挪到动身之后，
        想细看的往下翻——sway 2026-09-04：动身操作放在「这一年在发生什么」前面。 -->
   <div id="year-intro"></div>
-  <h3 class="mh">从哪个月出发？</h3>
-  <p class="hint">同一年里各月大不同，选定后你将从该月起连续生活二十四个月。</p>
+  <h3 class="mh">从哪个月开始</h3>
+  <p class="hint">同一年各个月份大不相同，选定后将从该月起往后走二十四个月。</p>
   <div id="months" class="months"></div>
-  <div id="mo-detail" class="mo-detail">点选一个月份；红点表示当月发生过大事。</div>
+  <div id="mo-detail" class="mo-detail">点选月份，带红点的月份表示当年发生过大事。</div>
   <div id="start-box" class="start-box" hidden>
     <label>起个名字（会上榜） <input id="nick" maxlength="16" placeholder="上榜用的名字"></label>
-    <label class="who">你是哪种性格？
-      <input id="persona" maxlength="80" placeholder="比如：精明谨慎、敢闯敢拼、随遇而安…">
+    <label class="who">你是个什么人
+      <input id="persona" maxlength="80" placeholder="例如：胆小谨慎，只做稳当买卖。">
       <span id="persona-count" class="count">0 / 50 字</span>
     </label>
-    <p class="who-say">写性格，五十字内，可空着不填。它决定你的行事风格，不直接加钱，也没有超能力。</p>
-    <button id="start" class="primary">开始生活</button>
+    <p class="who-say">五十字内，不写也行。它决定做事风格，不影响挣钱，没超能力。</p>
+    <button id="start" class="primary">进城</button>
   </div>
   <div id="year-body"></div>
 </section>
@@ -73,18 +73,18 @@
       <div id="play-write" class="write">
         <label for="list" id="write-label">这个月打算做什么</label>
         <div id="picks" class="picks" hidden>
-          <div class="picks-head"><span id="picks-say">这三条是稳妥方案，点一下就能填进输入框。自己写计划遇到的事更多。</span><button id="picks-more" type="button" class="more">换一批建议</button></div>
+          <div class="picks-head"><span id="picks-say">这三条路比较稳，点一下直接用。自己写计划，变数更多。</span><button id="picks-more" type="button" class="more">换三条建议</button></div>
           <div id="picks-list"></div>
         </div>
-        <textarea id="list" rows="6" placeholder="比如：攒钱买个收音机，或者去城东倒腾零件。"></textarea>
+        <textarea id="list" rows="6" placeholder="例如：手里有五十块，我想去码头扛包，剩下的钱买点米屯着。"></textarea>
         <div class="write-foot">
           <span id="count" class="count">0 / 500 字</span>
-          <button id="send" class="primary">执行计划</button>
+          <button id="send" class="primary">按此计划过下去</button>
         </div>
       </div>
-      <details id="ref" class="fold"><summary>当年的资料库</summary><div id="ref-body"></div></details>
-      <details id="memo" class="fold"><summary id="memo-sum">你的生活记录</summary><div id="memo-body"></div></details>
-      <details id="ledger" class="fold"><summary>收支账本</summary><div id="ledger-body"></div></details>
+      <details id="ref" class="fold"><summary>查看背景资料</summary><div id="ref-body"></div></details>
+      <details id="memo" class="fold"><summary id="memo-sum">查看我的经历</summary><div id="memo-body"></div></details>
+      <details id="ledger" class="fold"><summary>查看往期账单</summary><div id="ledger-body"></div></details>
     </div>
   </div>
 </section>
@@ -95,7 +95,7 @@
   <div id="done-review" class="review"></div>
   <div id="done-more" class="more-box" hidden></div>
   <div class="done-acts">
-    <button class="primary" data-go="pick">再来一局</button>
+    <button class="primary" data-go="pick">再开一局</button>
     <button class="ghost-btn" data-go="board">查看排行榜</button>
   </div>
   <div id="done-days"></div>
