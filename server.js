@@ -157,7 +157,7 @@ function monthList(s) {
 
 /** 老存档（按天走的那一版）读不动，好好说一声，别抛异常 */
 const isOldRun = s => !s || typeof s.n !== 'number' || !Array.isArray(s.months);
-const OLD_SAY = '这一局是早先那套走法存下的，跟现在的接不上了。开一局新的吧。';
+const OLD_SAY = '这一局是按天走的老规矩存的，新规矩一个月一步，接不上了。开一局新的吧。';
 
 /* 名次。两年那一刻上总榜和年榜；接着走下去的那一段只上后传榜。 */
 const mainRanks = r => ({
@@ -226,7 +226,7 @@ const routes = {
     busy.add(lockKey);
     try {
       const found = DB.loadRun(lockKey, String(b.token || ''));
-      if (!found) return oops(res, 404, '找不到这一局。换过浏览器、或者清过缓存的话，成绩就认不回来了');
+      if (!found) return oops(res, 404, '找不到这一局，或者认领的串对不上');
       const s = found.state;
       if (isOldRun(s)) return oops(res, 409, OLD_SAY);
       if (s.status !== 'playing' && s.status !== 'extra') return oops(res, 400, '这一局已经结了');
@@ -242,7 +242,7 @@ const routes = {
     const id = String(b.id || '');
     if (busy.has(id)) return oops(res, 409, '这一天正在算，等它出来再说');
     const found = DB.loadRun(id, String(b.token || ''));
-    if (!found) return oops(res, 404, '找不到这一局。换过浏览器、或者清过缓存的话，成绩就认不回来了');
+    if (!found) return oops(res, 404, '找不到这一局，或者认领的串对不上');
     const s = found.state;
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
     if ((s.status !== 'playing' && s.status !== 'extra') || s.n > E.lastMonthOf(s)) return json(res, 200, { options: [], done: true });
@@ -313,7 +313,7 @@ const routes = {
   'POST /api/extend': async (req, res) => {
     const b = await readBody(req);
     const found = DB.loadRun(String(b.id || ''), String(b.token || ''));
-    if (!found) return oops(res, 404, '找不到这一局。换过浏览器、或者清过缓存的话，成绩就认不回来了');
+    if (!found) return oops(res, 404, '找不到这一局，或者认领的串对不上');
     const s = found.state;
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
     if (found.row.status !== 'done') return oops(res, 400, '两年还没走完，先把这两年过完');
@@ -508,7 +508,7 @@ async function runOneMonthInner(req, res, b, s) {
       if (!r.ok) {
         /* 撞了限流不让游戏坏掉——退回本地演算，并如实告诉玩家为什么 */
         out = SIM.runMonthLocal(s, b.list); usedLocal = true;
-        out.why = r.why === 'ip' ? '你这十分钟问得太密了，这个月先粗算' : '这会儿人多，这个月先粗算';
+        out.why = r.why === 'ip' ? '你这十分钟问得太密了，这个月先由本地算' : '这会儿全站都很忙，这个月先由本地算';
       } else {
         try {
           out = await SIM.runMonth(s, b.list, sse ? { onStory: t => sse.send('story', { t }) } : {});
@@ -518,7 +518,7 @@ async function runOneMonthInner(req, res, b, s) {
              your available credits…」——既看不懂，又把内部情况摊开了。 */
           console.error('这个月退回本地演算：', String(err.message).slice(0, 300));
           out = SIM.runMonthLocal(s, b.list); usedLocal = true;
-          out.why = '这会儿算不动，这个月先粗算';
+          out.why = '模型这会儿叫不动，这个月先由本地算';
           /* 流到一半断了：让前端把已经吐出去的半截正文擦掉，换成兜底的那份，
              不然屏幕上会剩着一段没头没尾的话。 */
           if (sse) sse.send('redo', {});
