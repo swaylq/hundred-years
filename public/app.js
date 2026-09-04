@@ -1008,7 +1008,7 @@ async function loadMine() {
     const old = r.mode && r.mode !== 'months24';
     const done = r.status === 'done';
     /* 三种下场：还在过前两年、结完账了、结完账又接着走后传 */
-    const where = old ? '老版本存档，已失效。'
+    const where = old ? '早先那套走法，接不上了'
       : r.extra_status === 'playing' ? '继续走中'
       : r.extra_status === 'done' ? '已完成续走'
       : done ? '已结算' : '进行中';
