@@ -81,6 +81,15 @@ function checkCard(card, spineYear) {
 
   if (!card.economy || !card.economy.mood || !card.economy.number) bad('economy 要有 mood 和 number 两项');
 
+  /* era 和 economy.mood 是**给玩家看的**，统计数字一律归 economy.number。
+   * 只扫这两栏：sources 里引统计公报、CPI、零售价格指数是正当的（100 张里 94 张都有），
+   * 扫全卡会全红。2026-09-04 立这道闸时，era 中 2 张、mood 中 4 张，都已把数挪进 number。 */
+  const NUMBERY = /(GDP|CPI|同比|环比|指数|计委|公报|零售价格)/;
+  for (const [k, v] of [['era', card.era], ['economy.mood', card.economy && card.economy.mood]]) {
+    const m = String(v || '').match(NUMBERY);
+    if (m) bad(`${k} 里出现「${m[0]}」——那是给模型和考据看的，挪进 economy.number；这两栏只写普通人怎么活、钱货好不好挣`);
+  }
+
   const cur = spineYear.currencies;
   const ok = cur.flatMap(c => UNIT[c]);
   if (!Array.isArray(card.prices) || card.prices.length < MIN.prices) {
