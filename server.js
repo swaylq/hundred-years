@@ -97,7 +97,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 function serveStatic(req, res, pathname) {
   const rel = pathname === '/' ? '/index.html' : pathname;
   const file = path.resolve(PUBLIC, '.' + rel);
-  if (!file.startsWith(PUBLIC + path.sep) && file !== PUBLIC) return oops(res, 403, '不许');
+  if (!file.startsWith(PUBLIC + path.sep) && file !== PUBLIC) return oops(res, 403, '无法访问此页面');
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return oops(res, 404, '没有这个页面');
     const ext = path.extname(file);
@@ -157,7 +157,7 @@ function monthList(s) {
 
 /** 老存档（按天走的那一版）读不动，好好说一声，别抛异常 */
 const isOldRun = s => !s || typeof s.n !== 'number' || !Array.isArray(s.months);
-const OLD_SAY = '这一局是按天走的老规矩存的，新规矩一个月一步，接不上了。开一局新的吧。';
+const OLD_SAY = '这条旧版记录无法继续，请重新开始一局。';
 
 /* 名次。两年那一刻上总榜和年榜；接着走下去的那一段只上后传榜。 */
 const mainRanks = r => ({
@@ -174,7 +174,7 @@ async function writeReview(id, row, s, extra, req) {
   const have = extra ? row.extra_review : row.review;
   if (have) return { review: JSON.parse(have), cached: true };
   const rj = extra ? row.extra_result : row.result;
-  if (!rj) return { error: '这一段还没结账，写不了总评', code: 400 };
+  if (!rj) return { error: '请先结算成绩，再生成总结', code: 400 };
   const lock = (extra ? 'revx:' : 'rev:') + id;
   if (busy.has(lock)) return { writing: true };
   busy.add(lock);
@@ -211,7 +211,7 @@ const routes = {
     const row = CATALOG.find(x => x.year === y);
     if (!row) return oops(res, 404, '没有这一年');
     const f = path.join(YEARS_DIR, `${y}.json`);
-    if (!fs.existsSync(f)) return oops(res, 404, `${y} 年的背景还没写好`);
+    if (!fs.existsSync(f)) return oops(res, 404, `${y} 年的背景资料暂未开放`);
     const card = JSON.parse(fs.readFileSync(f, 'utf8'));
     const months = [];
     for (let m = 1; m <= 12; m++) {
@@ -230,10 +230,10 @@ const routes = {
   'POST /api/run': async (req, res) => {
     const b = await readBody(req);
     const year = Number(b.year), month = Number(b.month);
-    if (!CATALOG.some(x => x.year === year && x.ready)) return oops(res, 400, '这一年还开不了');
+    if (!CATALOG.some(x => x.year === year && x.ready)) return oops(res, 400, '这一年暂时无法开始游戏');
     if (!(month >= 1 && month <= 12)) return oops(res, 400, '月份要在 1 到 12 之间');
     /* 一局二十四个月，走到头不能超出 2025 年 12 月 */
-    if (!E.startable(year, month)) return oops(res, 400, `从这个月起走不满 ${E.MONTHS} 个月——最晚只能从 2024 年 1 月开局`);
+    if (!E.startable(year, month)) return oops(res, 400, `从这个月开始不足 ${E.MONTHS} 个月。最晚可从 2024 年 1 月开始`);
     const nick = String(b.nick || '').trim().slice(0, 16) || '无名';
     /* 主角设定：玩家写的一句「他是个什么人」，50 个汉字封顶，明摆着的超人写法顶回去 */
     const per = E.checkPersona(b.persona);
@@ -252,15 +252,15 @@ const routes = {
     /* 先抢锁，再读存档。反过来的话，两个请求可能都读到同一份旧存档，
      * 后写的把先写的盖掉——那个月白算了。 */
     const lockKey = String(b.id || '');
-    if (busy.has(lockKey)) return oops(res, 409, '这个月正在算，等它出来再点');
+    if (busy.has(lockKey)) return oops(res, 409, '正在生成本月结果，请稍等');
     busy.add(lockKey);
     try {
       const found = DB.loadRun(lockKey, String(b.token || ''));
-      if (!found) return oops(res, 404, '找不到这一局，或者认领的串对不上');
+      if (!found) return oops(res, 404, '无法读取这条记录，请从原来使用的浏览器打开');
       const s = found.state;
       if (isOldRun(s)) return oops(res, 409, OLD_SAY);
-      if (s.status !== 'playing' && s.status !== 'extra') return oops(res, 400, '这一局已经结了');
-      if (s.n > E.lastMonthOf(s)) return oops(res, 400, `${E.lastMonthOf(s)} 个月走完了，去结算吧`);
+      if (s.status !== 'playing' && s.status !== 'extra') return oops(res, 400, '本局已结算');
+      if (s.n > E.lastMonthOf(s)) return oops(res, 400, `${E.lastMonthOf(s)} 个月已完成，可以查看成绩了`);
       return await runOneMonth(req, res, b, s);
     } finally { busy.delete(lockKey); }
   },
@@ -270,9 +270,9 @@ const routes = {
   'POST /api/options': async (req, res) => {
     const b = await readBody(req);
     const id = String(b.id || '');
-    if (busy.has(id)) return oops(res, 409, '这一天正在算，等它出来再说');
+    if (busy.has(id)) return oops(res, 409, '正在处理本月计划，请稍等');
     const found = DB.loadRun(id, String(b.token || ''));
-    if (!found) return oops(res, 404, '找不到这一局，或者认领的串对不上');
+    if (!found) return oops(res, 404, '无法读取这条记录，请从原来使用的浏览器打开');
     const s = found.state;
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
     if ((s.status !== 'playing' && s.status !== 'extra') || s.n > E.lastMonthOf(s)) return json(res, 200, { options: [], done: true });
@@ -316,7 +316,7 @@ const routes = {
       });
     }
     if (s.months.length < last) return oops(res, 400, `还差 ${last - s.months.length} 个月`);
-    if (busy.has(String(b.id))) return oops(res, 409, '还有一个月在算，等它出来再结');
+    if (busy.has(String(b.id))) return oops(res, 409, '本月结果还在生成，请完成后再结算');
 
     const r = E.settle(s);
     r.endWorthText = E.money(r.endWorth, r.currency);
@@ -343,11 +343,11 @@ const routes = {
   'POST /api/extend': async (req, res) => {
     const b = await readBody(req);
     const found = DB.loadRun(String(b.id || ''), String(b.token || ''));
-    if (!found) return oops(res, 404, '找不到这一局，或者认领的串对不上');
+    if (!found) return oops(res, 404, '无法读取这条记录，请从原来使用的浏览器打开');
     const s = found.state;
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
-    if (found.row.status !== 'done') return oops(res, 400, '两年还没走完，先把这两年过完');
-    if (s.phase === 'extra') return oops(res, 400, '这一局已经接着往下走了');
+    if (found.row.status !== 'done') return oops(res, 400, '完成前两年后，才能继续游玩');
+    if (s.phase === 'extra') return oops(res, 400, '本局已开始后续游玩');
     const r = E.reopen(s);
     if (!r.ok) return oops(res, 400, r.say);
     s.options = SIM.optionsLocal(s);        // 头一个月的三条路走本地那份，不额外花钱
@@ -368,7 +368,7 @@ const routes = {
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
     const out = await writeReview(String(b.id), row, s, !!b.extra, req);
     if (out.error) return oops(res, out.code, out.error);
-    if (out.writing) return oops(res, 409, '总评正在写，等它出来');
+    if (out.writing) return oops(res, 409, '正在生成总结，请稍等');
     json(res, 200, out);
   },
 
@@ -383,8 +383,8 @@ const routes = {
     const id = String(q.id || '');
     const row = DB.getRow(id);
     if (!row) return oops(res, 404, '没有这一局');
-    if (row.mode && row.mode !== 'months24') return oops(res, 409, '这是按天走的老局，看不了');
-    if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，走完了才看得到');
+    if (row.mode && row.mode !== 'months24') return oops(res, 409, '旧版记录暂不支持查看');
+    if (row.status !== 'done' || !row.result) return oops(res, 403, '本局尚未完成，完成后可查看成绩');
     let st = null;
     try { st = JSON.parse(row.state); } catch (e) {}
     if (!st || isOldRun(st)) return oops(res, 409, OLD_SAY);
@@ -418,9 +418,9 @@ const routes = {
     const id = String(q.id || '');
     const row = DB.getRow(id);
     if (!row) return oops(res, 404, '没有这一局');
-    if (!DB.loadRun(id, String(q.token || ''))) return oops(res, 403, '这一局是别人的，榜上只看得到成绩');
-    if (row.mode && row.mode !== 'months24') return oops(res, 409, '这是按天走的老局，看不了详情');
-    if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，走完了才看得到');
+    if (!DB.loadRun(id, String(q.token || ''))) return oops(res, 403, '详细经历仅本人可见，排行榜可查看成绩和总结');
+    if (row.mode && row.mode !== 'months24') return oops(res, 409, '旧版记录暂不支持查看详情');
+    if (row.status !== 'done' || !row.result) return oops(res, 403, '本局尚未完成，完成后可查看成绩');
     let st = null;
     try { st = JSON.parse(row.state); } catch (e) {}
     if (!st || isOldRun(st)) return oops(res, 409, OLD_SAY);
@@ -539,11 +539,11 @@ async function runOneMonth(req, res, b, s) {
     console.error('过一个月出错', err);
     if (res.headersSent) {
       /* 流已经开了：好好收个尾，别把连接吊死 */
-      try { res.write(`event: error\ndata: ${JSON.stringify({ error: String(err.message).slice(0, 160) })}\n\n`); } catch (e) {}
+      try { res.write(`event: error\ndata: ${JSON.stringify({ error: '本月结果生成失败，计划已保留，请重试。' })}\n\n`); } catch (e) {}
       try { res.end(); } catch (e) {}
       return;
     }
-    return oops(res, 500, String(err.message).slice(0, 160));
+    return oops(res, 500, '暂时无法完成操作，请稍后重试。');
   }
 }
 
@@ -656,12 +656,12 @@ const server = http.createServer(async (req, res) => {
   const fn = routes[key];
   if (!fn) {
     if (req.method === 'GET') return serveStatic(req, res, u.pathname);
-    return oops(res, 404, '没这个口子');
+    return oops(res, 404, '请求的功能不存在');
   }
   try { await fn(req, res, u.query); }
   catch (err) {
     console.error(key, err);
-    if (!res.headersSent) oops(res, 500, String(err.message).slice(0, 200));
+    if (!res.headersSent) oops(res, 500, '暂时无法完成操作，请稍后重试。');
   }
 });
 

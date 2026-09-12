@@ -84,10 +84,11 @@ async function noHScroll(page, where) {
   /* 动身放在「这一年在发生什么」前面（sway 2026-09-04）：
      挑月份那块必须排在年份资料上面，不然人得先翻过一整页物价才找得到入口。 */
   {
+    await page.locator('.year-background').evaluate(e => e.open = true);
     const y = await page.evaluate(() => {
       const top = el => Math.round(el.getBoundingClientRect().top + window.scrollY);
       const 资料 = [...document.querySelectorAll('#year-body h4, #year-body .block h4')]
-        .find(h => h.textContent.includes('这一年在发生什么'));
+        .find(h => h.textContent.includes('年度大事'));
       return { 挑月份: top(document.querySelector('#months')),
                动身框: top(document.querySelector('#start-box')),
                资料: 资料 ? top(资料) : null,
@@ -106,11 +107,12 @@ async function noHScroll(page, where) {
   await page.locator('#nick').fill('截图');
 
   /* 主角设定：先拿超人的写法试一次，必须被顶回去、还留在开局那一屏 */
+  await page.locator('.year-background').evaluate(e => e.open = false);
   await page.locator('#persona').fill('会一身好武功，能以一敌百');
   await page.locator('#start').click();
   await page.waitForTimeout(1200);
   check(await page.locator('#s-play.on').count() === 0, '写「会武功」开不了局，还停在挑年份那一屏');
-  check((await page.locator('#toast').textContent()).includes('武功'), '顶回去的时候说清楚了为什么');
+  check((await page.locator('#toast').textContent()).includes('普通人'), '顶回去的时候说清楚了为什么');
   /* 上面那一下是故意讨来的 400，从「资源加载失败」的名单里摘掉，别的照旧算失败 */
   { const i = failed.findIndex(x => /400 .*\/api\/run/.test(x)); if (i >= 0) failed.splice(i, 1); }
 
@@ -148,7 +150,7 @@ async function noHScroll(page, where) {
       await page.waitForTimeout(120);
       await page.locator('#send').click();
       await page.waitForFunction(
-        d => document.querySelector('.bar .of')?.textContent.includes(`第 ${d + 1} /`),
+        d => document.querySelector('.bar .of')?.textContent.includes(`第 ${d + 1} 个月`),
         i, { timeout: 120000 });
       const story = (await page.locator('.story p').textContent()) || '';
       check(story.length >= 60, `第 ${i} 个月有正文（${story.length} 字）`);
@@ -239,7 +241,7 @@ async function noHScroll(page, where) {
     await dp.reload({ waitUntil: 'networkidle' });
     await dp.waitForSelector('#s-play.on', { timeout: 15000 });
     const label = (await dp.locator('#send').textContent()).trim();
-    check(label === '两年到了，去算账', `走满二十四个月之后按钮写的是「${label}」`);
+    check(label === '查看两年成绩', `走满二十四个月之后按钮写的是「${label}」`);
     await dp.locator('#send').click();
     await dp.waitForSelector('#s-done.on', { timeout: 20000 });
     await dp.waitForTimeout(400);
