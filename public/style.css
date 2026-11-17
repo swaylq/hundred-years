@@ -312,6 +312,36 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
   color: var(--seal-ink);
   font-weight: 600;
 }
+.month-art {
+  margin: 14px 0 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--rule-2);
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+}
+.month-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  animation: rise .45s ease-out;
+}
+.month-art.pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(110deg, var(--sheet) 30%, var(--paper-2) 50%, var(--sheet) 70%);
+  background-size: 200% 100%;
+  animation: artPulse 1.8s ease-in-out infinite;
+  color: var(--muted);
+  font: 13.5px var(--serif);
+  letter-spacing: .06em;
+}
+@keyframes artPulse { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 .story.fresh p { animation: rise .55s ease-out; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 .tally { padding-top: 4px; }

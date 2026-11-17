@@ -989,4 +989,23 @@ function cleanReview(o, s, r) {
   };
 }
 
-module.exports = { runMonth, runMonthLocal, runOptions, optionsLocal, runReview, reviewLocal, buildUser, storyPicker, card, SYS, REVIEW_SYS, MODEL };
+/* ── 每月结算插画：快、省、贴合当月故事与年代质感 ─────────────────
+ * 选用 google/gemini-3.1-flash-lite-image（实测 ~5 秒出图，$0.033/张，质量扎实）。 */
+const IMG_MODEL = process.env.HY_IMAGE_MODEL || 'google/gemini-3.1-flash-lite-image';
+
+async function runMonthImage(s, played, opts = {}) {
+  const OR = require('./tools/or.js');
+  const y = played.year || s.year;
+  const m = played.month || s.month;
+  const city = s.city || '中国城市';
+  const cleanStory = String(played.story || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim().slice(0, 220);
+  const cleanList = String(played.list || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const prompt =
+    `Paint a 16:9 horizontal cinematic illustration depicting this specific scene in ${y} China (${city}, month ${m}):\n` +
+    ` Core action: ${cleanList ? cleanList + ' — ' : ''}${cleanStory}\n` +
+    `Art style: evocative Chinese historical illustration blending expressive ink-wash brushwork with rich painterly gouache and warm period lighting (like a classic mid-century Chinese cinema frame or vintage painterly illustration). Authentic ${y} Chinese architecture, clothing, and props. Strong atmosphere and narrative composition.\n` +
+    `Strict rule: NO text, NO Chinese characters, NO letters, NO numbers, NO watermarks, NO signatures, NO borders or frames.`;
+  return OR.callImage(opts.model || IMG_MODEL, prompt, { timeout: opts.timeout || 40000, tries: 2 });
+}
+
+module.exports = { runMonth, runMonthLocal, runMonthImage, runOptions, optionsLocal, runReview, reviewLocal, buildUser, storyPicker, card, SYS, REVIEW_SYS, MODEL, IMG_MODEL };

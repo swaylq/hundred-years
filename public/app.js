@@ -385,6 +385,22 @@ function renderPlay(last, opts = {}) {
   const sp = el('p', '');
   sp.innerHTML = formatStory(last.story || '', myList);
   box.appendChild(sp);
+
+  /* 每月结算插画：已经画好的直接摆出来，还在画的先放占位框并在后台拉取 */
+  const imgUrl = last.image || ((s.recent && s.recent.length && !last.first) ? s.recent[s.recent.length - 1].image : null);
+  if (imgUrl && !last.first) {
+    const fig = el('figure', 'month-art');
+    const im = el('img'); im.src = imgUrl; im.alt = `第 ${at.n} 个月插画`; im.loading = 'lazy';
+    fig.appendChild(im);
+    box.appendChild(fig);
+  } else if (!last.first && at && at.n && run && run.id && (last.story || '').length > 10) {
+    const waitBox = el('figure', 'month-art pending');
+    waitBox.id = 'month-art-box';
+    waitBox.innerHTML = '<span>正在绘制本月插画…</span>';
+    box.appendChild(waitBox);
+    requestMonthImage(run.id, at.n);
+  }
+
   if (last.entries && last.entries.length) {
     const t = el('div', 'tally');
     const unit = unitOf(last.entries.map(e => e.amount));   // 读老档时也是整张账单一个单位
@@ -561,6 +577,33 @@ $('#list').addEventListener('input', () => {
 function prevMonthOf(s) {
   const last = (s.recent || [])[(s.recent || []).length - 1];
   return last ? { n: last.n, year: last.year, month: last.month } : { n: Math.max(1, s.n - 1), year: s.year, month: s.month };
+}
+
+let imgReqKey = '';
+async function requestMonthImage(runId, n) {
+  const key = `${runId}:${n}`;
+  imgReqKey = key;
+  try {
+    const d = await post('/api/month-image', { id: runId, token, n });
+    if (imgReqKey !== key) return;
+    const box = $('#month-art-box');
+    if (d && d.ok && d.image) {
+      if (run && run.state && Array.isArray(run.state.recent)) {
+        const hit = run.state.recent.find(x => Number(x.n) === Number(n));
+        if (hit) hit.image = d.image;
+      }
+      if (box) {
+        box.classList.remove('pending');
+        box.innerHTML = '';
+        const im = el('img'); im.src = d.image; im.alt = `第 ${n} 个月插画`; im.loading = 'lazy';
+        box.appendChild(im);
+      }
+    } else if (box) {
+      box.remove();
+    }
+  } catch (e) {
+    if (imgReqKey === key && $('#month-art-box')) $('#month-art-box').remove();
+  }
 }
 
 /* 正文边写边往屏幕上落。一个月的正文三五百字，一次性等它写完要十几秒，
@@ -748,6 +791,12 @@ function monthCards(box, months, opts = {}) {
     const dp = el('p', '');
     dp.innerHTML = formatStory(d.story || '', d.list || '');
     dbx.appendChild(dp);
+    if (d.image) {
+      const fig = el('figure', 'month-art');
+      const im = el('img'); im.src = d.image; im.alt = `${d.year} 年 ${d.month} 月插画`; im.loading = 'lazy';
+      fig.appendChild(im);
+      dbx.appendChild(fig);
+    }
     if (d.say && d.tally) dbx.appendChild(el('div', 'note', d.tally));
     if (d.moved && d.moved.to) dbx.appendChild(el('div', 'note', `这个月你从${d.moved.from}搬到了${d.moved.to}。`));
     if (d.worldTrace && d.worldTrace.summary) {
@@ -1131,7 +1180,7 @@ async function loadMine() {
 function lastOf(state) {
   const last = state.recent && state.recent.length ? state.recent[state.recent.length - 1] : null;
   return last
-    ? { list: last.list, story: last.story, tally: last.tally, refused: last.refused, entries: last.entries,
+    ? { list: last.list, story: last.story, image: last.image || null, tally: last.tally, refused: last.refused, entries: last.entries,
         moved: last.moved, worldTrace: last.worldTrace,
         at: { n: last.n, year: last.year, month: last.month } }
     : { story: '已接上你上次的进度。', first: true };

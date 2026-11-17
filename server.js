@@ -21,7 +21,61 @@ const DB = require('./db.js');
 
 const PORT = Number(process.env.HY_PORT || 8801);
 const PUBLIC = path.join(__dirname, 'public');
+const IMG_DIR = path.join(__dirname, 'data', 'images');
+fs.mkdirSync(IMG_DIR, { recursive: true });
 const HAS_KEY = !!process.env.OPENROUTER_API_KEY;
+const { execFile } = require('child_process');
+
+/* ── 每月插画：落盘保存、按局+月份去重防重复扣费 ───────────── */
+const imgJobs = new Map();
+const cleanRunId = id => String(id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+function findImgFile(runId, n) {
+  const sid = cleanRunId(runId), num = Number(n);
+  if (!sid || !(num >= 1 && num <= 120)) return null;
+  for (const ext of ['jpg', 'png', 'webp']) {
+    const f = path.join(IMG_DIR, `${sid}-${num}.${ext}`);
+    if (fs.existsSync(f)) return { file: f, ext };
+  }
+  return null;
+}
+function imgUrlOf(runId, n) {
+  const hit = findImgFile(runId, n);
+  return hit ? `/api/month-image?id=${encodeURIComponent(cleanRunId(runId))}&n=${Number(n)}` : null;
+}
+function compressToJpg(rawBuf, rawExt, destJpg) {
+  return new Promise(resolve => {
+    const tmp = `${destJpg}.tmp.${rawExt || 'png'}`;
+    try { fs.writeFileSync(tmp, rawBuf); } catch (e) { return resolve(false); }
+    execFile('/usr/bin/sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', '80', '-Z', '960', tmp, '--out', destJpg], err => {
+      try { fs.unlinkSync(tmp); } catch (e) {}
+      if (!err && fs.existsSync(destJpg)) return resolve(true);
+      try { fs.writeFileSync(destJpg, rawBuf); return resolve(true); } catch (e) { return resolve(false); }
+    });
+  });
+}
+function ensureMonthImage(runId, s, played) {
+  const sid = cleanRunId(runId), num = Number(played && played.n);
+  if (!sid || !(num >= 1 && num <= 120) || !HAS_KEY) return Promise.resolve(null);
+  const existing = imgUrlOf(sid, num);
+  if (existing) return Promise.resolve(existing);
+  const key = `${sid}:${num}`;
+  if (imgJobs.has(key)) return imgJobs.get(key);
+  const job = (async () => {
+    try {
+      const out = await SIM.runMonthImage(s, played);
+      const dest = path.join(IMG_DIR, `${sid}-${num}.jpg`);
+      await compressToJpg(out.buffer, out.ext, dest);
+      return imgUrlOf(sid, num);
+    } catch (err) {
+      console.error('生成月度插画失败：', String(err && err.message).slice(0, 200));
+      return null;
+    } finally {
+      imgJobs.delete(key);
+    }
+  })();
+  imgJobs.set(key, job);
+  return job;
+}
 
 /* ── 限流：每调一次模型都是真金白银 ─────────────────── */
 const WINDOW = Number(process.env.HY_RATE_WINDOW || 10 * 60 * 1000);
@@ -111,8 +165,9 @@ function serveStatic(req, res, pathname) {
 }
 
 /* ── 给前端的存档视图 ──────────────────────────────── */
-function view(s) {
+function view(s, runId) {
   const cur = E.currencyOf(s.year, s.month);
+  const rid = runId || s.id || '';
   return {
     /* year/month 是**走到哪个月**，startYear/startMonth 才是开局那个月 */
     year: s.year, month: s.month,
@@ -135,14 +190,15 @@ function view(s) {
     incomeText: E.money(E.incomeOf(s.year, s.month), cur),
     listLimit: E.LIST_LIMIT,
     options: s.options || [],
-    recent: s.months.slice(-3),
+    recent: s.months.slice(-3).map(d => ({ ...d, image: (rid && imgUrlOf(rid, d.n)) || d.image || null })),
   };
 }
 
 /** 一局走过的每一个月，给结算页回看用 */
-function monthList(s) {
+function monthList(s, runId) {
   /* 「走过的路」那一句只在回顾的时候给——玩的时候摆在旁边太乱（sway 2026-09-04）。
    * 结算页每个月折起来的那一行用它当摘要，一眼扫得完二十四个月。 */
+  const rid = runId || s.id || '';
   const trail = new Map(((s.memo || {}).trail || []).map(t => [t.n, t]));
   return (s.months || []).map(d => {
     const t = trail.get(d.n);
@@ -153,6 +209,7 @@ function monthList(s) {
       refused: d.refused || [], overTop: !!d.overTop,
       moved: d.moved || null,
       worldTrace: d.worldTrace || null,
+      image: (rid && imgUrlOf(rid, d.n)) || d.image || null,
     };
   });
 }
@@ -245,7 +302,9 @@ const routes = {
     const echoes = DB.yearEchoes(year, month, { nick, city: s.city });
     s.options = SIM.optionsLocal(s, 0, echoes);
     const { id, token } = DB.createRun(s, nick);
-    json(res, 200, { id, token, state: view(s), flavor: SIM.card(year).flavor, echoes: echoes.traces });
+    s.id = id;
+    DB.saveRun(id, s);
+    json(res, 200, { id, token, state: view(s, id), flavor: SIM.card(year).flavor, echoes: echoes.traces });
   },
 
   'POST /api/month': async (req, res) => {
@@ -308,14 +367,14 @@ const routes = {
     if (!extra && row.status === 'done' && row.result) {
       const r0 = JSON.parse(row.result);
       return json(res, 200, {
-        result: r0, already: true, ...mainRanks(r0), months: monthList(s),
+        result: r0, already: true, ...mainRanks(r0), months: monthList(s, b.id),
         review: row.review ? JSON.parse(row.review) : null, extraRoom: E.extraRoom(s),
       });
     }
     if (extra && row.extra_status === 'done' && row.extra_result) {
       const r0 = JSON.parse(row.extra_result);
       return json(res, 200, {
-        result: r0, already: true, phase: 'extra', ...extraRanks(r0), months: monthList(s),
+        result: r0, already: true, phase: 'extra', ...extraRanks(r0), months: monthList(s, b.id),
         review: row.extra_review ? JSON.parse(row.extra_review) : null,
         main: row.result ? JSON.parse(row.result) : null,
       });
@@ -340,7 +399,7 @@ const routes = {
     if (extra) {
       DB.finishExtra(b.id, s, r);
       return json(res, 200, {
-        result: r, phase: 'extra', ...extraRanks(r), months: monthList(s),
+        result: r, phase: 'extra', ...extraRanks(r), months: monthList(s, b.id),
         main: row.result ? JSON.parse(row.result) : null,      // 两年那一刻的成绩，对照着看
       });
     }
@@ -348,9 +407,9 @@ const routes = {
     if (!wrote) {
       /* 冻结闸挡下了：库里已经有一份两年的成绩，端那一份出来 */
       const r0 = JSON.parse(DB.getRow(b.id).result);
-      return json(res, 200, { result: r0, already: true, ...mainRanks(r0), months: monthList(s) });
+      return json(res, 200, { result: r0, already: true, ...mainRanks(r0), months: monthList(s, b.id) });
     }
-    json(res, 200, { result: r, ...mainRanks(r), months: monthList(s), extraRoom: E.extraRoom(s) });
+    json(res, 200, { result: r, ...mainRanks(r), months: monthList(s, b.id), extraRoom: E.extraRoom(s) });
   },
 
   /* 接着走下去：两年结完账，最多再走五年。
@@ -453,7 +512,7 @@ const routes = {
       extraResult: row.extra_result ? JSON.parse(row.extra_result) : null,
       extraReview: row.extra_review ? JSON.parse(row.extra_review) : null,
       extraRank: row.extra_world_usd != null ? extraRanks({ worldUsd: row.extra_world_usd }) : null,
-      months: monthList(st),
+      months: monthList(st, id),
       memo: st.memo || null,
     });
   },
@@ -463,7 +522,41 @@ const routes = {
     if (!found) return oops(res, 404, '找不到这一局');
     const st = found.state;
     if (isOldRun(st)) return oops(res, 409, OLD_SAY);
-    json(res, 200, { months: monthList(st), nick: st.nick, year: st.startYear, month: st.startMonth });
+    json(res, 200, { months: monthList(st, q.id), nick: st.nick, year: st.startYear, month: st.startMonth });
+  },
+
+  'GET /api/month-image': async (req, res, q) => {
+    const hit = findImgFile(q.id, q.n);
+    if (!hit) return oops(res, 404, '插画尚未生成');
+    fs.stat(hit.file, (err, st) => {
+      if (err || !st.isFile()) return oops(res, 404, '插画尚未生成');
+      const mime = hit.ext === 'png' ? 'image/png' : hit.ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      res.writeHead(200, {
+        'content-type': mime,
+        'content-length': st.size,
+        'cache-control': 'public, max-age=86400',
+      });
+      fs.createReadStream(hit.file).pipe(res);
+    });
+  },
+
+  'POST /api/month-image': async (req, res) => {
+    const b = await readBody(req);
+    const id = String(b.id || '');
+    const n = Number(b.n);
+    const found = DB.loadRun(id, String(b.token || ''));
+    if (!found) return oops(res, 404, '找不到这一局');
+    const existing = imgUrlOf(id, n);
+    if (existing) return json(res, 200, { ok: true, status: 'ready', image: existing });
+    if (!HAS_KEY) return json(res, 200, { ok: false, status: 'unavailable' });
+    const s = found.state;
+    const played = (s.months || []).find(d => Number(d.n) === n);
+    if (!played) return oops(res, 404, '还没有这一个月的记录');
+    const url = await ensureMonthImage(id, s, played);
+    if (!url) return json(res, 200, { ok: false, status: 'failed' });
+    played.image = url;
+    DB.saveRun(id, s);
+    return json(res, 200, { ok: true, status: 'ready', image: url });
   },
 
   /* 榜分两层：给了 year 就是那一年的榜（只跟同年的人比，按当年那种钱净赚多少排），
@@ -521,7 +614,7 @@ const routes = {
     /* 正在走后传的局，库里的 status 是 done（两年那份成绩冻在那儿），
      * 可它还在过日子——对界面来说就是 playing，不然接着走下去的局刷新一下就回不去了。 */
     const st = found.state;
-    const out = { state: view(st), status: st.status === 'extra' ? 'playing' : found.row.status };
+    const out = { state: view(st, q.id), status: st.status === 'extra' ? 'playing' : found.row.status };
     if (st.status !== 'extra' && found.row.status === 'done' && found.row.result) out.result = JSON.parse(found.row.result);
     json(res, 200, out);
   },
@@ -636,14 +729,20 @@ async function runOneMonthInner(req, res, b, s) {
     const nextEchoes = DB.yearEchoes(s.year, s.month, { excludeRunId: b.id, nick: s.nick, city: s.city });
     s.options = E.cleanOptions(out.delta.options);
     if (!s.options.length) s.options = SIM.optionsLocal(s, 0, nextEchoes);
+    s.id = b.id;
     DB.saveRun(b.id, s);
 
     const played = s.months[s.months.length - 1];
+    /* 当月结算后立刻在后台启动插画生成（约 5 秒），不阻塞文字返回 */
+    if (HAS_KEY) ensureMonthImage(b.id, s, played).catch(() => {});
+
     const payload = {
       /* 刚过完的是哪一个月——前端拿它写正文的小标题，别自己去猜 */
       at: { n: played.n, year: played.year, month: played.month },
       list: played.list,
       story: out.delta.story,
+      image: imgUrlOf(b.id, played.n) || null,
+      imagePending: HAS_KEY && !imgUrlOf(b.id, played.n),
       tally,
       /* 整张账单共用一个单位（`tallyLine` 里那句话也是同一把尺子），
        * 不然同一屏上会挤着「−1800 法币」「−80.00 法币」「1.54 亿法币」三种写法。 */
