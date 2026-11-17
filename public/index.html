@@ -28,13 +28,13 @@
       <span class="hero-seal" aria-hidden="true">这一百年</span>
     </div>
     <div class="pick-body">
-      <p class="lede-big">选一个年份，过两年不同的生活。</p>
-      <p class="lede">每月写下打算，看看会发生什么、赚到多少。两年后，把净赚的钱与当时普通人的年收入比一比。</p>
+      <p class="lede-big">挑一个年份，去那时候的中国过两年。</p>
+      <p class="lede">每个月写下你的打算，一步一月走满两年。最后算算攒下的家底，抵得上当时普通人几年的收入。</p>
       <div id="grid" class="century"><p class="wait">正在加载年份…</p></div>
-      <p id="grid-cap" class="cap-line">选择年份，查看城市和时代背景。</p>
+      <p id="grid-cap" class="cap-line">点选年份，看看那一年落脚的城市和世道。</p>
       <p class="legend">
         <span><i class="lg-heat"></i>颜色越深，挣钱的机会越多。</span>
-        <span><i class="lg-dot"></i>蓝点表示当年有货币改革。</span>
+        <span><i class="lg-dot"></i>带蓝点的年份赶上币制改革。</span>
       </p>
     </div>
   </div>
@@ -42,26 +42,26 @@
 
 <!-- 一年的详情 + 选月 -->
 <section id="s-year" class="screen">
-  <button class="back" data-go="pick">← 选择其他年份</button>
+  <button class="back" data-go="pick">← 换个年份</button>
   <div id="year-head"></div>
   <!-- 开场白和换钱提醒摆在挑月份上面：一个是钩子，一个是挑哪个月的依据。
        这一年的资料（在发生什么、物价、路子、祸事）挪到动身之后，
        想细看的往下翻——sway 2026-09-04：动身操作放在「这一年在发生什么」前面。 -->
   <div id="year-intro"></div>
-  <h3 class="mh">选择开始月份</h3>
-  <p class="hint">从所选月份开始，连续生活 24 个月。</p>
+  <h3 class="mh">从哪个月开始</h3>
+  <p class="hint">选定后从当月起往后过 24 个月。红点代表当月有大事。</p>
   <div id="months" class="months"></div>
-  <div id="mo-detail" class="mo-detail" aria-live="polite">选择一个月份。红点表示当月有重要事件。</div>
+  <div id="mo-detail" class="mo-detail" aria-live="polite">点选上面的月份，查看当月开局的本钱和大事。</div>
   <div id="start-box" class="start-box" hidden>
-    <label>名字 <input id="nick" maxlength="16" placeholder="在排行榜上显示"></label>
+    <label>名字 <input id="nick" maxlength="16" placeholder="上榜用的名字（不填叫无名）"></label>
     <label class="who">人物设定 <span class="optional">选填</span>
-      <input id="persona" maxlength="80" placeholder="例如：做过木工，性格谨慎。" aria-describedby="persona-help persona-count">
+      <input id="persona" maxlength="80" placeholder="例如：做过木匠，嘴笨但手艺扎实。" aria-describedby="persona-help persona-count">
       <span id="persona-count" class="count">0 / 50 字</span>
     </label>
-    <p id="persona-help" class="who-say">最多 50 个汉字。设定影响做事风格，不能直接增加收入或赋予超能力。</p>
-    <button id="start" class="primary">开始游戏</button>
+    <p id="persona-help" class="who-say">写写你的手艺、性子或来历（50 字内）。这会改变做事的方式，不会凭空多给本钱或超能力。</p>
+    <button id="start" class="primary">开始这两年</button>
   </div>
-  <details class="fold year-background"><summary>了解这一年</summary><div id="year-body"></div></details>
+  <details class="fold year-background"><summary>看看这一年的世道与物价</summary><div id="year-body"></div></details>
 </section>
 
 <!-- 玩 -->
@@ -73,19 +73,19 @@
       <div id="play-write" class="write">
         <label for="list" id="write-label">这个月打算做什么</label>
         <div id="picks" class="picks" hidden>
-          <div class="picks-head"><span id="picks-say">点选建议可填入计划，再按自己的想法修改。</span><button id="picks-more" type="button" class="more">换一组建议</button></div>
+          <div class="picks-head"><span id="picks-say">点一条直接填进下面，还可以随便改：</span><button id="picks-more" type="button" class="more">换三条</button></div>
           <div id="picks-list"></div>
         </div>
-        <textarea id="list" rows="4" aria-describedby="count plan-help" placeholder="写下这个月想做的事，例如找工作、做买卖，或换个城市生活。"></textarea>
-        <p id="plan-help" class="hint">也可以完全自己写。不同的打算，会带来不同的经历。</p>
+        <textarea id="list" rows="4" aria-describedby="count plan-help" placeholder="写下这个月的打算，比如去码头找活、买点粮食囤着，或者干脆换座城市。"></textarea>
+        <p id="plan-help" class="hint">自己动笔写打算，更容易撞上意想不到的门路和际遇。</p>
         <div class="write-foot">
           <span id="count" class="count">0 / 500 字</span>
-          <button id="send" class="primary">执行本月计划</button>
+          <button id="send" class="primary">过这个月</button>
         </div>
       </div>
-      <details id="ref" class="fold"><summary>查看背景资料</summary><div id="ref-body"></div></details>
-      <details id="memo" class="fold"><summary id="memo-sum">人物与经历</summary><div id="memo-body"></div></details>
-      <details id="ledger" class="fold"><summary>最近收支</summary><div id="ledger-body"></div></details>
+      <details id="ref" class="fold"><summary>当年物价与门路</summary><div id="ref-body"></div></details>
+      <details id="memo" class="fold"><summary id="memo-sum">攒下的人脉与家业</summary><div id="memo-body"></div></details>
+      <details id="ledger" class="fold"><summary>近期账本</summary><div id="ledger-body"></div></details>
     </div>
   </div>
 </section>
@@ -104,14 +104,14 @@
 
 <!-- 一局的详情：从「我的局」和排行榜点进来 -->
 <section id="s-detail" class="screen">
-  <button class="back" id="detail-back">← 返回列表</button>
+  <button class="back" id="detail-back">← 返回</button>
   <div id="detail-body"></div>
 </section>
 
 <!-- 排行榜 -->
 <section id="s-board" class="screen">
   <h2>排行榜</h2>
-  <details class="fold board-explain"><summary>排名如何计算</summary><p class="hint" id="board-note"></p></details>
+  <details class="fold board-explain"><summary>不同年份怎么放在一起比？</summary><p class="hint" id="board-note"></p></details>
   <div id="board-tabs" class="tabs"></div>
   <div id="board-body"></div>
 </section>

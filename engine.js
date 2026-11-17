@@ -726,16 +726,16 @@ function extraRoom(s) {
  *  能这么接，是因为 closeOut 动手之前把该动的都存进了 s.preClose：
  *  少了这一份，收工那个月正好换币的局（1949 年 5 月那种）会把那笔折算算两遍。 */
 function reopen(s) {
-  if (s.phase === 'extra') return { ok: false, say: '本局已经继续游玩过，无法再次延长。' };
+  if (s.phase === 'extra') return { ok: false, say: '这一局已经接着往下走过了，不能再延长第二次。' };
   const room = extraRoom(s);
   const lastYear = SPINE.years[SPINE.years.length - 1].year;
-  if (!room) return { ok: false, say: `本局已到 ${lastYear} 年 12 月，无法继续。` };
+  if (!room) return { ok: false, say: `年卡只到 ${lastYear} 年 12 月，这一局已经走到头了。` };
   const p = s.preClose;
   if (!p) {
     /* 这个功能之前收的工，没存下那一份。收工那个月没换钱的话，closeOut 只改了 s.n，
      * 把它退回去就够了；真赶上换钱的那几局（1935-11、1948-08、1949-05、1955-03）
      * 没法原样退，只能顶回去——硬接的话那笔折算会算两遍。 */
-    if (s.endSwitched) return { ok: false, say: '本局结束时经历了货币改革，旧版记录无法继续。' };
+    if (s.endSwitched) return { ok: false, say: '这一局满两年时正赶上币制改革，旧版记录没法往后接。' };
     s.n = MONTHS;
   } else {
     s.cash = p.cash; s.assets = p.assets; s.debts = p.debts; s.currency = p.currency;
@@ -903,8 +903,8 @@ function hasContent(s) { return /[一-鿿㐀-䶿a-zA-Z0-9\u{20000}-\u{2A6DF}]/u.
 
 function checkList(text) {
   const n = countHan(text);
-  if (!hasContent(text)) return { ok: false, n, say: '请先写下这个月想做的事。' };
-  if (n > LIST_LIMIT) return { ok: false, n, say: `最多可写 ${LIST_LIMIT} 个汉字，请删减 ${n - LIST_LIMIT} 个。标点和数字不计入字数。` };
+  if (!hasContent(text)) return { ok: false, n, say: '先写点这个月想做的事吧，哪怕一句话也行。' };
+  if (n > LIST_LIMIT) return { ok: false, n, say: `写了 ${n} 个汉字，超了 ${n - LIST_LIMIT} 个（上限 ${LIST_LIMIT} 字，标点和数字不算）。` };
   return { ok: true, n };
 }
 
@@ -1202,13 +1202,13 @@ const PERSONA_LIMIT = 50;
 /* 四类顶回去的写法。分开列是为了回话不一样——玩家得知道该改哪儿。 */
 const PERSONA_NO = [
   { re: /武功|武艺|内力|真气|轻功|点穴|气功|刀枪不入|飞檐走壁|力大无穷|天生神力|以一敌百|百步穿杨/,
-    say: '人物设定需符合普通人的能力范围' },
+    say: '这里过的是寻常百姓的日子，不能写武功内力或天生神力' },
   { re: /过目不忘|过耳不忘|一目十行|心算如神|预知|未卜先知|读心|摄魂|催眠|透视|算无遗策|从不出错|永远不会错|无所不知|精通一切|样样精通/,
-    say: '人物能力需符合常人的范围' },
+    say: '本事得在常人范围内——记性好、会算账可以，过目不忘或未卜先知不行' },
   { re: /穿越|重生|系统|金手指|外挂|开挂|异能|超能力|特异功能|法术|魔法|灵力|修仙|长生|不老|不死|时间循环|存档|读档/,
-    say: '人物设定不能包含超能力或预知未来的能力' },
+    say: '这里没有穿越、系统或超能力，也没有重来一次的机会' },
   { re: /首富|大亨|巨富|富二代|官二代|家财万贯|腰缠万贯|富可敌国|继承[^。，]{0,6}(家产|遗产|万贯|家业)|背景深厚|后台很硬|上头有人|通天的关系/,
-    say: '初始资金和人脉由年份决定，无法通过人物设定增加' },
+    say: '开局的本钱和家境由那一年决定，不能在设定里给自己安家底或后台' },
 ];
 
 /** 检一句主角设定。空着也行——不写就是个没什么特别的普通人。 */
@@ -1217,10 +1217,10 @@ function checkPersona(text) {
   if (!t) return { ok: true, n: 0, text: '' };
   const n = countHan(t);
   if (n > PERSONA_LIMIT) {
-    return { ok: false, n, text: '', say: `最多可写 ${PERSONA_LIMIT} 个汉字，请删减 ${n - PERSONA_LIMIT} 个。标点和数字不计入字数。` };
+    return { ok: false, n, text: '', say: `设定写了 ${n} 个汉字，超了 ${n - PERSONA_LIMIT} 个（上限 ${PERSONA_LIMIT} 字，标点和数字不算）。` };
   }
   for (const r of PERSONA_NO) {
-    if (r.re.test(t)) return { ok: false, n, text: '', say: `${r.say}，请修改后再提交。` };
+    if (r.re.test(t)) return { ok: false, n, text: '', say: `${r.say}，改一改再开始吧。` };
   }
   /* 汉字数已经卡住了，这里只是给存档一个原始长度的上限 */
   return { ok: true, n, text: t.slice(0, 160) };

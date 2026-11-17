@@ -346,8 +346,8 @@ const routes = {
     if (!found) return oops(res, 404, '无法读取这条记录，请从原来使用的浏览器打开');
     const s = found.state;
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
-    if (found.row.status !== 'done') return oops(res, 400, '完成前两年后，才能继续游玩');
-    if (s.phase === 'extra') return oops(res, 400, '本局已开始后续游玩');
+    if (found.row.status !== 'done') return oops(res, 400, '先把前两年过完，才能接着往下走');
+    if (s.phase === 'extra') return oops(res, 400, '这一局已经接着往下走过了');
     const r = E.reopen(s);
     if (!r.ok) return oops(res, 400, r.say);
     s.options = SIM.optionsLocal(s);        // 头一个月的三条路走本地那份，不额外花钱
@@ -368,7 +368,7 @@ const routes = {
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
     const out = await writeReview(String(b.id), row, s, !!b.extra, req);
     if (out.error) return oops(res, out.code, out.error);
-    if (out.writing) return oops(res, 409, '正在生成总结，请稍等');
+    if (out.writing) return oops(res, 409, '正在写回顾总结，请稍等');
     json(res, 200, out);
   },
 
@@ -384,7 +384,7 @@ const routes = {
     const row = DB.getRow(id);
     if (!row) return oops(res, 404, '没有这一局');
     if (row.mode && row.mode !== 'months24') return oops(res, 409, '旧版记录暂不支持查看');
-    if (row.status !== 'done' || !row.result) return oops(res, 403, '本局尚未完成，完成后可查看成绩');
+    if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，结算后才能查看成绩');
     let st = null;
     try { st = JSON.parse(row.state); } catch (e) {}
     if (!st || isOldRun(st)) return oops(res, 409, OLD_SAY);
@@ -418,9 +418,9 @@ const routes = {
     const id = String(q.id || '');
     const row = DB.getRow(id);
     if (!row) return oops(res, 404, '没有这一局');
-    if (!DB.loadRun(id, String(q.token || ''))) return oops(res, 403, '详细经历仅本人可见，排行榜可查看成绩和总结');
+    if (!DB.loadRun(id, String(q.token || ''))) return oops(res, 403, '每个月的打算与经历只有本人能看，排行榜可看成绩单与回顾');
     if (row.mode && row.mode !== 'months24') return oops(res, 409, '旧版记录暂不支持查看详情');
-    if (row.status !== 'done' || !row.result) return oops(res, 403, '本局尚未完成，完成后可查看成绩');
+    if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，结算后才能查看成绩');
     let st = null;
     try { st = JSON.parse(row.state); } catch (e) {}
     if (!st || isOldRun(st)) return oops(res, 409, OLD_SAY);
