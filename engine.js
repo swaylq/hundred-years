@@ -836,8 +836,9 @@ function settle(s) {
    */
   const startCur = currencyOf(startYear, startMonth);
   const endCur = s.currency;
-  const incomeReal = startIncome * worthOf(startYear, startMonth);   // 开局那个月的年收入，折到那一年 1 月
+  const incomeReal = startIncome * worthOf(startYear, startMonth);   // 开局那个月的年收入，折到那一年 1 月（供当年美元与总榜 GDP 换算）
   const gainReal = years * incomeReal;
+  const netEarned = years * nowIncome;                               // 按收官当月流通货币算的净赚，与收官家底同口径
   const W = WORLD.years[String(startYear)];
   const worldUsd = W ? gainReal * W.usdPerUnit / W.gdpIndex : 0;
 
@@ -845,17 +846,20 @@ function settle(s) {
     year: startYear, month: startMonth, nick: s.nick, city: s.city,
     endYear: s.year, endMonth: s.month,
     /* 开局那个月和收工那个月不是同一种钱，两头各自带自己的币种。
-     * 原来只给一个 currency，前端拿它套所有的数，于是 1948 年 8 月的结算页
-     * 印出「开局本钱 1.84 亿金圆券」——那个数其实是法币。 */
+     * 净赚（yearEarnedText）与收官家底（endWorth）、收官时普通人年收入（incomeText）
+     * 统一按收官当月流通货币（endCur / nowIncome）呈现，保证「净赚 ≈ 收官家底 − 本钱」且「净赚 ÷ 年收入 = 抵几年收入」。 */
     currency: endCur,
     startCurrency: startCur,
     startCash: s.startWorth,
     startCashText: money(s.startWorth, startCur),
-    income: startIncome,
-    incomeText: money(startIncome, startCur),
+    startIncome,
+    startIncomeText: money(startIncome, startCur),
+    income: nowIncome,
+    incomeText: money(nowIncome, endCur),
     endWorth: nw,
-    yearEarned: gainReal,                       // 年榜按这个排
-    yearEarnedText: money(gainReal, startCur),
+    endWorthText: money(nw, endCur),
+    yearEarned: netEarned,                      // 与收官家底同口径的净赚
+    yearEarnedText: money(netEarned, endCur),
     worldUsd,                                   // 总榜按这个排
     worldUsdText: fmtUsd(worldUsd),
     usdThen: W ? gainReal * W.usdPerUnit : 0,   // 当年的美元，给人对照

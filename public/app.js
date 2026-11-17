@@ -748,7 +748,7 @@ function scoreKv(r) {
   const rows = [
     ['开局本钱', r.startCashText || fmtMoney(r.startCash, r.currencyName)],
     ['收官家底', r.endWorthText || fmtMoney(r.endWorth, r.currencyName)],
-    ['当时普通人年收入', r.incomeText || fmtMoney(r.income, r.currencyName)],
+    ['收官时普通人年收入', r.incomeText || fmtMoney(r.income, r.currencyName)],
     ['抵得上几年收入', yrs + ' 年'],
     ['折合当年美元', r.usdThen != null ? fmtUsdCN(r.usdThen) : '—'],
     ['折合今天美元', r.worldUsdText || '—'],
