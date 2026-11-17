@@ -520,7 +520,7 @@ function cleanOptions(list) {
  * 犯法的事他做得成，只是有人管、抓着要出事，代价记在钱和麻烦上。
  * 顶回去的理由只有一个：那一年根本没有这样东西。
  * 提示词是主闸，这里是兜底：说不出「哪一年才有」的拒绝，一律扔掉。 */
-const LECTURE = /(犯罪|违法|非法|不合法|违反|道德|伦理|风险|危险|不划算|得不偿失|不值得|建议|劝|后果|坐牢|判刑|牢狱|三思|谨慎|不明智|代价太大|收益)/;
+const LECTURE = /(犯罪|违法|非法|不合法|违反|道德|伦理|风险|危险|不划算|得不偿失|不值得|建议|劝|后果|坐牢|判刑|牢狱|三思|谨慎|不明智|代价太大|收益|迷信|不科学|超自然|怪力乱神|荒诞|虚构|世上没有|不存在)/;
 
 /** 把这个月的 refused 洗一遍：只留「那一年没有这东西」那种，别的扔掉。
  *  留下来的要么带年份（1976 年才有 / 1958 年以后就没了），
@@ -1034,6 +1034,28 @@ function applyMemo(s, delta, at) {
     if (hit) { hit.lost = n; added.lost++; }
   }
 
+  /* 三点八、与其他穿越者结下的关系（成婚、结拜、合伙、宿敌等），一并记进人脉和身上状态 */
+  if (delta && delta.bond && typeof delta.bond === 'object') {
+    const partner = oneLine(delta.bond.with || delta.bond.partner || '', 14).replace(/^[「『"']|[」』"']$/g, '');
+    const rel = oneLine(delta.bond.rel || delta.bond.type || '结缘', 10);
+    const bNote = oneLine(delta.bond.note || '', 50);
+    if (partner && partner !== s.nick) {
+      const who = `穿越者${partner}`;
+      const key = whoKey(who);
+      let prec = m.people.find(x => (x.key || whoKey(x.who)) === key);
+      if (!prec) { prec = { who, key, notes: [], first: n, last: n }; m.people.push(prec); added.people++; }
+      prec.last = n;
+      const pText = `${rel}${bNote ? '：' + bNote : ''}`;
+      if (!prec.notes.some(x => x.note === pText)) { prec.notes.push({ n, note: pText }); added.notes++; }
+
+      const tWhat = `与穿越者${partner}${rel}`;
+      let trec = m.traits.find(x => x.what.includes(`穿越者${partner}`));
+      if (!trec) { trec = { what: tWhat, notes: [], first: n, last: n, lost: null }; m.traits.push(trec); added.traits++; }
+      trec.what = tWhat; trec.last = n; trec.lost = null;
+      if (bNote && !trec.notes.some(x => x.note === bNote)) { trec.notes.push({ n, note: bNote }); added.traitNotes++; }
+    }
+  }
+
   /* 四、装不下就折：**只折细节，名字留着**。折掉的是最久没再提起的那几个，
    *    正在挂着的头绪一条都不折。 */
   if (m.people.length > MEMO_CAP.people) {
@@ -1201,14 +1223,14 @@ const PERSONA_LIMIT = 50;
 
 /* 四类顶回去的写法。分开列是为了回话不一样——玩家得知道该改哪儿。 */
 const PERSONA_NO = [
-  { re: /武功|武艺|内力|真气|轻功|点穴|气功|刀枪不入|飞檐走壁|力大无穷|天生神力|以一敌百|百步穿杨/,
-    say: '这里过的是寻常百姓的日子，不能写武功内力或天生神力' },
-  { re: /过目不忘|过耳不忘|一目十行|心算如神|预知|未卜先知|读心|摄魂|催眠|透视|算无遗策|从不出错|永远不会错|无所不知|精通一切|样样精通/,
-    say: '本事得在常人范围内——记性好、会算账可以，过目不忘或未卜先知不行' },
-  { re: /穿越|重生|系统|金手指|外挂|开挂|异能|超能力|特异功能|法术|魔法|灵力|修仙|长生|不老|不死|时间循环|存档|读档/,
-    say: '这里没有穿越、系统或超能力，也没有重来一次的机会' },
+  { re: /刀枪不入|飞檐走壁|力大无穷|天生神力|以一敌百|百步穿杨|会一身好武功|^会武功$/,
+    say: '刚穿过来时还是凡胎俗骨，高深武艺或神通得进城后再寻访拜师' },
+  { re: /过目不忘|过耳不忘|一目十行|心算如神|未卜先知|读心|摄魂|算无遗策|从不出错|永远不会错|无所不知|精通一切|样样精通/,
+    say: '刚穿过来时本事还在常人范围——记性好、懂算命玄学可以，过目不忘不行' },
+  { re: /系统|金手指|外挂|开挂|时间循环|存档|读档|不死之身|原地飞升/,
+    say: '身为穿越者落地时没有系统外挂，修仙、魔法或神魔奇遇要在城里自己去撞' },
   { re: /首富|大亨|巨富|富二代|官二代|家财万贯|腰缠万贯|富可敌国|继承[^。，]{0,6}(家产|遗产|万贯|家业)|背景深厚|后台很硬|上头有人|通天的关系/,
-    say: '开局的本钱和家境由那一年决定，不能在设定里给自己安家底或后台' },
+    say: '穿越落地的盘缠由那一年决定，不能在设定里自带万贯家产或后台' },
 ];
 
 /** 检一句主角设定。空着也行——不写就是个没什么特别的普通人。 */
@@ -1226,7 +1248,129 @@ function checkPersona(text) {
   return { ok: true, n, text: t.slice(0, 160) };
 }
 
+/* ── 超现实奇诡支线与穿越者跨局影响 ──────────────────────────
+ * 这个世界的表层是真实历史街景与柴米油盐，暗处却潜藏着八大奇诡暗流：
+ * 修仙、武侠、玄学算命、鬼怪、克苏鲁、魔法、神魔、神话。
+ * 穿越者主动寻访时必触发；日常奔波时也有概率撞见异人异事。 */
+const WEIRD_THEMES = [
+  {
+    id: 'xuanxue', name: '玄学算命',
+    re: /玄学|算命|卜卦|八字|看相|相面|摸骨|风水|寻龙|点穴|奇门|遁甲|紫微|梅花易数|扶乩|画符|符箓|改运|罗盘|阴阳先生|卦/,
+    hook: '街角盲眼相师、奇门卜卦与风水龙脉皆有真验。',
+    way: '去城庙旁找瞎眼相师算一卦，打听近期哪条财路或风水能改运',
+  },
+  {
+    id: 'wuxia', name: '武侠江湖',
+    re: /武侠|武功|练武|习武|内力|真气|轻功|剑客|刀客|江湖|门派|掌门|镖局|点穴|暗器|拳谱|秘笈|秘籍|比武|擂台|侠客|内家拳|武林/,
+    hook: '市井暗藏隐世拳师、内家真气、古拳谱与江湖门派恩怨。',
+    way: '去旧武馆或码头暗桩拜访隐退拳师，讨教内家吐纳与江湖门路',
+  },
+  {
+    id: 'xiuxian', name: '修仙求道',
+    re: /修仙|修真|灵气|吐纳|炼丹|丹药|筑基|金丹|元婴|渡劫|飞升|仙人|灵石|洞府|仙门|道长|老道|修道|灵草|法宝|御剑/,
+    hook: '红尘俗世下暗藏残存灵脉、云游练气士、灵石丹药与残缺吐纳法。',
+    way: '去古玩地摊或城外道观寻访云游道人，淘换带灵气的旧玉或吐纳残篇',
+  },
+  {
+    id: 'guiguai', name: '百鬼志异',
+    re: /鬼|妖|狐仙|黄大仙|柳仙|鬼市|夜哭|凶宅|阴宅|僵尸|纸人|借寿|通灵|招魂|驱邪|捉鬼|阴差|怨灵|聊斋|精怪|水鬼/,
+    hook: '子夜鬼市灯笼、老宅狐仙堂口、荒郊精怪讨封与阴阳奇货交易。',
+    way: '子夜提灯去城西荒巷的半步鬼市，看看能不能淘到阴阳两界的奇货',
+  },
+  {
+    id: 'cthulhu', name: '旧日克苏鲁',
+    re: /克苏鲁|古神|旧日|深潜者|触手|触须|不可名状|低语|密教|邪神|星辰|深海|石雕|黄衣|阿卡姆|教派|古怪信徒|祭祀|禁书/,
+    hook: '浓雾码头的蛙貌水手、让人梦魇的深海石雕与星辰密教低语。',
+    way: '去夜雾弥漫的码头货仓打听远洋船带回的深海黑石雕与异域密教手札',
+  },
+  {
+    id: 'magic', name: '魔法与炼金',
+    re: /魔法|巫师|魔女|魔药|炼金|法杖|魔导书|咒语|鲁恩|符文|使魔|占星|塔罗|黑魔法|秘术|奥术|魔法阵|以太/,
+    hook: '钟表行暗室的西洋炼金术、坩埚魔药、塔罗占星与符文秘器。',
+    way: '去钟表行后巷找那位西洋炼金术士，打听坩埚魔药与符文器物的买卖',
+  },
+  {
+    id: 'shenmo', name: '神魔契约',
+    re: /神魔|神仙|神明|恶魔|魔鬼|土地爷|城隍|黑白无常|龙王|山神|河神|香火|显灵|神像|天庭|地府|契约|神灵/,
+    hook: '破庙落魄神明讨香火、江河走蛟化龙、人间无常与恶魔契约。',
+    way: '去城郊荒废的古庙给泥塑神像上一炷香，看看是否有落魄神明显灵指路',
+  },
+  {
+    id: 'myth', name: '山海神话',
+    re: /神话|山海经|异兽|昆仑|蓬莱|鲛人|凤凰|麒麟|烛龙|九尾|上古|仙舟|神迹|图腾|不死药|瑞兽/,
+    hook: '《山海经》异兽遗蜕、南海鲛人泣珠、昆仑古玉与上古遗民踪迹。',
+    way: '去南北行商聚集的旧货栈，打听从昆仑或南海流出来的山海异兽奇珍',
+  },
+];
+
+const BOND_RE = /(成婚|结婚|拜堂|娶|嫁|夫妻|道侣|订婚|结拜|义结金兰|拜把子|结盟|合伙|师徒|拜师|收徒|宿敌|决战|比武)/;
+const MAJOR_DEED_RE = /(创立|开山|立宗|门派|帮会|垄断|首富|名震|轰动|显灵|渡劫|金丹|筑基|古神|祭坛|封印|鬼市之主|成婚|拜堂|道侣|结拜)/;
+
+/** 判定这个月是否撞上超现实奇妙剧情。
+ *  玩家主动写了相关词必中；没写也有约 42% 的概率在世道暗处撞见一桩奇事。 */
+function weirdRoll(s, list) {
+  const txt = String(list || '');
+  const traitsTxt = ((s && s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what + ' ' + (t.notes || []).map(x => x.note).join(' ')).join(' ');
+  const asked = WEIRD_THEMES.filter(w => w.re.test(txt));
+  if (asked.length) {
+    return { active: true, byPlayer: true, themes: asked.slice(0, 2) };
+  }
+  const hasWeirdTrait = WEIRD_THEMES.some(w => w.re.test(traitsTxt) || w.re.test((s && s.persona) || ''));
+  const seed = ((s && s.seed) || 1) * 65537 + ((s && s.n) || 1) * 314159;
+  const r1 = hash32(seed) / 2 ** 32;
+  const r2 = hash32(seed ^ 0x7f4a7c15) >>> 0;
+  const prob = hasWeirdTrait ? 0.65 : 0.42;
+  const pick = WEIRD_THEMES[r2 % WEIRD_THEMES.length];
+  return {
+    active: r1 < prob,
+    byPlayer: false,
+    themes: [pick],
+  };
+}
+
+/** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
+ *  严格克制：普通打工买卖月份返回 null，只有真正的大事或穿越者结缘才记入该年。 */
+function extractWorldTrace(s, played, delta, res1) {
+  const year = played ? played.year : s.year;
+  const month = played ? played.month : s.month;
+  const city = s.city || '';
+  const nick = oneLine(s.nick || '无名', 14);
+  const b = delta && delta.bond && typeof delta.bond === 'object' ? delta.bond : null;
+  const partner = b ? oneLine(b.with || b.partner || '', 14).replace(/^[「『"']|[」』"']$/g, '') : '';
+  const rel = b ? oneLine(b.rel || b.type || '结缘', 10) : '';
+  const bNote = b ? oneLine(b.note || '', 28) : '';
+
+  if (partner && partner !== nick) {
+    const summary = oneLine(`穿越者「${nick}」与穿越者「${partner}」在${city}${rel}${bNote ? '：' + bNote : ''}`, 42);
+    return {
+      year, month, city, nick,
+      kind: 'bond', partner, bondType: rel,
+      summary, importance: 3,
+    };
+  }
+
+  const rawEv = oneLine(delta && delta.worldEvent, 42);
+  const inc = incomeOf(year, month);
+  const bigMoney = res1 && Math.abs(res1.gained || 0) >= inc * 1.2;
+  const combined = `${played ? played.list : ''} ${delta ? delta.story : ''}`;
+  const isMajor = rawEv.length >= 6 || bigMoney || MAJOR_DEED_RE.test(combined);
+  if (!isMajor) return null;
+
+  const text = rawEv.length >= 6
+    ? (rawEv.includes(nick) ? rawEv : oneLine(`穿越者「${nick}」在${city}：${rawEv}`, 42))
+    : null;
+  if (!text) return null;
+  return {
+    year, month, city, nick,
+    kind: WEIRD_THEMES.some(w => w.re.test(text)) ? 'weird' : 'deed',
+    partner: null, bondType: null,
+    summary: text,
+    importance: bigMoney || BOND_RE.test(text) ? 3 : 2,
+  };
+}
+
 module.exports = {
+  WEIRD_THEMES, weirdRoll, extractWorldTrace,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,
   DAYS, MONTHS, MONTHS_EXTRA, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   lastMonthOf, extraRoom, reopen,

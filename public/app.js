@@ -116,6 +116,15 @@ async function openYear(y) {
   const intro = $('#year-intro'); intro.innerHTML = '';
   intro.appendChild(el('div', 'flavor', c.flavor));
   if (d.switch) intro.appendChild(el('div', 'warn', `这一年 ${d.switch.month} 月 ${d.switch.day} 日币制改革：${d.switch.say}`));
+  if (d.echoes && d.echoes.length) {
+    const ecBox = el('div', 'block');
+    ecBox.appendChild(el('h4', '', '同年时空的穿越者与留痕'));
+    const ul = el('ul');
+    for (const tr of d.echoes) ul.appendChild(el('li', '', tr.summary));
+    ecBox.appendChild(ul);
+    ecBox.appendChild(el('p', 'hint', '进城后可寻访这些穿越者，与他们合伙、结拜或成婚。你做出的大事也会记入这一年。'));
+    intro.appendChild(ecBox);
+  }
 
   const body = $('#year-body'); body.innerHTML = '';
   if (c.economy.number) body.appendChild(blockList('当年经济', [[c.economy.number, '']]));
@@ -139,7 +148,7 @@ async function openYear(y) {
     b.addEventListener('click', () => pickMonth(m, b));
     mo.appendChild(b);
   }
-  $('#start').textContent = `从 ${y} 年开始`;
+  $('#start').textContent = `穿去 ${y} 年`;
 }
 
 function blockList(title, rows) {
@@ -342,6 +351,10 @@ function renderPlay(last, opts = {}) {
   }
   if (last.moved && last.moved.to) {
     box.appendChild(el('div', 'note', `这个月你从${last.moved.from}搬到了${last.moved.to}。`));
+  }
+  if (last.worldTrace && last.worldTrace.summary) {
+    const label = last.worldTrace.kind === 'bond' ? '穿越者结缘' : '时空留痕';
+    box.appendChild(el('div', 'note', `【${label}】${last.worldTrace.summary}（已记入 ${last.worldTrace.year} 年时空）`));
   }
   if (last.refused && last.refused.length) {
     const w = el('div', 'refused');
@@ -670,6 +683,10 @@ function monthCards(box, months, opts = {}) {
     dbx.appendChild(el('p', '', d.story || ''));
     if (d.say && d.tally) dbx.appendChild(el('div', 'note', d.tally));
     if (d.moved && d.moved.to) dbx.appendChild(el('div', 'note', `这个月你从${d.moved.from}搬到了${d.moved.to}。`));
+    if (d.worldTrace && d.worldTrace.summary) {
+      const label = d.worldTrace.kind === 'bond' ? '穿越者结缘' : '时空留痕';
+      dbx.appendChild(el('div', 'note', `【${label}】${d.worldTrace.summary}`));
+    }
     if (d.refused && d.refused.length) {
       const w = el('div', 'refused');
       w.appendChild(el('b', '', '没办成的事'));
@@ -957,10 +974,10 @@ async function loadBoard() {
   }
   const t = el('table', 'board');
   t.innerHTML = boardScope === 'extra'
-    ? '<thead><tr><th></th><th>名字</th><th>开局年月</th><th class="c">城市</th><th class="c">总时长</th><th style="text-align:right">折合今天美元</th></tr></thead>'
+    ? '<thead><tr><th></th><th>穿越者</th><th>降临年月</th><th class="c">城市</th><th class="c">总时长</th><th style="text-align:right">折合今天美元</th></tr></thead>'
     : boardYear
-    ? '<thead><tr><th></th><th>名字</th><th>月</th><th class="c">城市</th><th style="text-align:right">净赚</th></tr></thead>'
-    : '<thead><tr><th></th><th>名字</th><th>开局年月</th><th class="c">城市</th><th style="text-align:right">折合今天美元</th></tr></thead>';
+    ? '<thead><tr><th></th><th>穿越者</th><th>月</th><th class="c">城市</th><th style="text-align:right">净赚</th></tr></thead>'
+    : '<thead><tr><th></th><th>穿越者</th><th>降临年月</th><th class="c">城市</th><th style="text-align:right">折合今天美元</th></tr></thead>';
   const tb = el('tbody');
   for (const r of d.rows) {
     const tr = el('tr');
@@ -1012,7 +1029,7 @@ async function loadMine() {
   const d = await api('/api/mine?token=' + encodeURIComponent(token));
   if (!d.rows.length) return empty();
   const t = el('table', 'board');
-  t.innerHTML = '<thead><tr><th>开局年月</th><th>名字</th><th>状态</th><th style="text-align:right">抵几年收入</th></tr></thead>';
+  t.innerHTML = '<thead><tr><th>降临年月</th><th>穿越者</th><th>状态</th><th style="text-align:right">抵几年收入</th></tr></thead>';
   const tb = el('tbody');
   for (const r of d.rows) {
     const tr = el('tr');

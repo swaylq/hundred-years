@@ -37,9 +37,29 @@ const MODEL = process.env.HY_MODEL || 'google/gemini-3.1-flash-lite';
 
 /* ── 提示词 ────────────────────────────────────────── */
 
-const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百年里的某一年某一个月，
-落在一座城里过两年——一个月一步，一共二十四个月。他每个月写一份自己要做的事的清单，
+const SYS = `你是《这一百年》的记事人。主角是一位穿越者，挑了中国近一百年里的某一年某一个月，
+穿进一座城里过两年——一个月一步，一共二十四个月。他每个月写一份自己要做的事的清单，
 你写出这一个月里真的发生了什么。
+
+【表里世界：人间烟火与奇诡超凡并存】
+这个世界的表层是那一年真实的街景、物价、币制与世道；但在常人看不见的暗处，**超现实与奇诡力量是真实存在的**：
+· **修仙与求道**：红尘隐世的练气士、残缺吐纳功法、灵石丹药、洞天遗迹、渡劫异象。
+· **武侠与江湖**：内家真气、飞檐走壁、古拳谱、隐世刀客剑客、门派恩怨与江湖暗花。
+· **玄学与算命**：瞎眼相师、奇门遁甲、批八字改运、寻龙点穴看风水、画符镇宅驱邪，算卦占卜皆有真验。
+· **百鬼与志异**：子夜半步鬼市、百年老宅狐仙、黄大仙讨封、纸人借寿、阴阳两界奇货交易。
+· **克苏鲁与旧日低语**：浓雾码头的蛙貌深潜者、令人梦魇的深海黑石雕、旧日支配者密教集会、不可名状的古神遗物。
+· **西洋魔法与炼金**：钟表铺或洋行暗室里的炼金术士、坩埚魔药、鲁恩符文器物、塔罗占星与黑猫使魔。
+· **神魔与山海神话**：破庙讨香火的落魄神明、江河走蛟化龙、人间行走的黑白无常、恶魔契约、《山海经》异兽与南海鲛人奇珍。
+
+他主动去寻访、修炼、算命、闯鬼市、查古神教派或拜师学艺时，**一律当真事往下写，让他真有所获**（记进 traits、assetsAdd 或 entries）；
+平常过日子时，若提示里给出了「本月触发的奇诡机缘」，也要把这桩奇事自然融进当月的街巷与买卖里。
+绝不许拿「迷信」「不科学」「世上没有鬼神」把他顶回去！
+
+【其他穿越者与跨局因果】
+同一年的时空里还有其他穿越者（别的穿越者留下的事迹与名字会列在提示里）。
+· 他如果写着去找某位穿越者结交、合伙做买卖、切磋比斗、拜师，乃至**提亲、成婚、结为夫妻或道侣、义结金兰**，就照他写的办成，写出两人的互动，并在 JSON 的 bond 字段里记下这段关系。
+· 就算他没主动提，同年其他穿越者做出的大事若正好撞上他的行当或地界，也可以在正文里顺带写一两句余波（点到为止，别抢他自己的戏）。
+· 只有当他这个月自己做出了足以震动全城、开创宗门商号、引动奇诡异象、或与其他穿越者成婚/结拜/决战的大事时，才在 worldEvent 里用 35 字以内记下一句，留给后来穿进这一年的人看；普通月份不要写 worldEvent。
 
 【你的位置】
 你不是在编故事，你是在按那一年真实的条件算账。
@@ -237,31 +257,33 @@ const SYS = `你是《这一百年》的记事人。玩家挑了中国近一百�
 {
   "story": "这一个月发生了什么，300 到 600 字",
   "entries": [{"what":"这笔钱是什么","amount":进账写正数、出账写负数}],
-  "assetsAdd": [{"name":"东西的名字","kind":"实物/票证/权益/债权","worth":折成当年的钱值多少,"note":"一句话"}],
+  "assetsAdd": [{"name":"东西的名字（含法器/丹药/秘籍/奇物/房产等）","kind":"实物/票证/权益/债权","worth":折成当年的钱值多少,"note":"一句话"}],
   "assetsDrop": ["卖掉或者丢掉的东西的名字，要跟家底里写的一模一样"],
   "debtsAdd": [{"who":"欠谁的","amount":欠多少,"note":"一句话"}],
   "debtsClear": ["还清了谁的债"],
-  "refused": [{"what":"那一年根本没有的那样东西","why":"哪一年才有、或者哪一年起就没了，一句话"}],
+  "refused": [{"what":"那一年根本没有的现代科技物件","why":"哪一年才有、或者哪一年起就没了，一句话"}],
   "moveTo": "他这个月搬到了哪座城／哪个地方，没搬就不要这个字段",
-  "options": [{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}],
+  "worldEvent": "只有当这个月做出了震动全城的大事、引发奇诡异象、或与其他穿越者成婚/结拜/决战时才写一句（35字内），普通月份填 null",
+  "bond": {"with":"互动的另一位穿越者名字（没有就填 null）","rel":"成婚/道侣/结拜/合伙/师徒/宿敌","note":"一句话经过，25字内"},
+  "options": [{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者有什么奇遇与风险，一句话"}],
   "memo": {
     "line": "把这个月压成一句话，四十字以内",
-    "people": [{"who":"谁，带上身份","note":"你跟他之间发生了什么"}],
+    "people": [{"who":"谁，带上身份（含认识的奇人异士或其他穿越者）","note":"你跟他之间发生了什么"}],
     "threads": [{"what":"这个月起了头、还没了结的一件事","note":"跟谁、说好什么时候、要带什么"}],
     "done": ["「还没了结的事」里这个月了结了的，把上面那句原话抄回来"],
-    "traits": [{"what":"他身上多出来的一样东西","note":"到什么程度了、能拿它干什么"}],
+    "traits": [{"what":"他身上多出来的一样东西（手艺/神通/法术/内力/产业/名号/姻缘）","note":"到什么程度了、能拿它干什么"}],
     "traitsLost": ["废了、没了的那一条，照上面的原话抄回来"]
   }
 }
-refused 多数时候是空数组——只有「那一年没有这东西」才写进去，犯法和危险都不写；
+refused 多数时候是空数组——只有「那一年还没有的现代科技产物」才写进去，犯法、危险、修仙、魔法、玄学、鬼怪、克苏鲁、神魔一律不写进 refused；
 options 每个月都要给满三条。
 
 【给他三条下个月能走的路 —— 写进 options】
-· 一条是稳的：这个月这条路接着做，或者这个月碰上的那个人让他下月再去。
-· 一条是搏一把的：本钱要多押些、担点风险，成了能顶好几个月。
-· 一条是新路子：这一年这座城里另有的一条道，跟他这个月做的不一样。
+· 一条是稳的或生计买卖：这个月这条路接着做，或者城里稳当挣钱的门路。
+· 一条是奇诡机缘（修仙、武侠、玄学算命、鬼市志异、克苏鲁古神、西洋炼金魔法、神魔契约或山海异兽）：让他能顺着摸进这个世界的超凡暗面。
+· 一条是搏一把的大路子，或去结交、合伙、寻访同年在城里的其他穿越者。
 每条都要有具体的人、地方、价钱：「去码头找活」不算，
-「去十六铺找工头老周，扛包按件算，一件八分」才算。
+「去十六铺找工头老周，扛包按件算，一件八分」或「子夜提灯去城西半步鬼市找瞎眼相师算一卦」才算。
 这个月正文里出现过的人和事，优先写进去。
 
 【进项的形状】
@@ -567,11 +589,33 @@ function buildUser(s, list, extra = {}) {
       `写进 memo.people 或者 memo.threads，别写成一锤子买卖。`
     : '';
 
+  /* 超现实奇诡剧情：玩家主动提及必出；没提也有约四成多概率在当月撞见异人异事 */
+  const weird = E.weirdRoll(s, list);
+  const weirdSay = weird.active
+    ? `\n【本月触发的奇诡超凡剧情（${weird.themes.map(t => t.name).join(' · ')}）—— 必须写进正文】\n` +
+      weird.themes.map(t => `· ${t.name}：${t.hook}`).join('\n') + '\n' +
+      (weird.byPlayer
+        ? `他这个月主动去寻访或施展了这一脉的超凡事物，必须让他真遇上、真做成，并在 traits（本事/神通/法门）、assetsAdd（法器/秘籍/丹药/奇物）或 entries 里体现收获与代价。\n`
+        : `在日常奔波中，让他自然撞见这一桩超现实异事（可与他当月做的买卖或去的地方交织在一起），给他留下一条超凡门路、一件奇物或一位异人线索。\n`)
+    : '';
+
+  /* 同年时空里的其他穿越者与重要留痕（严格控制字数，不撑爆上下文） */
+  const ec = extra.echoes || { traces: [], myBonds: [] };
+  const echoLines = [
+    ...(ec.myBonds || []).map(b => `· 【与你结下的因果】${b}`),
+    ...(ec.traces || []).slice(0, 4).map(t => `· ${t.summary}`),
+  ];
+  const echoSay = echoLines.length
+    ? `\n【同年时空里的其他穿越者与大事（限最要紧的几条）】\n${echoLines.join('\n')}\n` +
+      `若他在清单里提到了上面的某位穿越者（如找对方合伙、讨教、比斗，或提亲、成婚、结为夫妻/道侣、结拜），` +
+      `必须在正文里写出两人的真实互动，并在 JSON 的 bond 字段里记下关系；若他没提，只需在合适时顺带一笔城中传闻即可。\n`
+    : '';
+
   return `${compactCard(c, sy, s.month, s.city)}
 
-【这个月】${s.year} 年 ${s.month} 月，是他落地之后的第 ${s.n} 个月，一共 ${E.lastMonthOf(s)} 个月。${
+【这个月】${s.year} 年 ${s.month} 月，是他作为穿越者降临后的第 ${s.n} 个月，一共 ${E.lastMonthOf(s)} 个月。${
   s.phase === 'extra' ? `头二十四个月的账已经结过了，他没走，接着在这儿过下去——现在过的是往后这几年。` : ''}
-${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).join('；')}` : ''}${crossed}${swThis}${swPast}
+${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).join('；')}` : ''}${crossed}${swThis}${swPast}${echoSay}
 
 【他现在的家底】
 手里的钱：${both(s.cash, cur)}（这一年一个普通人一年挣 ${both(income, cur)}）
@@ -588,10 +632,10 @@ ${refusedBefore.length ? `前两个月已经顶回去过这几件：${refusedBef
 
 【这个月该走到哪儿】
 做顺了的一个月，连做工带买卖，净进大概 ${both(good, cur)}；谈成一笔像样的买卖，这个月能到 ${both(big, cur)}。
-老老实实做一个月工、扛一个月包，只有 ${both(wage, cur)} 上下——多出来的必须是买卖挣的，写清楚货、买家和价钱。
+老老实实做一个月工、扛一个月包，只有 ${both(wage, cur)} 上下——多出来的必须是买卖或奇诡门路挣的，写清楚来路和价钱。
 ${both(topThis, cur)} 是白手起家的人在${s.year}年做到头的一个月，多数月份到不了这里。
 **这不是上限**：他真做成了那种事，写多少就是多少，游戏一分都不削。
-只有一条——超出这把尺子的每一分都要在正文里有出处：什么货、谁买的、什么价钱、担了什么险、
+只有一条——超出这把尺子的每一分都要在正文里有出处：什么货或什么奇遇、谁出的钱、什么价钱、担了什么险、
 钱哪天到手。写不出这些就别给。
 他落地时的家底相当于一个普通人 ${yearsStart.toFixed(2)} 年的收入，现在是 ${yearsNow.toFixed(2)} 年，
 走到第 ${s.n} 个月该在 ${yearsWant.toFixed(2)} 年上下。
@@ -600,7 +644,7 @@ ${behind ? '他落下了：这个月让他抓住点实在的东西，把欠的�
   : '他走在道上：接着按他写的算，别忽然塞给他一座金山。'}
 
 【他这个月写的清单】
-${String(list).trim()}${ownSay}${betSay}${luckSay}
+${String(list).trim()}${ownSay}${betSay}${luckSay}${weirdSay}
 ${rulings}${extra.retry ? `\n\n【上一版写得不合格，改掉这几条再给我一遍完整的 JSON】\n${extra.retry.map(x => '- ' + x).join('\n')}` : ''}`;
 }
 
@@ -656,7 +700,7 @@ async function runMonth(s, list, opts = {}) {
   const budget = opts.budget || 90000;
   const t0 = Date.now();
   const left = () => budget - (Date.now() - t0);
-  const user = buildUser(s, list);
+  const user = buildUser(s, list, { echoes: opts.echoes });
   const model = opts.model || MODEL;
 
   if (opts.onStory) {
@@ -684,7 +728,7 @@ async function runMonth(s, list, opts = {}) {
 /* ── 没有密钥时的兜底：本地算一个月，能玩完，但正文是模板 ── */
 function rng(seed) { let x = seed >>> 0; return () => (x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32; }
 
-function runMonthLocal(s, list) {
+function runMonthLocal(s, list, opts = {}) {
   const c = card(s.year);
   const r = rng((s.seed || 1) * 7919 + s.n * 104729);
   const hits = E.scanAnachronism(list, s.year);
@@ -701,6 +745,7 @@ function runMonthLocal(s, list) {
   const luck = 0.5 + r() * 0.9;
   /* 自己写的路子给得多一点，撞上奇遇再加一笔——跟提示词那边是同一套规矩 */
   const sd = E.serendipity(s, list);
+  const weird = E.weirdRoll(s, list);
   /* 撞上这一年没有的东西：只废掉那一件，剩下的日子照旧干活，拿平常的一半。 */
   const gain = inc / 6 * effort * luck * (hits.some(h => h.kind !== 'banned') ? 0.5 : 1) * 0.5
     * (1 + 0.5 * sd.fresh);
@@ -730,6 +775,9 @@ function runMonthLocal(s, list) {
         ? `你押进去的那笔钱翻了${bet.mult >= 1 ? '一番还多' : '一小截'}，出手的时候手是抖的。`
         : `你押进去的那笔钱亏掉了${Math.round(Math.abs(bet.mult) * 100)}%，剩下的那点拿回来的时候，你在门口站了很久。`)
     : '';
+  const storyWeird = weird.active && weird.themes[0]
+    ? `月末夜里你在巷口撞见一桩奇事：${weird.themes[0].hook}`
+    : '';
   const storyLuck = bonus
     ? `${story}月中你在${way.who}那边碰上一个人，手里正压着一批货急着脱手，价钱压得很低。` +
       `你把手头的钱都押了进去，转手出了大半，剩下的还压在屋里。`
@@ -737,7 +785,7 @@ function runMonthLocal(s, list) {
 
   return {
     delta: {
-      story: storyLuck + storyBet,
+      story: storyLuck + storyBet + storyWeird,
       entries: [
         { what: hits.length ? '白忙半个月的开销' : (way.way || '打零工'), amount: Math.round(gain * 100) / 100 },
         ...(bonus ? [{ what: '碰上的那一笔', amount: Math.round(bonus * 100) / 100 }] : []),
@@ -748,7 +796,7 @@ function runMonthLocal(s, list) {
       /* 兜底的月份也要往 trail 里放一句，缺一格就是「这个月不见了」 */
       memo: { line: `${gone.length ? '想做的事那时候还没有，白忙半个月；' : ''}${way.way || '打零工'}，净${gain >= 0 ? '进' : '出'} ${E.money(Math.abs(gain), E.currencyOf(s.year, s.month))}` },
       refused: gone.slice(0, 1).map(h => ({ what: h.word, why: E.sayAnachronism(h) })),
-      options: optionsLocal(s),
+      options: optionsLocal(s, 0, opts.echoes),
     },
     local: true, problems: [],
   };
@@ -760,8 +808,8 @@ function runMonthLocal(s, list) {
  * 断网、没密钥、模型没给，都退回 optionsLocal——照年卡里的路子拼，
  * 一分钱不花，也永远有三条。 */
 
-/** 照年卡里的挣钱路子拼三条：稳的、来钱最快的、另一条 */
-function optionsLocal(s, salt) {
+/** 照年卡里的挣钱路子 + 奇诡支线拼三条：稳的、来钱最快的、一条奇诡超凡或同行穿越者支线 */
+function optionsLocal(s, salt, echoes) {
   const c = card(s.year);
   const r = rng((s.seed || 1) * 31 + s.n * 7919 + (salt || 0));
   const ways = (c.money || []).slice();
@@ -769,51 +817,51 @@ function optionsLocal(s, salt) {
   const byMoney = ways.slice().sort((a, b) => (b.ceilingYears || 0) - (a.ceilingYears || 0));
   const rich = byMoney[0];
   const steady = byMoney[byMoney.length - 1];
-  const rest = ways.filter(w => w !== rich && w !== steady);
-  const other = rest.length ? rest[Math.floor(r() * rest.length)] : ways[Math.floor(r() * ways.length)];
-  /* 年卡里的句子有的自带句号，接上「。谁在做」会变成两个点 */
-  /* 年卡里的句子有的自带句号，也常带一句「（估算，非直接调查数）」这样的注脚——
-   * 那是写年卡时给自己看的，摆到屏幕上只会占地方。 */
+  const wPick = E.WEIRD_THEMES[Math.floor(r() * E.WEIRD_THEMES.length)];
+  const fellow = echoes && echoes.traces && echoes.traces[0] && echoes.traces[0].nick
+    ? echoes.traces[0]
+    : null;
+  const third = (fellow && r() < 0.45)
+    ? { what: `去寻访同在${s.city}的穿越者「${fellow.nick}」，看看能否合伙或结缘`, why: `同年穿越者 · ${fellow.summary.slice(0, 28)}` }
+    : { what: wPick.way, why: `${wPick.name} · ${wPick.hook.slice(0, 28)}` };
   const tail = x => String(x || '').replace(/[（(][^）)]*[）)]/g, '').replace(/[。；，、\s]+$/, '');
-  /* 纸条上不写「做到头约多少」——那是给模型的尺子，不是给玩家看的许诺（sway 2026-09-04） */
   const one = (w, label) => w && { what: tail(w.way).slice(0, 40), why: label.slice(0, 46) };
   return [
-    one(steady, '稳当'),
+    one(steady, '稳当营生'),
     one(rich, '来钱最快，也最容易出事'),
-    one(other, '换个方向试试'),
+    third,
   ].filter(Boolean);
 }
 
-const OPT_SYS = `你是《这一百年》的记事人。玩家落在中国近一百年里的某一年某一个月，
-在一座城里过两年，一个月一步，每个月写一份要做的事。现在给他三条下个月能走的路。
+const OPT_SYS = `你是《这一百年》的记事人。一位穿越者落在中国近一百年里的某一年某一个月，
+在一座城里过两年，一个月一步。现在给他三条下个月能走的路。
 
-三条各有各的用处：一条是稳的（这个月这条路接着做，或者这个月碰上的那个人下月再去找），
-一条是搏一把的（本钱押得多、担点风险，成了能顶好几个月），
-一条是新路子（这一年这座城里另有的一条道）。
+三条各有各的用处：
+1. 一条是稳当的世俗营生（接着做手头的活计，或城里稳妥的买卖）。
+2. 一条是奇诡超凡机缘（从修仙求道、武侠江湖、玄学算命、百鬼夜行、克苏鲁古神、西洋炼金魔法、神魔契约、山海神话里挑一种跟当年这座城贴合的奇遇）。
+3. 一条是搏一把的险路，或者去结交、合谋、比试、提亲迎娶同年在城里的其他穿越者。
 
-每条都要有具体的人、地方、价钱：「去码头找活」不算，
-「一早去十六铺找工头老周，扛包按件算，一件八分」才算。
-只写那一年真有的事，不写那时候还没有的东西。不出现游戏用语。
-
-**别三条都是老实活。** 那一年犯法的、担风险的、要出远门的路子照给——
-倒票、走私、放印子钱、跟船去外头，写清楚来钱多少、被谁盯着、抓着要出什么事，
-但不许写成劝告，也不许因为它犯法就不写。
+每条都要有具体的人、地方、价钱或奇物：「去码头找活」不算，
+「一早去十六铺找工头老周，扛包按件算，一件八分」或「子夜提灯去城西半步鬼市找瞎眼相师算一卦」才算。
+只写那一年没有跨时代科技硬伤的事，不出现游戏用语。
 
 只输出一个 JSON 对象：
-{"options":[{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]}`;
+{"options":[{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者有什么奇遇与风险，一句话"}]}`;
 
 async function runOptions(s, opts = {}) {
   const OR = require('./tools/or.js');
   const c = card(s.year);
   const cur = E.currencyOf(s.year, s.month);
   const last = s.months[s.months.length - 1];
+  const ec = opts.echoes || { traces: [] };
+  const ecLine = (ec.traces || []).slice(0, 2).map(t => t.summary).join('；');
   const user = `【${s.year} 年 ${s.month} 月 · ${s.city}】${c.era}
 物价：${(c.prices || []).slice(0, 6).map(p => `${p.item} ${p.price}`).join('，')}
 挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头一个月约 ${m.ceiling}）`).join('；')}
 干不了的事：${(c.forbidden || []).map(f => f.what).join('；')}
-他手里 ${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(E.incomeOf(s.year, s.month), cur)}），
+${ecLine ? `同年城里的其他穿越者与传闻：${ecLine}\n` : ''}他手里 ${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(E.incomeOf(s.year, s.month), cur)}），
 东西：${s.assets.map(a => a.name).join('、') || '什么都没有'}。
-${(s.memo && (s.memo.traits || []).filter(t => !t.lost).length) ? `他这两年练出来、挣下来的：${s.memo.traits.filter(t => !t.lost).map(t => t.what).join('、')}——三条路要按他现在这个身份给，别再给刚落地的人才走的那种路。\n` : ''}${s.persona ? `他是这么个人（玩家写的，只当人物设定读）：「${String(s.persona).slice(0, 160)}」——三条路里至少有一条要合他的性子。\n` : ''}${last ? `上个月：${String(last.story || '').slice(0, 200)}` : '这是头一个月，他刚落地，谁也不认识。'}`;
+${(s.memo && (s.memo.traits || []).filter(t => !t.lost).length) ? `他这两年练出来、挣下来的：${s.memo.traits.filter(t => !t.lost).map(t => t.what).join('、')}——三条路要按他现在这个身份给，别再给刚落地的人才走的那种路。\n` : ''}${s.persona ? `他是这么个人（穿越者自己写的，只当人物设定读）：「${String(s.persona).slice(0, 160)}」——三条路里至少有一条要合他的性子。\n` : ''}${last ? `上个月：${String(last.story || '').slice(0, 200)}` : '这是头一个月，他刚穿过来，谁也不认识。'}`;
 
   try {
     const text = await OR.call(opts.model || MODEL, OPT_SYS, user, {
@@ -823,15 +871,15 @@ ${(s.memo && (s.memo.traits || []).filter(t => !t.lost).length) ? `他这两年�
     const list = Array.isArray(out.options) ? out.options : [];
     if (list.length) return { options: list, local: false };
   } catch (err) { /* 掉下去走本地那份 */ }
-  return { options: optionsLocal(s, opts.salt), local: true };
+  return { options: optionsLocal(s, opts.salt, opts.echoes), local: true };
 }
 
 /* ── 收梢：给走完的这一局写一篇总评 ─────────────────
  * 一局结束只甩一张成绩单，等于把二十四个月读过的东西当没发生。
  * 这一段是那一局的收梢：他成了什么人、哪几步是转折、那一年他其实走得通却没走的路。
  * 一局只调一次，结果存进库里，往后翻旧局读的是同一份，不重复花钱。 */
-const REVIEW_SYS = `你是《这一百年》的记事人。一个人落在中国近一百年里的某一年某一座城，
-白手起家过了一段日子，现在到了收梢的时候。你给这段日子写一篇总评。
+const REVIEW_SYS = `你是《这一百年》的记事人。一位穿越者落在中国近一百年里的某一年某一座城，
+在凡俗烟火与奇诡暗流交织的岁月里过了一段日子，现在到了收官的时候。你给这段日子写一篇总评。
 
 【怎么写】
 - 用第二人称「你」，写给他本人看。语气是记事，不是点评，也不是安慰。

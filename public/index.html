@@ -28,12 +28,12 @@
       <span class="hero-seal" aria-hidden="true">这一百年</span>
     </div>
     <div class="pick-body">
-      <p class="lede-big">挑一个年份，去那时候的中国过两年。</p>
-      <p class="lede">每个月写下你的打算，一步一月走满两年。最后算算攒下的家底，抵得上当时普通人几年的收入。</p>
+      <p class="lede-big">挑一个年份穿过去，在那时候的人间与奇诡江湖里过两年。</p>
+      <p class="lede">你是落进旧时光的穿越者。表面是柴米油盐，暗处藏着修仙、武侠、玄学、百鬼与古神秘闻。你做出的大事会留在这个年代，还能与同年穿越者结交或成婚。</p>
       <div id="grid" class="century"><p class="wait">正在加载年份…</p></div>
-      <p id="grid-cap" class="cap-line">点选年份，看看那一年落脚的城市和世道。</p>
+      <p id="grid-cap" class="cap-line">点选年份，看看那一年落脚的城市、世道与同年穿越者。</p>
       <p class="legend">
-        <span><i class="lg-heat"></i>颜色越深，挣钱的机会越多。</span>
+        <span><i class="lg-heat"></i>颜色越深，世俗与奇诡的机缘越多。</span>
         <span><i class="lg-dot"></i>带蓝点的年份赶上币制改革。</span>
       </p>
     </div>
@@ -48,18 +48,18 @@
        这一年的资料（在发生什么、物价、路子、祸事）挪到动身之后，
        想细看的往下翻——sway 2026-09-04：动身操作放在「这一年在发生什么」前面。 -->
   <div id="year-intro"></div>
-  <h3 class="mh">从哪个月开始</h3>
+  <h3 class="mh">从哪个月降临</h3>
   <p class="hint">选定后从当月起往后过 24 个月。红点代表当月有大事。</p>
   <div id="months" class="months"></div>
-  <div id="mo-detail" class="mo-detail" aria-live="polite">点选上面的月份，查看当月开局的本钱和大事。</div>
+  <div id="mo-detail" class="mo-detail" aria-live="polite">点选上面的月份，查看当月开局的盘缠和大事。</div>
   <div id="start-box" class="start-box" hidden>
-    <label>名字 <input id="nick" maxlength="16" placeholder="上榜用的名字（不填叫无名）"></label>
-    <label class="who">人物设定 <span class="optional">选填</span>
-      <input id="persona" maxlength="80" placeholder="例如：做过木匠，嘴笨但手艺扎实。" aria-describedby="persona-help persona-count">
+    <label>穿越者名字 <input id="nick" maxlength="16" placeholder="留在榜上和当年时空里的名字"></label>
+    <label class="who">人物底子 <span class="optional">选填</span>
+      <input id="persona" maxlength="80" placeholder="例如：懂点风水算命，做过木匠，胆子大。" aria-describedby="persona-help persona-count">
       <span id="persona-count" class="count">0 / 50 字</span>
     </label>
-    <p id="persona-help" class="who-say">写写你的手艺、性子或来历（50 字内）。这会改变做事的方式，不会凭空多给本钱或超能力。</p>
-    <button id="start" class="primary">开始这两年</button>
+    <p id="persona-help" class="who-say">写写你的手艺、性子或玄门底子（50 字内）。刚穿过来时没有外挂和万贯家财，修仙、武侠、魔法或神魔奇遇全凭进城后寻访。</p>
+    <button id="start" class="primary">穿去这一年</button>
   </div>
   <details class="fold year-background"><summary>看看这一年的世道与物价</summary><div id="year-body"></div></details>
 </section>
@@ -76,15 +76,15 @@
           <div class="picks-head"><span id="picks-say">点一条直接填进下面，还可以随便改：</span><button id="picks-more" type="button" class="more">换三条</button></div>
           <div id="picks-list"></div>
         </div>
-        <textarea id="list" rows="4" aria-describedby="count plan-help" placeholder="写下这个月的打算，比如去码头找活、买点粮食囤着，或者干脆换座城市。"></textarea>
-        <p id="plan-help" class="hint">自己动笔写打算，更容易撞上意想不到的门路和际遇。</p>
+        <textarea id="list" rows="4" aria-describedby="count plan-help" placeholder="写下这个月的打算，比如跑买卖、算卦看相、寻仙习武或夜探鬼市。也可以去找同城穿越者合伙，或者提亲成婚。"></textarea>
+        <p id="plan-help" class="hint">自己动笔写打算，更容易撞上修仙、武侠、魔法、鬼怪或古神奇遇。你做出的大事也会留在当年时空里。</p>
         <div class="write-foot">
           <span id="count" class="count">0 / 500 字</span>
           <button id="send" class="primary">过这个月</button>
         </div>
       </div>
       <details id="ref" class="fold"><summary>当年物价与门路</summary><div id="ref-body"></div></details>
-      <details id="memo" class="fold"><summary id="memo-sum">攒下的人脉与家业</summary><div id="memo-body"></div></details>
+      <details id="memo" class="fold"><summary id="memo-sum">人脉、神通与家业</summary><div id="memo-body"></div></details>
       <details id="ledger" class="fold"><summary>近期账本</summary><div id="ledger-body"></div></details>
     </div>
   </div>

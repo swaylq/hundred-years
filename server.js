@@ -151,6 +151,8 @@ function monthList(s) {
       list: d.list, story: d.story, tally: d.tally,
       say: t ? t.say : '', worth: t ? t.worth : '',
       refused: d.refused || [], overTop: !!d.overTop,
+      moved: d.moved || null,
+      worldTrace: d.worldTrace || null,
     };
   });
 }
@@ -224,7 +226,8 @@ const routes = {
         events: (card.events || []).filter(e => e.month === m).map(e => e.text),
       });
     }
-    json(res, 200, { card, months, ceiling: row.ceiling, city: row.city, switch: row.switch });
+    const echoes = DB.yearEchoes(y, 12, { city: row.city }).traces;
+    json(res, 200, { card, months, ceiling: row.ceiling, city: row.city, switch: row.switch, echoes });
   },
 
   'POST /api/run': async (req, res) => {
@@ -239,9 +242,10 @@ const routes = {
     const per = E.checkPersona(b.persona);
     if (!per.ok) return json(res, 400, { error: per.say, count: per.n, limit: E.PERSONA_LIMIT });
     const s = E.newRun({ year, month, nick, persona: per.text });
-    s.options = SIM.optionsLocal(s);
+    const echoes = DB.yearEchoes(year, month, { nick, city: s.city });
+    s.options = SIM.optionsLocal(s, 0, echoes);
     const { id, token } = DB.createRun(s, nick);
-    json(res, 200, { id, token, state: view(s), flavor: SIM.card(year).flavor });
+    json(res, 200, { id, token, state: view(s), flavor: SIM.card(year).flavor, echoes: echoes.traces });
   },
 
   'POST /api/month': async (req, res) => {
@@ -280,10 +284,11 @@ const routes = {
     let out;
     /* 点一次换一份：没密钥的时候也得换得动，所以给本地那份加一个随机的引子 */
     const salt = Math.floor(Math.random() * 1e6);
-    if (HAS_KEY && rateOk(clientIp(req)).ok) out = await SIM.runOptions(s, { salt });
-    else out = { options: SIM.optionsLocal(s, salt), local: true };
+    const echoes = DB.yearEchoes(s.year, s.month, { excludeRunId: id, nick: s.nick, city: s.city });
+    if (HAS_KEY && rateOk(clientIp(req)).ok) out = await SIM.runOptions(s, { salt, echoes });
+    else out = { options: SIM.optionsLocal(s, salt, echoes), local: true };
     s.options = E.cleanOptions(out.options);
-    if (!s.options.length) s.options = SIM.optionsLocal(s);
+    if (!s.options.length) s.options = SIM.optionsLocal(s, 0, echoes);
     DB.saveRun(id, s);
     json(res, 200, { options: s.options, local: !!out.local });
   },
@@ -322,6 +327,16 @@ const routes = {
     r.endWorthText = E.money(r.endWorth, r.currency);
     r.currencyName = E.CN[r.currency];
     s.status = 'done';
+    const traits = ((s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what).slice(0, 2);
+    if (traits.length || r.score >= 3) {
+      const summary = traits.length
+        ? `穿越者「${s.nick}」曾在${s.city}闯荡，留下「${traits.join('、')}」的传说`
+        : `穿越者「${s.nick}」曾在${s.city}攒下普通人 ${Math.round(r.score)} 年的家业`;
+      DB.addTrace(b.id, {
+        year: s.startYear || s.year, month: s.startMonth || s.month, city: s.city, nick: s.nick,
+        kind: 'deed', summary: summary.slice(0, 42), importance: r.score >= 8 ? 3 : 2,
+      });
+    }
     if (extra) {
       DB.finishExtra(b.id, s, r);
       return json(res, 200, {
@@ -551,30 +566,31 @@ async function runOneMonthInner(req, res, b, s) {
     const ip = clientIp(req);
     /* 没密钥的时候正文是本地模板，一瞬间就出来，没什么可流的 */
     const sse = (b.stream && HAS_KEY) ? openStream(res) : null;
+    const echoes = DB.yearEchoes(s.year, s.month, { excludeRunId: b.id, nick: s.nick, city: s.city });
 
     let out, usedLocal = false;
     if (HAS_KEY) {
       const r = rateOk(ip);
       if (!r.ok) {
         /* 撞了限流不让游戏坏掉——退回本地演算，并如实告诉玩家为什么 */
-        out = SIM.runMonthLocal(s, b.list); usedLocal = true;
+        out = SIM.runMonthLocal(s, b.list, { echoes }); usedLocal = true;
         out.why = r.why === 'ip' ? '你这十分钟问得太密了，这个月先由本地算' : '这会儿全站都很忙，这个月先由本地算';
       } else {
         try {
-          out = await SIM.runMonth(s, b.list, sse ? { onStory: t => sse.send('story', { t }) } : {});
+          out = await SIM.runMonth(s, b.list, sse ? { onStory: t => sse.send('story', { t }), echoes } : { echoes });
         } catch (err) {
           /* 原话只进服务端日志。它是服务商回的英文 JSON，直接印到页面上，
              玩家读到的是「HTTP 402 {"error":{"message":"This request would exceed
              your available credits…」——既看不懂，又把内部情况摊开了。 */
           console.error('这个月退回本地演算：', String(err.message).slice(0, 300));
-          out = SIM.runMonthLocal(s, b.list); usedLocal = true;
+          out = SIM.runMonthLocal(s, b.list, { echoes }); usedLocal = true;
           out.why = '模型这会儿叫不动，这个月先由本地算';
           /* 流到一半断了：让前端把已经吐出去的半截正文擦掉，换成兜底的那份，
              不然屏幕上会剩着一段没头没尾的话。 */
           if (sse) sse.send('redo', {});
         }
       }
-    } else { out = SIM.runMonthLocal(s, b.list); usedLocal = true; }
+    } else { out = SIM.runMonthLocal(s, b.list, { echoes }); usedLocal = true; }
 
     const curNow = E.currencyOf(s.year, s.month);
     /* 顶回去的理由只能是「那一年没有这东西」。模型偶尔会替玩家把事否掉
@@ -592,6 +608,9 @@ async function runOneMonthInner(req, res, b, s) {
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
     const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month, tally });
+    const traceCand = E.extractWorldTrace(s, { year: s.year, month: s.month, list: b.list }, out.delta, res1);
+    const traceSaved = traceCand && DB.addTrace(b.id, traceCand) ? traceCand : null;
+
     s.months.push({
       n: s.n, year: s.year, month: s.month, list: String(b.list).slice(0, 2000),
       story: out.delta.story, tally, entries: res1.entries,
@@ -600,6 +619,7 @@ async function runOneMonthInner(req, res, b, s) {
        * 2026-09-03 不削了，留着它只为在界面上给这个月一句话。 */
       overTop: res1.gained > E.monthTop(s.year, s.month),
       moved: moved || null,
+      worldTrace: traceSaved || null,
       luck: sd.luck, fresh: Math.round(sd.fresh * 100) / 100,
       /* 押了本钱的月份：赢没赢、几倍、押的是哪一段行情——回头查「投机是不是又一直亏」用 */
       bet: bt.bet ? { win: bt.win, mult: bt.mult, market: bt.market ? bt.market.what : null, align: bt.align } : null,
@@ -613,8 +633,9 @@ async function runOneMonthInner(req, res, b, s) {
     /* 三条路跟正文是同一次调用回来的：不多花一次钱，也不让他多等。
      * 模型没给或者给了空的，就退回照年卡拼的那份——界面上永远有三条。
      * 放在推进之后：这三条说的是下个月，本地那份也该照下个月的年份拼。 */
+    const nextEchoes = DB.yearEchoes(s.year, s.month, { excludeRunId: b.id, nick: s.nick, city: s.city });
     s.options = E.cleanOptions(out.delta.options);
-    if (!s.options.length) s.options = SIM.optionsLocal(s);
+    if (!s.options.length) s.options = SIM.optionsLocal(s, 0, nextEchoes);
     DB.saveRun(b.id, s);
 
     const played = s.months[s.months.length - 1];
@@ -632,6 +653,7 @@ async function runOneMonthInner(req, res, b, s) {
       })(),
       refused: out.delta.refused || [],
       moved: moved || null,
+      worldTrace: traceSaved || null,
       overTop: played.overTop,
       overspent: res1.overspent > 0 ? E.money(res1.overspent, curNow) : null,
       /* 换之前那种钱的名字，直接用 applySwitch 返回的 from。
