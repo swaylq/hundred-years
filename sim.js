@@ -1010,10 +1010,29 @@ async function runMonthImage(s, played, opts = {}) {
   const cleanList = String(played.list || '').replace(/\s+/g, ' ').trim().slice(0, 80);
   const prompt =
     `Paint a 16:9 horizontal cinematic illustration depicting this specific scene in ${y} China (${city}, month ${m}):\n` +
-    ` Core action: ${cleanList ? cleanList + ' — ' : ''}${cleanStory}\n` +
+    `Core action: ${cleanList ? cleanList + ' — ' : ''}${cleanStory}\n` +
     `Art style: evocative Chinese historical illustration blending expressive ink-wash brushwork with rich painterly gouache and warm period lighting (like a classic mid-century Chinese cinema frame or vintage painterly illustration). Authentic ${y} Chinese architecture, clothing, and props. Strong atmosphere and narrative composition.\n` +
     `Strict rule: NO text, NO Chinese characters, NO letters, NO numbers, NO watermarks, NO signatures, NO borders or frames.`;
   return OR.callImage(opts.model || IMG_MODEL, prompt, { timeout: opts.timeout || 40000, tries: 2 });
 }
 
-module.exports = { runMonth, runMonthLocal, runMonthImage, runOptions, optionsLocal, runReview, reviewLocal, buildUser, storyPicker, card, SYS, REVIEW_SYS, MODEL, IMG_MODEL };
+async function runFinaleImage(s, r, rev, opts = {}) {
+  const OR = require('./tools/or.js');
+  const city = (r && r.city) || s.city || '中国城市';
+  const y0 = (r && r.year) || s.startYear || s.year;
+  const y1 = (r && r.endYear) || s.year;
+  const traits = ((s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what).slice(-5).join('、');
+  const title = (rev && rev.title) || '';
+  const became = (rev && rev.became) || '';
+  const lastStories = (s.months || []).slice(-2).map(m => String(m.story || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim().slice(0, 120)).join(' ');
+  const prompt =
+    `Paint a grand, epic 16:9 horizontal finale masterpiece illustration summarizing a protagonist's two-year legend from ${y0} to ${y1} in ${city}, China:\n` +
+    `Culminating identity & achievements: ${title ? title + ' — ' : ''}${became || traits || '乱世传奇'}.\n` +
+    `Key powers & status: ${traits || '白手起家'}.\n` +
+    `Final climax scene: ${lastStories}\n` +
+    `Art style: museum-grade Chinese historical & oriental fantasy cinematic painting, blending expressive ink-wash brushwork with rich mineral pigments, dramatic golden & cinnabar lighting, and sweeping panoramic composition.\n` +
+    `Strict rule: NO text, NO Chinese characters, NO letters, NO numbers, NO watermarks, NO signatures, NO borders or frames.`;
+  return OR.callImage(opts.model || IMG_MODEL, prompt, { timeout: opts.timeout || 45000, tries: 2 });
+}
+
+module.exports = { runMonth, runMonthLocal, runMonthImage, runFinaleImage, runOptions, optionsLocal, runReview, reviewLocal, buildUser, storyPicker, card, SYS, REVIEW_SYS, MODEL, IMG_MODEL };

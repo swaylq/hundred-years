@@ -700,13 +700,17 @@ async function sendMonth() {
 }
 
 /* ── 结算 ──────────────────────────────── */
+let lastPosterCtx = null;
 async function settle() {
   const send = $('#send');
   send.disabled = true; send.textContent = '正在算账…'; send.classList.add('busy');
   try {
     const d = await post('/api/settle', { id: run.id, token });
     const phase = d.phase || d.result.phase || 'main';
-    renderDone(d.result, d, d.months, { review: d.review, extraRoom: d.extraRoom, phase, main: d.main });
+    renderDone(d.result, d, d.months, {
+      id: run.id, review: d.review, finaleImage: d.finaleImage,
+      extraRoom: d.extraRoom, phase, main: d.main,
+    });
     localStorage.removeItem(RUN_KEY);
     go('done');
     /* 总评是另一次调用：账先出来，收梢的那一篇边等边写 */
@@ -717,6 +721,30 @@ async function settle() {
     send.textContent = run.state.phase === 'extra' ? '去算总账' : '去算这两年的账';
     send.classList.remove('busy');
   }
+}
+
+function renderFinaleArt(box, id, url, extra = false) {
+  if (!id) return;
+  const fig = el('figure', 'month-art finale-art' + (url ? '' : ' pending'));
+  fig.dataset.finaleId = `${id}:${extra ? '1' : '0'}`;
+  if (url) {
+    const im = el('img'); im.src = url; im.alt = '收官画卷'; im.crossOrigin = 'anonymous';
+    fig.appendChild(im);
+  } else {
+    fig.innerHTML = '<span>正在绘制收官画卷…</span>';
+    post('/api/finale-image', { id, extra: !!extra }).then(d => {
+      if (d && d.ok && d.image) {
+        if (lastPosterCtx && lastPosterCtx.id === id) lastPosterCtx.finaleImage = d.image;
+        fig.classList.remove('pending');
+        fig.innerHTML = '';
+        const im = el('img'); im.src = d.image; im.alt = '收官画卷'; im.crossOrigin = 'anonymous';
+        fig.appendChild(im);
+      } else {
+        fig.remove();
+      }
+    }).catch(() => fig.remove());
+  }
+  box.appendChild(fig);
 }
 
 /* 成绩单那张卡。结算页和详情页共用一张。 */
@@ -760,9 +788,15 @@ function scoreKv(r) {
 
 function renderDone(r, ranks, months, opts = {}) {
   const extra = opts.phase === 'extra';
+  const rid = opts.id || (run && run.id);
   const b = $('#done-body'); b.innerHTML = '';
   b.appendChild(scoreCard(r, ranks, { extra }));
+  renderFinaleArt(b, rid, opts.finaleImage, extra);
   b.appendChild(scoreKv(r));
+
+  lastPosterCtx = { id: rid, result: r, ranks, review: opts.review || null, finaleImage: opts.finaleImage || null, extra };
+  const shareBtn = $('#done-share');
+  if (shareBtn) shareBtn.onclick = () => openSharePoster(lastPosterCtx);
 
   const rev = $('#done-review'); rev.innerHTML = '';
   if (opts.review) renderReview(rev, opts.review);
@@ -862,6 +896,7 @@ async function fetchReview(id, extra, into) {
   box.appendChild(el('div', 'rev-wait', extra ? '正在写这几年的回顾…' : '正在写这两年的回顾…'));
   try {
     const d = await post('/api/review', { id, token, extra: !!extra });
+    if (lastPosterCtx && lastPosterCtx.id === id) lastPosterCtx.review = d.review;
     renderReview(box, d.review);
   } catch (e) {
     box.innerHTML = '';
@@ -941,10 +976,17 @@ async function openDetail(id, back = 'mine') {
 function renderDetail(d, id) {
   const box = $('#detail-body'); box.innerHTML = '';
   const r = d.result;
-  box.appendChild(el('h2', 'det-h', `${d.nick} 的 ${r.year} 年`));
+  const headRow = el('div', 'det-head-row');
+  headRow.appendChild(el('h2', 'det-h', `${d.nick} 的 ${r.year} 年`));
+  const shareBtn = el('button', 'primary share-btn', '生成分享海报');
+  lastPosterCtx = { id, result: r, ranks: d.rank, review: d.review || null, finaleImage: d.finaleImage || null, extra: false };
+  shareBtn.addEventListener('click', () => openSharePoster(lastPosterCtx));
+  headRow.appendChild(shareBtn);
+  box.appendChild(headRow);
   if (d.persona) box.appendChild(el('p', 'det-who', d.persona));
 
   box.appendChild(scoreCard(r, d.rank, {}));
+  renderFinaleArt(box, id, d.finaleImage, false);
   box.appendChild(scoreKv(r));
 
   if (d.review) { const w = el('div', 'review'); renderReview(w, d.review); box.appendChild(w); }
@@ -960,6 +1002,7 @@ function renderDetail(d, id) {
   if (d.extraStatus === 'done' && d.extraResult) {
     box.appendChild(el('h3', 'mh', '两年之后的成绩'));
     box.appendChild(scoreCard(d.extraResult, d.extraRank, { extra: true }));
+    renderFinaleArt(box, id, d.extraFinaleImage, true);
     box.appendChild(scoreKv(d.extraResult));
     if (d.extraReview) { const w = el('div', 'review'); renderReview(w, d.extraReview); box.appendChild(w); }
   } else if (d.extraStatus === 'playing') {
@@ -1013,7 +1056,10 @@ async function peekPoll(id, tries) {
   try {
     const d = await api(peekUrl(id));
     if (peekFor !== id) return;
-    if (d.review && $('#peek-rev')) renderReview($('#peek-rev'), d.review);
+    if (d.review && $('#peek-rev')) {
+      if (lastPosterCtx && lastPosterCtx.id === id) lastPosterCtx.review = d.review;
+      renderReview($('#peek-rev'), d.review);
+    }
     if (d.extraReview && $('#peek-rev-x')) renderReview($('#peek-rev-x'), d.extraReview);
     if ((d.writing || d.extraWriting) && tries < 30) setTimeout(() => peekPoll(id, tries + 1), 4000);
     else if (d.writing || d.extraWriting) {
@@ -1027,9 +1073,16 @@ async function peekPoll(id, tries) {
 function renderPeek(d, id) {
   const box = $('#detail-body'); box.innerHTML = '';
   const r = d.result;
-  box.appendChild(el('h2', 'det-h', `${d.nick} 的 ${r.year} 年`));
+  const headRow = el('div', 'det-head-row');
+  headRow.appendChild(el('h2', 'det-h', `${d.nick} 的 ${r.year} 年`));
+  const shareBtn = el('button', 'primary share-btn', '生成分享海报');
+  lastPosterCtx = { id, result: r, ranks: d.rank, review: d.review || null, finaleImage: d.finaleImage || null, extra: false };
+  shareBtn.addEventListener('click', () => openSharePoster(lastPosterCtx));
+  headRow.appendChild(shareBtn);
+  box.appendChild(headRow);
 
   box.appendChild(scoreCard(r, d.rank, {}));
+  renderFinaleArt(box, id, d.finaleImage, false);
   box.appendChild(scoreKv(r));
 
   const w = el('div', 'review'); w.id = 'peek-rev'; box.appendChild(w);
@@ -1039,6 +1092,7 @@ function renderPeek(d, id) {
   if (d.extraStatus === 'done' && d.extraResult) {
     box.appendChild(el('h3', 'mh', '两年之后的成绩'));
     box.appendChild(scoreCard(d.extraResult, d.extraRank, { extra: true }));
+    renderFinaleArt(box, id, d.extraFinaleImage, true);
     box.appendChild(scoreKv(d.extraResult));
     const wx = el('div', 'review'); wx.id = 'peek-rev-x'; box.appendChild(wx);
     if (d.extraReview) renderReview(wx, d.extraReview);
@@ -1054,6 +1108,298 @@ function renderPeek(d, id) {
     act.appendChild(b); box.appendChild(act);
   }
 }
+
+/* ── 生成分享海报（Canvas 排版 + 收官插画 + 成绩印章 + 回顾判词） ───────────── */
+function wrapCanvasLines(ctx, text, maxWidth) {
+  const out = [];
+  for (const para of String(text || '').split('\n')) {
+    const p = para.trim();
+    if (!p) continue;
+    let line = '';
+    for (const ch of p) {
+      const test = line + ch;
+      if (ctx.measureText(test).width > maxWidth && line.length > 0) {
+        out.push(line);
+        line = ch;
+      } else {
+        line = test;
+      }
+    }
+    if (line) out.push(line);
+  }
+  return out;
+}
+
+function loadImgForCanvas(url) {
+  if (!url) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = url;
+  });
+}
+
+async function openSharePoster(pctx) {
+  if (!pctx || !pctx.result) return toast('请先完成结算');
+  const modal = $('#poster-modal');
+  const imgEl = $('#poster-img');
+  const dlEl = $('#poster-dl');
+  const shareEl = $('#poster-share');
+  modal.hidden = false;
+  imgEl.removeAttribute('src');
+  imgEl.alt = '正在生成海报…';
+  shareEl.hidden = true;
+
+  const r = pctx.result;
+  const rv = pctx.review || {};
+  const ranks = pctx.ranks || {};
+  let imgUrl = pctx.finaleImage || null;
+  if (!imgUrl && pctx.id) {
+    try {
+      const res = await post('/api/finale-image', { id: pctx.id, extra: !!pctx.extra });
+      if (res && res.ok && res.image) { imgUrl = res.image; pctx.finaleImage = imgUrl; }
+    } catch (e) {}
+  }
+  const art = await loadImgForCanvas(imgUrl);
+
+  const W = 900;
+  const PAD = 54;
+  const IN_W = W - PAD * 2;
+  const SERIF = '"Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif';
+  const SANS = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif';
+
+  /* 先用离屏上下文测量正文、一句话定位与转折点高度，确保底部落款绝不压字 */
+  const measureCvs = document.createElement('canvas');
+  const mctx = measureCvs.getContext('2d');
+  mctx.font = `400 21px ${SERIF}`;
+  const becameLines = rv.became ? wrapCanvasLines(mctx, '—— ' + rv.became, IN_W - 12).slice(0, 2) : [];
+  mctx.font = `400 22px ${SERIF}`;
+  const verdictLines = wrapCanvasLines(mctx, rv.verdict || '', IN_W - 16).slice(0, 16);
+  mctx.font = `400 20px ${SANS}`;
+  const turns = (rv.turns || []).slice(0, 4).map(t => {
+    const prefix = t.when ? `${t.when} · ` : '';
+    return wrapCanvasLines(mctx, prefix + (t.what || ''), IN_W - 44).slice(0, 2);
+  });
+  const turnsLineCount = turns.reduce((a, b) => a + b.length, 0);
+
+  const artH = art ? Math.round(IN_W * 9 / 16) : 0;
+  const cardH = 236;
+  const hasRev = !!(rv.title || verdictLines.length);
+  const revH = hasRev
+    ? 38 + 42 + (becameLines.length ? becameLines.length * 32 + 6 : 0) + 14 + verdictLines.length * 36
+    : 0;
+  const turnsH = turns.length ? 36 + 30 + turnsLineCount * 32 : 0;
+  const H = 116 + (artH ? artH + 34 : 0) + 24 + cardH + revH + turnsH + 112;
+
+  const cvs = document.createElement('canvas');
+  cvs.width = W; cvs.height = H;
+  const c = cvs.getContext('2d');
+
+  /* 1. 旧年历宣纸底色与双线外框 */
+  c.fillStyle = '#f5f2eb';
+  c.fillRect(0, 0, W, H);
+  c.strokeStyle = '#bebbb1';
+  c.lineWidth = 2;
+  c.strokeRect(22, 22, W - 44, H - 44);
+  c.strokeStyle = '#dedbd2';
+  c.lineWidth = 1;
+  c.strokeRect(28, 28, W - 56, H - 56);
+
+  /* 2. 顶部刊头与朱砂印章 */
+  let y = 84;
+  c.fillStyle = '#1e2431';
+  c.font = `600 42px ${SERIF}`;
+  c.fillText('这一百年', PAD, y);
+
+  c.fillStyle = '#b7312a';
+  c.fillRect(PAD + 190, y - 32, 86, 34);
+  c.fillStyle = '#fbf4e6';
+  c.font = `500 17px ${SERIF}`;
+  c.fillText(pctx.extra ? '续走档案' : '两年档案', PAD + 200, y - 9);
+
+  c.textAlign = 'right';
+  c.fillStyle = '#4a5160';
+  c.font = `500 22px ${SERIF}`;
+  c.fillText(`${r.nick} · ${r.city}`, W - PAD, y - 16);
+  c.fillStyle = '#67675f';
+  c.font = `400 18px ${SANS}`;
+  c.fillText(`${r.year} 年 ${r.month} 月 — ${r.endYear} 年 ${r.endMonth} 月`, W - PAD, y + 12);
+  c.textAlign = 'left';
+
+  y += 32;
+  c.strokeStyle = '#1e2431';
+  c.lineWidth = 2;
+  c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke();
+
+  /* 3. 收官画卷插图 */
+  if (art) {
+    y += 26;
+    c.save();
+    c.fillStyle = '#fffdf8';
+    c.fillRect(PAD - 4, y - 4, IN_W + 8, artH + 8);
+    c.strokeStyle = '#bebbb1';
+    c.lineWidth = 1.5;
+    c.strokeRect(PAD - 4, y - 4, IN_W + 8, artH + 8);
+    c.drawImage(art, PAD, y, IN_W, artH);
+    c.restore();
+    y += artH + 8;
+  }
+
+  /* 4. 成绩单主卡 */
+  y += 24;
+  c.fillStyle = '#fffdf8';
+  c.fillRect(PAD, y, IN_W, cardH);
+  c.strokeStyle = '#dedbd2';
+  c.lineWidth = 1.5;
+  c.strokeRect(PAD, y, IN_W, cardH);
+  c.fillStyle = '#b7312a';
+  c.fillRect(PAD, y, 5, cardH);
+
+  c.fillStyle = '#67675f';
+  c.font = `400 19px ${SANS}`;
+  const earnedHead = pctx.extra
+    ? `前前后后 ${(r.months / 12).toFixed(0)} 年净赚（收官家底 ${r.endWorthText || ''}）`
+    : `这两年净赚（收官家底 ${r.endWorthText || ''}）`;
+  c.fillText(earnedHead, PAD + 28, y + 40);
+
+  const earnedStr = String(r.yearEarnedText || '');
+  let numSize = 62;
+  c.font = `600 ${numSize}px ${SERIF}`;
+  while (numSize > 36 && c.measureText(earnedStr).width > IN_W - 220) {
+    numSize -= 4;
+    c.font = `600 ${numSize}px ${SERIF}`;
+  }
+  c.fillStyle = r.yearEarned < 0 ? '#8e2620' : '#1e2431';
+  c.fillText(earnedStr, PAD + 28, y + 108);
+
+  const yrs = (r.score < 0 ? '−' : '') + Math.abs(r.score).toFixed(2);
+  c.fillStyle = '#8e2620';
+  c.font = `600 25px ${SERIF}`;
+  c.fillText(`抵得上当时普通人 ${yrs} 年的收入`, PAD + 28, y + 152);
+
+  /* 右侧斜盖朱砂大印 */
+  c.save();
+  c.translate(W - PAD - 108, y + 88);
+  c.rotate(-0.14);
+  c.strokeStyle = 'rgba(183, 49, 42, 0.82)';
+  c.lineWidth = 3;
+  c.strokeRect(-68, -28, 136, 56);
+  c.lineWidth = 1;
+  c.strokeRect(-62, -22, 124, 44);
+  c.fillStyle = 'rgba(183, 49, 42, 0.85)';
+  c.font = `600 24px ${SERIF}`;
+  c.textAlign = 'center';
+  c.fillText(pctx.extra ? '续走结算' : '两年结算', 0, 9);
+  c.restore();
+
+  /* 底部指标 */
+  c.strokeStyle = '#dedbd2';
+  c.beginPath(); c.moveTo(PAD + 24, y + 176); c.lineTo(W - PAD - 24, y + 176); c.stroke();
+  c.fillStyle = '#4a5160';
+  c.font = `400 18px ${SANS}`;
+  const col1 = `折合今天美元：${r.worldUsdText || '—'}`;
+  const col2 = pctx.extra
+    ? `两年之后榜第 ${ranks.rankExtra ?? '—'} 名`
+    : `${r.year} 年榜第 ${ranks.rankYear ?? '—'} 名 · 总榜第 ${ranks.rankWorld ?? '—'} 名`;
+  c.fillText(col1, PAD + 28, y + 212);
+  c.textAlign = 'right';
+  c.fillText(col2, W - PAD - 28, y + 212);
+  c.textAlign = 'left';
+
+  y += cardH;
+
+  /* 5. 记事人总评与转折点 */
+  if (hasRev) {
+    y += 38;
+    c.fillStyle = '#8e2620';
+    c.font = `600 17px ${SANS}`;
+    c.fillText('【 记事人判词 】', PAD, y);
+
+    y += 42;
+    c.fillStyle = '#1e2431';
+    c.font = `600 34px ${SERIF}`;
+    c.fillText(rv.title || '这些日子', PAD, y);
+
+    if (becameLines.length) {
+      c.fillStyle = '#4a5160';
+      c.font = `400 21px ${SERIF}`;
+      for (const bl of becameLines) {
+        y += 32;
+        c.fillText(bl, PAD, y);
+      }
+      y += 6;
+    }
+
+    y += 14;
+    c.fillStyle = '#1e2431';
+    c.font = `400 22px ${SERIF}`;
+    for (const ln of verdictLines) {
+      y += 36;
+      c.fillText(ln, PAD, y);
+    }
+  }
+
+  if (turns.length) {
+    y += 36;
+    c.strokeStyle = '#dedbd2';
+    c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke();
+    y += 30;
+    c.fillStyle = '#67675f';
+    c.font = `600 18px ${SANS}`;
+    c.fillText('关键转折', PAD, y);
+    c.fillStyle = '#4a5160';
+    c.font = `400 20px ${SANS}`;
+    for (const tLines of turns) {
+      for (let idx = 0; idx < tLines.length; idx++) {
+        y += 32;
+        if (idx === 0) {
+          c.fillStyle = '#b7312a';
+          c.fillText('·', PAD + 4, y);
+          c.fillStyle = '#4a5160';
+        }
+        c.fillText(tLines[idx], PAD + 22, y);
+      }
+    }
+  }
+
+  /* 6. 页脚落款 */
+  const footY = H - 52;
+  c.strokeStyle = '#dedbd2';
+  c.beginPath(); c.moveTo(PAD, footY - 26); c.lineTo(W - PAD, footY - 26); c.stroke();
+  c.fillStyle = '#67675f';
+  c.font = `400 18px ${SERIF}`;
+  c.fillText('《这一百年》 · 挑一年落脚，在那时候的人间过上两年', PAD, footY);
+  c.textAlign = 'right';
+  c.fillStyle = '#8e2620';
+  c.font = `600 18px ${SANS}`;
+  c.fillText('100y.swaylab.ai', W - PAD, footY);
+  c.textAlign = 'left';
+
+  const dataUrl = cvs.toDataURL('image/jpeg', 0.92);
+  imgEl.src = dataUrl;
+  imgEl.alt = `${r.nick}的${r.year}年分享海报`;
+  const fileName = `这一百年-${r.nick}-${r.year}.jpg`;
+  dlEl.href = dataUrl;
+  dlEl.download = fileName;
+
+  if (navigator.canShare && window.File) {
+    cvs.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], fileName, { type: 'image/jpeg' });
+      if (navigator.canShare({ files: [file] })) {
+        shareEl.hidden = false;
+        shareEl.onclick = () => navigator.share({ title: `《这一百年》${r.nick}的${r.year}年`, files: [file] }).catch(() => {});
+      }
+    }, 'image/jpeg', 0.92);
+  } else {
+    shareEl.hidden = true;
+  }
+}
+
+$('#poster-close').addEventListener('click', () => { $('#poster-modal').hidden = true; });
+$('#poster-modal').addEventListener('click', e => { if (e.target.id === 'poster-modal') $('#poster-modal').hidden = true; });
 
 const fmtUsdCN = n => {
   const a = Math.abs(n), s = n < 0 ? '−' : '';

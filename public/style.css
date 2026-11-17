@@ -755,6 +755,48 @@ table.board tr.mine-go:hover .go-in, table.board tr.peek:hover .go-in { backgrou
 .more-info { display: grid; gap: 2px; }
 .more-info b { font-size: 15px; color: var(--ink); }
 .more-info span { font-size: 13px; color: var(--muted); }
+.finale-art { margin: 0 0 22px; border-radius: 6px; }
+.det-head-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 12px; }
+.det-head-row .det-h { margin: 0; }
+.share-btn { padding: 9px 16px; min-height: 38px; font-size: 14px; }
+
+/* ── 分享海报预览弹窗 ────────────────────────────── */
+.poster-modal {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(15, 13, 10, .74);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px 14px;
+}
+.poster-sheet {
+  width: min(520px, 100%);
+  max-height: 92vh;
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2);
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+.poster-wrap {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.poster-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.poster-acts {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
+}
+.poster-acts a.primary {
+  text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
+}
+
 .day summary { flex-wrap: wrap; gap: 6px 12px; }
 .day summary .dn { flex-basis: auto; }
 .day summary .dt { flex-basis: 60%; min-width: 0; }

@@ -77,6 +77,46 @@ function ensureMonthImage(runId, s, played) {
   return job;
 }
 
+function findFinaleImgFile(runId, extra = false) {
+  const sid = cleanRunId(runId);
+  if (!sid) return null;
+  const tag = extra ? 'finale-extra' : 'finale';
+  for (const ext of ['jpg', 'png', 'webp']) {
+    const f = path.join(IMG_DIR, `${sid}-${tag}.${ext}`);
+    if (fs.existsSync(f)) return { file: f, ext };
+  }
+  return null;
+}
+function finaleImgUrlOf(runId, extra = false) {
+  const sid = cleanRunId(runId);
+  const hit = findFinaleImgFile(sid, extra);
+  return hit ? `/api/finale-image?id=${encodeURIComponent(sid)}${extra ? '&extra=1' : ''}` : null;
+}
+function ensureFinaleImage(runId, s, r, rev, extra = false) {
+  const sid = cleanRunId(runId);
+  if (!sid || !HAS_KEY) return Promise.resolve(null);
+  const existing = finaleImgUrlOf(sid, extra);
+  if (existing) return Promise.resolve(existing);
+  const tag = extra ? 'finale-extra' : 'finale';
+  const key = `${sid}:${tag}`;
+  if (imgJobs.has(key)) return imgJobs.get(key);
+  const job = (async () => {
+    try {
+      const out = await SIM.runFinaleImage(s, r, rev);
+      const dest = path.join(IMG_DIR, `${sid}-${tag}.jpg`);
+      await compressToJpg(out.buffer, out.ext, dest);
+      return finaleImgUrlOf(sid, extra);
+    } catch (err) {
+      console.error('生成结算收官插画失败：', String(err && err.message).slice(0, 200));
+      return null;
+    } finally {
+      imgJobs.delete(key);
+    }
+  })();
+  imgJobs.set(key, job);
+  return job;
+}
+
 /* ── 限流：每调一次模型都是真金白银 ─────────────────── */
 const WINDOW = Number(process.env.HY_RATE_WINDOW || 10 * 60 * 1000);
 const PER_IP = Number(process.env.HY_RATE_IP || 60);
@@ -366,16 +406,20 @@ const routes = {
     /* 结过的原样端回去。两年那一刻的成绩绝不重算——重算一次就等于没冻。 */
     if (!extra && row.status === 'done' && row.result) {
       const r0 = JSON.parse(row.result);
+      const rev0 = row.review ? JSON.parse(row.review) : null;
+      if (HAS_KEY && !finaleImgUrlOf(b.id, false)) ensureFinaleImage(b.id, s, r0, rev0, false).catch(() => {});
       return json(res, 200, {
         result: r0, already: true, ...mainRanks(r0), months: monthList(s, b.id),
-        review: row.review ? JSON.parse(row.review) : null, extraRoom: E.extraRoom(s),
+        review: rev0, finaleImage: finaleImgUrlOf(b.id, false), extraRoom: E.extraRoom(s),
       });
     }
     if (extra && row.extra_status === 'done' && row.extra_result) {
       const r0 = JSON.parse(row.extra_result);
+      const rev0 = row.extra_review ? JSON.parse(row.extra_review) : null;
+      if (HAS_KEY && !finaleImgUrlOf(b.id, true)) ensureFinaleImage(b.id, s, r0, rev0, true).catch(() => {});
       return json(res, 200, {
         result: r0, already: true, phase: 'extra', ...extraRanks(r0), months: monthList(s, b.id),
-        review: row.extra_review ? JSON.parse(row.extra_review) : null,
+        review: rev0, finaleImage: finaleImgUrlOf(b.id, true),
         main: row.result ? JSON.parse(row.result) : null,
       });
     }
@@ -398,8 +442,10 @@ const routes = {
     }
     if (extra) {
       DB.finishExtra(b.id, s, r);
+      if (HAS_KEY) ensureFinaleImage(b.id, s, r, null, true).catch(() => {});
       return json(res, 200, {
         result: r, phase: 'extra', ...extraRanks(r), months: monthList(s, b.id),
+        finaleImage: finaleImgUrlOf(b.id, true),
         main: row.result ? JSON.parse(row.result) : null,      // 两年那一刻的成绩，对照着看
       });
     }
@@ -407,9 +453,10 @@ const routes = {
     if (!wrote) {
       /* 冻结闸挡下了：库里已经有一份两年的成绩，端那一份出来 */
       const r0 = JSON.parse(DB.getRow(b.id).result);
-      return json(res, 200, { result: r0, already: true, ...mainRanks(r0), months: monthList(s, b.id) });
+      return json(res, 200, { result: r0, already: true, ...mainRanks(r0), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false) });
     }
-    json(res, 200, { result: r, ...mainRanks(r), months: monthList(s, b.id), extraRoom: E.extraRoom(s) });
+    if (HAS_KEY) ensureFinaleImage(b.id, s, r, null, false).catch(() => {});
+    json(res, 200, { result: r, ...mainRanks(r), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false), extraRoom: E.extraRoom(s) });
   },
 
   /* 接着走下去：两年结完账，最多再走五年。
@@ -476,10 +523,12 @@ const routes = {
       created: row.created, updated: row.updated, mine,
       result, rank: mainRanks(result),
       review, writing: !review,
+      finaleImage: finaleImgUrlOf(id, false),
       extraStatus: row.extra_status || null,
       extraTo: row.extra_months || 0,
       extraResult: xDone ? JSON.parse(row.extra_result) : null,
       extraReview, extraWriting: xDone && !extraReview,
+      extraFinaleImage: xDone ? finaleImgUrlOf(id, true) : null,
       extraRank: row.extra_world_usd != null ? extraRanks({ worldUsd: row.extra_world_usd }) : null,
     });
   },
@@ -504,6 +553,7 @@ const routes = {
       persona: st.persona || '', created: row.created, updated: row.updated,
       mainMonths: E.MONTHS,
       result, review: row.review ? JSON.parse(row.review) : null,
+      finaleImage: finaleImgUrlOf(id, false),
       rank: mainRanks(result),
       /* 后传：接着走下去的那一段。extraStatus 是 playing 就是还在走。 */
       extraStatus: row.extra_status || null,
@@ -511,6 +561,7 @@ const routes = {
       extraRoom: row.extra_status ? 0 : E.extraRoom(st),   // 还能往下走几个月
       extraResult: row.extra_result ? JSON.parse(row.extra_result) : null,
       extraReview: row.extra_review ? JSON.parse(row.extra_review) : null,
+      extraFinaleImage: row.extra_status === 'done' ? finaleImgUrlOf(id, true) : null,
       extraRank: row.extra_world_usd != null ? extraRanks({ worldUsd: row.extra_world_usd }) : null,
       months: monthList(st, id),
       memo: st.memo || null,
@@ -556,6 +607,40 @@ const routes = {
     if (!url) return json(res, 200, { ok: false, status: 'failed' });
     played.image = url;
     DB.saveRun(id, s);
+    return json(res, 200, { ok: true, status: 'ready', image: url });
+  },
+
+  'GET /api/finale-image': async (req, res, q) => {
+    const hit = findFinaleImgFile(q.id, q.extra === '1' || q.extra === 'true');
+    if (!hit) return oops(res, 404, '插画尚未生成');
+    fs.stat(hit.file, (err, st) => {
+      if (err || !st.isFile()) return oops(res, 404, '插画尚未生成');
+      const mime = hit.ext === 'png' ? 'image/png' : hit.ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      res.writeHead(200, {
+        'content-type': mime,
+        'content-length': st.size,
+        'cache-control': 'public, max-age=86400',
+      });
+      fs.createReadStream(hit.file).pipe(res);
+    });
+  },
+
+  'POST /api/finale-image': async (req, res) => {
+    const b = await readBody(req);
+    const id = String(b.id || '');
+    const extra = !!b.extra;
+    const row = DB.getRow(id);
+    if (!row || row.status !== 'done') return oops(res, 404, '找不到这一局');
+    const existing = finaleImgUrlOf(id, extra);
+    if (existing) return json(res, 200, { ok: true, status: 'ready', image: existing });
+    if (!HAS_KEY) return json(res, 200, { ok: false, status: 'unavailable' });
+    let s = null, r = null, rev = null;
+    try { s = JSON.parse(row.state); } catch (e) {}
+    try { r = JSON.parse(extra ? row.extra_result : row.result); } catch (e) {}
+    try { rev = JSON.parse(extra ? row.extra_review : row.review); } catch (e) {}
+    if (!s || !r) return oops(res, 400, '尚未完成结算');
+    const url = await ensureFinaleImage(id, s, r, rev, extra);
+    if (!url) return json(res, 200, { ok: false, status: 'failed' });
     return json(res, 200, { ok: true, status: 'ready', image: url });
   },
 
