@@ -931,7 +931,7 @@ const oneLine = (x, n) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim()
  * 于是同一个人的记忆裂成两半（1948 那一局真跑出来过）。
  * 归一化两步：括号里的身份去掉，再去掉打头的那个称谓词——剩下的得一模一样才算同一个人。
  * 只做到这儿：再宽就会把「阿强」和「阿强的学徒」并成一个。 */
-const ROLE = /^(工头|老板|掌柜|经理|主管|师傅|账房|巡捕|保长|伙计|学徒|队长|组长|厂长|站长|社长|书记|干事|老大|头儿)/;
+const ROLE = /^(穿越者|工头|老板|掌柜|经理|主管|师傅|账房|巡捕|保长|伙计|学徒|队长|组长|厂长|站长|社长|书记|干事|老大|头儿)/;
 function whoKey(who) {
   let k = String(who || '').replace(/[（(][^）)]*[）)]/g, '').replace(/\s+/g, '');
   const m = ROLE.exec(k);
@@ -1303,23 +1303,27 @@ const WEIRD_THEMES = [
   },
 ];
 
-const BOND_RE = /(成婚|结婚|拜堂|娶|嫁|夫妻|道侣|订婚|结拜|义结金兰|拜把子|结盟|合伙|师徒|拜师|收徒|宿敌|决战|比武)/;
-const MAJOR_DEED_RE = /(创立|开山|立宗|门派|帮会|垄断|首富|名震|轰动|显灵|渡劫|金丹|筑基|古神|祭坛|封印|鬼市之主|成婚|拜堂|道侣|结拜)/;
+const BOND_RE = /(成婚|结婚|纳妾|收房|迎娶|提亲|拜堂|娶|嫁|夫妻|道侣|双修|圆房|洞房|订婚|结拜|义结金兰|拜把子|结盟|合伙|师徒|拜师|收徒|宿敌|决战|比武)/;
+const MAJOR_DEED_RE = /(创立|开山|立宗|门派|帮会|垄断|首富|名震|轰动|显灵|渡劫|金丹|筑基|古神|祭坛|封印|鬼市之主|成婚|纳妾|拜堂|道侣|结拜)/;
 
 /** 判定这个月是否撞上超现实奇妙剧情。
- *  玩家主动写了相关词必中；没写也有约 42% 的概率在世道暗处撞见一桩奇事。 */
+ *  玩家主动写了相关词必中；若玩家写的是明确的人际/婚嫁/纳妾等专属指令，则不塞无关支线抢戏。 */
 function weirdRoll(s, list) {
   const txt = String(list || '');
-  const traitsTxt = ((s && s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what + ' ' + (t.notes || []).map(x => x.note).join(' ')).join(' ');
   const asked = WEIRD_THEMES.filter(w => w.re.test(txt));
   if (asked.length) {
     return { active: true, byPlayer: true, themes: asked.slice(0, 2) };
   }
+  const knownPeople = ((s && s.memo && s.memo.people) || []).map(p => p.key || whoKey(p.who)).filter(k => k && k.length >= 2);
+  if (BOND_RE.test(txt) || knownPeople.some(k => txt.includes(k))) {
+    return { active: false, byPlayer: false, themes: [] };
+  }
+  const traitsTxt = ((s && s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what + ' ' + (t.notes || []).map(x => x.note).join(' ')).join(' ');
   const hasWeirdTrait = WEIRD_THEMES.some(w => w.re.test(traitsTxt) || w.re.test((s && s.persona) || ''));
   const seed = ((s && s.seed) || 1) * 65537 + ((s && s.n) || 1) * 314159;
   const r1 = hash32(seed) / 2 ** 32;
   const r2 = hash32(seed ^ 0x7f4a7c15) >>> 0;
-  const prob = hasWeirdTrait ? 0.65 : 0.42;
+  const prob = hasWeirdTrait ? 0.35 : 0.25;
   const pick = WEIRD_THEMES[r2 % WEIRD_THEMES.length];
   return {
     active: r1 < prob,

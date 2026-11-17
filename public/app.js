@@ -281,6 +281,58 @@ const unitOf = nums => { const big = Math.max(0, ...[].concat(nums).map(n => Mat
 const moneyIn = (n, unit, cur) => `${(n / unit.div).toFixed(unit.dp)} ${unit.name}${cur || '元'}`;
 const fmtMoney = (n, cur) => moneyIn(n, unitOf(n), cur);
 
+/* 从玩家写的当月打算里提取核心词，用来给正文里对应的句子和关键词做高亮 */
+const STOP_PHRASES = /(这个月|本月|打算|计划|准备|想要|我要|我想|先去|再去|然后|或者|以及|顺便|继续|一下|一个|一些|一点|进来|出去|起来|下来|过去|过来|那里|这里|那边|这边)/g;
+const STOP_CHARS = /[把将去到找和跟与在给向往从为替被让叫拿用靠按照比朝对的了着过得地呢吗吧啊呀么之及或并又也还就才都只先再多，。！？；、：“”‘’（）()【】\s]+/;
+function planKeywords(list) {
+  const raw = String(list || '').replace(STOP_PHRASES, ' ');
+  const parts = raw.split(STOP_CHARS).map(s => s.trim()).filter(s => s.length >= 2);
+  const out = new Set();
+  for (const p of parts) {
+    if (p.length <= 4) out.add(p);
+    if (p.length >= 4) {
+      for (let i = 0; i <= p.length - 2; i += 2) out.add(p.slice(i, i + 2));
+      for (let i = 0; i < p.length - 1; i++) out.add(p.slice(i, i + 2));
+    }
+  }
+  return [...out].filter(w => w.length >= 2).sort((a, b) => b.length - a.length).slice(0, 12);
+}
+
+function highlightKeysInHtml(html, keys) {
+  if (!keys.length) return html;
+  const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(' + keys.map(escRe).join('|') + ')', 'g');
+  return html.replace(re, m => `<b class="story-key">${m}</b>`);
+}
+
+function formatStory(story, list) {
+  const raw = String(story || '');
+  if (!raw) return '';
+  const keys = planKeywords(list);
+  let safe = esc(raw);
+
+  if (safe.includes('**')) {
+    safe = safe.replace(/\*\*([^*\n]+)\*\*/g, (_, inner) => `<mark class="story-hl">${highlightKeysInHtml(inner, keys)}</mark>`);
+    /* 流式输出到一半还没闭合的 ** 也实时高亮，不露出星号 */
+    safe = safe.replace(/\*\*([^*\n]+)$/g, (_, inner) => `<mark class="story-hl">${highlightKeysInHtml(inner, keys)}</mark>`);
+    return safe;
+  }
+
+  if (!keys.length) return safe;
+  const sents = safe.match(/[^。！？；\n]+[。！？；]?|\n+/g) || [safe];
+  const scored = sents.map(s => {
+    const hits = keys.filter(k => s.includes(k));
+    return { s, score: hits.length };
+  });
+  const maxScore = Math.max(0, ...scored.map(x => x.score));
+  if (maxScore === 0) return safe;
+  const threshold = maxScore >= 2 ? 2 : 1;
+  return scored.map(({ s, score }) => {
+    if (score >= threshold) return `<mark class="story-hl">${highlightKeysInHtml(s, keys)}</mark>`;
+    return s;
+  }).join('');
+}
+
 function renderPlay(last, opts = {}) {
   const s = run.state;
   const now = Math.min(s.n, s.months);
@@ -321,10 +373,18 @@ function renderPlay(last, opts = {}) {
   const box = $('#play-story'); box.innerHTML = '';
   box.classList.toggle('fresh', !!opts.flip);
   const at = last.at || prevMonthOf(s);
+  const myList = last.list || ((s.recent && s.recent.length && !last.first) ? s.recent[s.recent.length - 1].list : '');
   box.appendChild(el('div', 'day-head', last.head || (last.first
     ? `${s.year} 年 ${s.month} 月 · ${s.city}`
     : `第 ${at.n} 个月 · ${at.year} 年 ${at.month} 月`)));
-  box.appendChild(el('p', '', last.story || ''));
+  if (myList && !last.first) {
+    const pb = el('div', 'my-plan');
+    pb.innerHTML = `<span class="mp-lab">本月打算</span><span class="mp-txt">${esc(myList)}</span>`;
+    box.appendChild(pb);
+  }
+  const sp = el('p', '');
+  sp.innerHTML = formatStory(last.story || '', myList);
+  box.appendChild(sp);
   if (last.entries && last.entries.length) {
     const t = el('div', 'tally');
     const unit = unitOf(last.entries.map(e => e.amount));   // 读老档时也是整张账单一个单位
@@ -505,10 +565,15 @@ function prevMonthOf(s) {
 
 /* 正文边写边往屏幕上落。一个月的正文三五百字，一次性等它写完要十几秒，
    流式的话第一句话两秒就到，人不会以为卡住了。 */
-function beginStream(at) {
+function beginStream(at, list) {
   const box = $('#play-story'); box.innerHTML = '';
   box.classList.remove('fresh');
   box.appendChild(el('div', 'day-head', `第 ${at.n} 个月 · ${at.year} 年 ${at.month} 月`));
+  if (list) {
+    const pb = el('div', 'my-plan');
+    pb.innerHTML = `<span class="mp-lab">本月打算</span><span class="mp-txt">${esc(list)}</span>`;
+    box.appendChild(pb);
+  }
   const p = el('p', 'live', '');
   box.appendChild(p);
   return p;
@@ -542,7 +607,7 @@ async function sendMonth() {
     }
     let d = null;
     if ((r.headers.get('content-type') || '').includes('text/event-stream')) {
-      const p = beginStream(at);
+      const p = beginStream(at, list);
       goTop();
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '', story = '';
@@ -556,7 +621,7 @@ async function sendMonth() {
           const em = /^event: (.+)$/m.exec(block), dm = /^data: (.*)$/m.exec(block);
           if (!em || !dm) continue;
           let data; try { data = JSON.parse(dm[1]); } catch (e) { continue; }
-          if (em[1] === 'story') { story += data.t; p.textContent = story; }
+          if (em[1] === 'story') { story += data.t; p.innerHTML = formatStory(story, list); }
           else if (em[1] === 'redo') { story = ''; p.textContent = ''; }   // 半路断了，等兜底那份
           else if (em[1] === 'error') throw new Error(data.error || '这个月没能推演出来，请再试一次');
           else if (em[1] === 'done') d = data;
@@ -680,7 +745,9 @@ function monthCards(box, months, opts = {}) {
     det.appendChild(sum);
     const dbx = el('div', 'daybox');
     dbx.appendChild(el('div', 'mylist', '当月打算：' + (d.list || '')));
-    dbx.appendChild(el('p', '', d.story || ''));
+    const dp = el('p', '');
+    dp.innerHTML = formatStory(d.story || '', d.list || '');
+    dbx.appendChild(dp);
     if (d.say && d.tally) dbx.appendChild(el('div', 'note', d.tally));
     if (d.moved && d.moved.to) dbx.appendChild(el('div', 'note', `这个月你从${d.moved.from}搬到了${d.moved.to}。`));
     if (d.worldTrace && d.worldTrace.summary) {
@@ -1064,7 +1131,8 @@ async function loadMine() {
 function lastOf(state) {
   const last = state.recent && state.recent.length ? state.recent[state.recent.length - 1] : null;
   return last
-    ? { story: last.story, tally: last.tally, refused: last.refused, entries: last.entries,
+    ? { list: last.list, story: last.story, tally: last.tally, refused: last.refused, entries: last.entries,
+        moved: last.moved, worldTrace: last.worldTrace,
         at: { n: last.n, year: last.year, month: last.month } }
     : { story: '已接上你上次的进度。', first: true };
 }

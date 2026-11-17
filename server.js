@@ -642,6 +642,7 @@ async function runOneMonthInner(req, res, b, s) {
     const payload = {
       /* 刚过完的是哪一个月——前端拿它写正文的小标题，别自己去猜 */
       at: { n: played.n, year: played.year, month: played.month },
+      list: played.list,
       story: out.delta.story,
       tally,
       /* 整张账单共用一个单位（`tallyLine` 里那句话也是同一把尺子），

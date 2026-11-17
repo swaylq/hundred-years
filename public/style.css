@@ -285,7 +285,33 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
 .story { margin-bottom: 26px; }
 .day-head { display: flex; align-items: baseline; gap: 12px; margin: 2px 0 12px; font: 500 15.5px/1.4 var(--serif); white-space: nowrap; }
 .day-head::after { content: ''; flex: 1; border-top: 1px solid var(--rule-2); }
+.my-plan {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: -2px 0 14px; padding: 8px 12px;
+  background: color-mix(in srgb, var(--seal) 7%, var(--sheet));
+  border-left: 3px solid var(--seal);
+  border-radius: 0 3px 3px 0;
+  font-size: 13.5px; line-height: 1.6;
+}
+.my-plan .mp-lab {
+  flex: 0 0 auto; font-size: 11.5px; letter-spacing: .08em;
+  color: var(--seal-ink); font-weight: 600;
+}
+.my-plan .mp-txt { color: var(--ink); font-family: var(--serif); }
 .story p { font: 16.5px/2 var(--serif); margin: 0 0 14px; white-space: pre-wrap; }
+.story mark.story-hl, .daybox mark.story-hl {
+  background: color-mix(in srgb, var(--seal) 13%, var(--sheet));
+  color: var(--ink);
+  padding: 2px 4px;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  border-bottom: 1.5px solid color-mix(in srgb, var(--seal) 45%, transparent);
+}
+.story b.story-key, .daybox b.story-key {
+  color: var(--seal-ink);
+  font-weight: 600;
+}
 .story.fresh p { animation: rise .55s ease-out; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 .tally { padding-top: 4px; }
