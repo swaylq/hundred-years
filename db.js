@@ -76,10 +76,17 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS year_traces_ym ON year_traces(year, month, importance DESC, created DESC);
   CREATE INDEX IF NOT EXISTS year_traces_run ON year_traces(run_id, year);
+  CREATE TABLE IF NOT EXISTS token_aliases (
+    token        TEXT NOT NULL,
+    target_token TEXT NOT NULL,
+    PRIMARY KEY (token, target_token)
+  );
+  CREATE INDEX IF NOT EXISTS token_aliases_tok ON token_aliases(token);
 `);
 
 const id = () => crypto.randomBytes(9).toString('base64url');
 const now = () => Date.now();
+const VALID_TOK = /^[A-Za-z0-9_-]{8,64}$/;
 
 const q = {
   ins: db.prepare('INSERT INTO runs (id,token,nick,year,month,state,status,created,updated,mode) VALUES (?,?,?,?,?,?,?,?,?,?)'),
@@ -124,23 +131,48 @@ const q = {
                           ORDER BY extra_world_usd DESC LIMIT ?`),
   countExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}'`),
   rankExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}' AND extra_world_usd > ?`),
+  aliasesOf: db.prepare(`SELECT target_token FROM token_aliases WHERE token = ?`),
+  addAlias: db.prepare(`INSERT OR IGNORE INTO token_aliases (token, target_token) VALUES (?, ?)`),
 };
 
-function createRun(state, nick) {
+function expandTokens(tokenOrList) {
+  const parts = Array.isArray(tokenOrList)
+    ? tokenOrList
+    : String(tokenOrList || '').split(',');
+  const base = [...new Set(parts.map(s => String(s || '').trim()).filter(s => VALID_TOK.test(s)))];
+  if (!base.length) return [];
+  const all = new Set(base);
+  for (const t of base) {
+    for (const r of q.aliasesOf.all(t)) {
+      if (r && r.target_token) all.add(r.target_token);
+    }
+  }
+  return [...all];
+}
+
+function linkTokens(fromToken, toToken) {
+  if (!VALID_TOK.test(String(fromToken || '')) || !VALID_TOK.test(String(toToken || ''))) return;
+  q.addAlias.run(fromToken, toToken);
+}
+
+function createRun(state, nick, preferredToken) {
   const rid = id();
-  const token = crypto.randomBytes(16).toString('base64url');
+  const cleanPref = typeof preferredToken === 'string' ? preferredToken.trim() : '';
+  const token = VALID_TOK.test(cleanPref) && cleanPref.length >= 12
+    ? cleanPref
+    : crypto.randomBytes(16).toString('base64url');
   const t = now();
   q.ins.run(rid, token, nick, state.startYear || state.year, state.startMonth || state.month, JSON.stringify(state), 'playing', t, t, MODE);
   return { id: rid, token };
 }
 
-/** 读一局。**必须带对 token**——原来写的是 `if (token && row.token !== token)`，
- *  不带 token 那一支直接放行，等于谁拿到 id 谁就能往别人的存档里写。
- *  id 是九字节随机、接口也不外泄，实际难利用，但这个判断的意思是写反的。 */
+/** 读一局。**必须带对 token**——支持单条或逗号分隔的历史多 token 及别名映射，
+ *  保证在同一浏览器开新局或找回旧局后，原存档的读写权都不丢失。 */
 function loadRun(rid, token) {
   const row = q.get.get(rid);
   if (!row) return null;
-  if (!token || row.token !== token) return null;
+  const toks = expandTokens(token);
+  if (!toks.length || !toks.includes(row.token)) return null;
   return { row, state: JSON.parse(row.state) };
 }
 
@@ -174,7 +206,15 @@ function board(limit = 50, year = null) {
 
 const yearsWithRuns = () => q.yearsWithRuns.all();
 
-const myRuns = token => q.mine.all(token);
+function myRuns(tokenOrList) {
+  const toks = expandTokens(tokenOrList);
+  if (!toks.length) return [];
+  if (toks.length === 1) return q.mine.all(toks[0]);
+  const ph = toks.map(() => '?').join(',');
+  return db.prepare(`SELECT id,nick,year,month,status,score,created,mode,
+                            extra_status,extra_months,extra_score,review,extra_review
+                     FROM runs WHERE token IN (${ph}) ORDER BY created DESC LIMIT 50`).all(...toks);
+}
 const doneCount = () => q.countDone.get().n;
 const rankWorld = usd => q.rankWorld.get(usd).n + 1;
 const rankInYear = (year, earned) => q.rankYear.get(year, earned).n + 1;
@@ -310,7 +350,7 @@ function yearEchoes(year, month = 12, opts = {}) {
 }
 
 module.exports = {
-  db, createRun, loadRun, saveRun, finishRun, board, myRuns, doneCount,
+  db, createRun, loadRun, saveRun, finishRun, board, myRuns, linkTokens, doneCount,
   rankWorld, rankInYear, doneInYear, yearsWithRuns, FILE,
   startExtra, finishExtra, saveReview, getRow, boardExtra, extraCount, rankExtra,
   addTrace, yearEchoes,

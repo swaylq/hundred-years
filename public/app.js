@@ -8,8 +8,31 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&am
 const MONTHS = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
 
 const TOKEN_KEY = 'hy.token';
+const TOKENS_KEY = 'hy.tokens';
 const RUN_KEY = 'hy.run';
-let token = localStorage.getItem(TOKEN_KEY) || '';
+function readTokens() {
+  const set = new Set();
+  const main = localStorage.getItem(TOKEN_KEY) || '';
+  if (main) set.add(main);
+  try {
+    const arr = JSON.parse(localStorage.getItem(TOKENS_KEY) || '[]');
+    if (Array.isArray(arr)) for (const x of arr) if (typeof x === 'string' && x) set.add(x);
+  } catch (e) {}
+  return [...set];
+}
+function addToken(t, setPrimary = false) {
+  for (const one of String(t || '').split(',')) {
+    const clean = one.trim();
+    if (!clean) continue;
+    const list = readTokens();
+    if (!list.includes(clean)) list.unshift(clean);
+    localStorage.setItem(TOKENS_KEY, JSON.stringify(list.slice(0, 20)));
+    if (setPrimary || !localStorage.getItem(TOKEN_KEY)) localStorage.setItem(TOKEN_KEY, clean);
+  }
+  token = readTokens().join(',');
+}
+const primaryToken = () => localStorage.getItem(TOKEN_KEY) || readTokens()[0] || '';
+let token = readTokens().join(',');
 let years = [], picked = null, pickedMonth = null, run = null;
 
 /* ── 网络 ──────────────────────────────── */
@@ -237,8 +260,8 @@ $('#start').addEventListener('click', async () => {
   try {
     const nick = $('#nick').value.trim();
     const persona = $('#persona').value.trim();
-    const d = await post('/api/run', { year: picked, month: pickedMonth, nick, persona });
-    token = d.token; localStorage.setItem(TOKEN_KEY, token);
+    const d = await post('/api/run', { year: picked, month: pickedMonth, nick, persona, token: primaryToken() });
+    addToken(d.token);
     localStorage.setItem(RUN_KEY, d.id);
     run = { id: d.id, state: d.state };
     refFor = null; $('#ref').open = false; $('#ref-body').innerHTML = '';
@@ -1541,6 +1564,16 @@ async function resume(id) {
 /* ── 起 ────────────────────────────────── */
 (async () => {
   try { await loadYears(); } catch (e) { $('#grid').innerHTML = `<p class="wait">年份加载失败：${esc(e.message)}</p>`; }
+  if (location.hash.startsWith('#k=')) {
+    const k = decodeURIComponent(location.hash.slice(3)).trim();
+    if (k) {
+      addToken(k, true);
+      history.replaceState(null, '', location.pathname + location.search);
+      go('mine');
+      toast('已找回存档记录');
+      return;
+    }
+  }
   const rid = localStorage.getItem(RUN_KEY);
   if (rid && token) {
     try {

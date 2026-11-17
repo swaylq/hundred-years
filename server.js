@@ -341,7 +341,7 @@ const routes = {
     const s = E.newRun({ year, month, nick, persona: per.text });
     const echoes = DB.yearEchoes(year, month, { nick, city: s.city });
     s.options = SIM.optionsLocal(s, 0, echoes);
-    const { id, token } = DB.createRun(s, nick);
+    const { id, token } = DB.createRun(s, nick, String(b.token || '').split(',')[0].trim());
     s.id = id;
     DB.saveRun(id, s);
     json(res, 200, { id, token, state: view(s, id), flavor: SIM.card(year).flavor, echoes: echoes.traces });
@@ -688,8 +688,9 @@ const routes = {
   },
 
   'GET /api/mine': async (req, res, q) => {
-    if (!q.token) return json(res, 200, { rows: [] });
-    json(res, 200, { rows: DB.myRuns(String(q.token)) });
+    const raw = q.tokens || q.token;
+    if (!raw) return json(res, 200, { rows: [] });
+    json(res, 200, { rows: DB.myRuns(String(raw)) });
   },
 
   'GET /api/load': async (req, res, q) => {
