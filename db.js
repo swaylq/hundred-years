@@ -111,11 +111,11 @@ const q = {
   finX: db.prepare(`UPDATE runs SET state = ?, extra_status = 'done', extra_score = ?, extra_year_earned = ?,
                     extra_world_usd = ?, extra_result = ?, updated = ? WHERE id = ?`),
   /* 总榜：按「折成今天的美元」排 */
-  boardWorld: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,updated FROM runs
+  boardWorld: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,review,updated FROM runs
                      WHERE status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}'
                      ORDER BY world_usd DESC LIMIT ?`),
   /* 年榜：只跟同一年的人比，按当年那种钱净赚多少排 */
-  boardYear: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,updated FROM runs
+  boardYear: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,review,updated FROM runs
                      WHERE status = 'done' AND year = ? AND year_earned IS NOT NULL AND mode = '${MODE}'
                      ORDER BY year_earned DESC LIMIT ?`),
   yearsWithRuns: db.prepare(`SELECT year, COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' GROUP BY year ORDER BY year`),
@@ -126,7 +126,7 @@ const q = {
   /* 后传榜：走完了后传的局，按整局（前两年 + 后传）折成今天的美元排。
    * 跟总榜是两张榜，互不相干——接着走下去的人不该跟只走两年的人比。 */
   boardExtra: db.prepare(`SELECT id,nick,year,month,extra_score,extra_year_earned,extra_world_usd,
-                                 extra_months,extra_result,updated FROM runs
+                                 extra_months,extra_result,extra_review,updated FROM runs
                           WHERE extra_status = 'done' AND extra_world_usd IS NOT NULL AND mode = '${MODE}'
                           ORDER BY extra_world_usd DESC LIMIT ?`),
   countExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}'`),

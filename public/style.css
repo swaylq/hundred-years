@@ -739,10 +739,28 @@ button, summary { -webkit-tap-highlight-color: transparent; }
 .tabs button { min-height: 38px; font-size: 13px; border-radius: 5px; }
 table.board { font-size: 14px; }
 table.board th { font-size: 13px; }
-table.board td { padding-top: 13px; padding-bottom: 13px; border-bottom-style: solid; overflow-wrap: anywhere; }
+table.board td { padding-top: 12px; padding-bottom: 12px; border-bottom-style: solid; overflow-wrap: anywhere; vertical-align: middle; }
 table.board td.s { white-space: normal; }
 .go-in { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--paper-2); font-size: 11.5px; color: var(--ink-2); }
 table.board tr.mine-go:hover .go-in, table.board tr.peek:hover .go-in { background: color-mix(in srgb, var(--seal) 12%, var(--sheet)); color: var(--seal-ink); }
+.board-who { display: flex; align-items: center; gap: 10px; }
+.board-art {
+  flex: 0 0 auto; width: 88px; aspect-ratio: 16 / 9; object-fit: cover;
+  border-radius: 4px; border: 1px solid var(--rule-2); background: var(--paper-2); display: block;
+}
+.board-art.pending {
+  background: linear-gradient(110deg, var(--sheet) 30%, var(--paper-2) 50%, var(--sheet) 70%);
+  background-size: 200% 100%;
+  animation: artPulse 1.8s ease-in-out infinite;
+}
+.board-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; }
+.board-meta b { font-weight: 500; color: var(--ink); }
+.board-title { font-style: normal; font-size: 12px; color: var(--muted); }
+.board-meta .go-in { margin-left: 2px; }
+@media (max-width: 720px) {
+  .board-who { gap: 8px; }
+  .board-art { width: 64px; }
+}
 .score-card, .review { box-shadow: none; border-radius: 6px; }
 .rev-text p { text-indent: 0; }
 .rev-cap, .rev-title, .rev-turns > b { letter-spacing: 0; }

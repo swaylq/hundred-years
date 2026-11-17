@@ -1466,9 +1466,14 @@ async function loadBoard() {
     ? '<thead><tr><th></th><th>穿越者</th><th>月</th><th class="c">城市</th><th style="text-align:right">净赚</th></tr></thead>'
     : '<thead><tr><th></th><th>穿越者</th><th>降临年月</th><th class="c">城市</th><th style="text-align:right">折合今天美元</th></tr></thead>';
   const tb = el('tbody');
+  const pendingArts = [];
   for (const r of d.rows) {
     const tr = el('tr');
-    const who = `${esc(r.nick)}<span class="go-in">查看 →</span>`;
+    const thumb = r.image
+      ? `<img class="board-art" src="${esc(r.image)}" alt="" loading="lazy">`
+      : (r.rank <= 6 ? `<span class="board-art pending" data-board-art="${esc(r.id)}"></span>` : '');
+    const who = `<div class="board-who">${thumb}<div class="board-meta"><b>${esc(r.nick)}</b>${r.title ? `<em class="board-title">${esc(r.title)}</em>` : ''}<span class="go-in">查看 →</span></div></div>`;
+    if (!r.image && r.rank <= 6 && r.id) pendingArts.push(r.id);
     tr.innerHTML = boardScope === 'extra'
       ? `<td class="r">${r.rank}</td><td>${who}</td>
          <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
@@ -1495,6 +1500,28 @@ async function loadBoard() {
     tb.appendChild(tr);
   }
   t.appendChild(tb); box.appendChild(t);
+  if (pendingArts.length) fillBoardArts(pendingArts, boardScope === 'extra');
+}
+
+async function fillBoardArts(ids, extra) {
+  for (const id of ids.slice(0, 3)) {
+    if (document.body.dataset.screen !== 'board') return;
+    try {
+      const res = await post('/api/finale-image', { id, extra: !!extra });
+      const slot = document.querySelector(`[data-board-art="${CSS.escape(id)}"]`);
+      if (!slot) continue;
+      if (res && res.ok && res.image) {
+        const im = el('img', 'board-art');
+        im.src = res.image; im.alt = '';
+        slot.replaceWith(im);
+      } else {
+        slot.remove();
+      }
+    } catch (e) {
+      const slot = document.querySelector(`[data-board-art="${CSS.escape(id)}"]`);
+      if (slot) slot.remove();
+    }
+  }
 }
 
 /* ── 我的局 ────────────────────────────── */

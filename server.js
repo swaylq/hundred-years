@@ -648,6 +648,7 @@ const routes = {
    * 不给就是总榜（按「折成今天的美元」排）。 */
   'GET /api/board': async (req, res, q) => {
     const limit = Math.min(Number(q.limit) || 50, 200);
+    const parseTitle = raw => { try { return raw ? JSON.parse(raw).title || null : null; } catch (e) { return null; } };
     /* 后传榜：走完两年又接着走下去的那些局，按整局折成今天的美元排。
      * 跟总榜是两张榜——多走五年的人不该跟只走两年的人比。 */
     if (q.scope === 'extra') {
@@ -662,7 +663,10 @@ const routes = {
           yearEarned: r.extra_year_earned, yearEarnedText: r.extra_result?.yearEarnedText || null,
           worldUsd: r.extra_world_usd, worldUsdText: E.fmtUsd(r.extra_world_usd || 0),
           score: r.extra_score, scoreText: E.fmtScore(r.extra_score),
-          city: r.extra_result?.city, at: r.updated,
+          city: r.extra_result?.city,
+          title: parseTitle(r.extra_review),
+          image: finaleImgUrlOf(r.id, true) || finaleImgUrlOf(r.id, false),
+          at: r.updated,
         })),
       });
     }
@@ -682,6 +686,8 @@ const routes = {
         worldUsdText: E.fmtUsd(r.world_usd || 0),
         score: r.score, scoreText: E.fmtScore(r.score),
         city: r.result?.city,
+        title: parseTitle(r.review),
+        image: finaleImgUrlOf(r.id, false),
         at: r.updated,
       })),
     });
