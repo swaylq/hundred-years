@@ -286,19 +286,19 @@ options 每个月都要给满三条。
 「去十六铺找工头老周，扛包按件算，一件八分」或「子夜提灯去城西半步鬼市找瞎眼相师算一卦」才算。
 这个月正文里出现过的人和事，优先写进去。
 
-【进项的形状】
-凭力气和跑腿挣的（做工、扛包、拉车、跑腿、糊纸盒），一个月封顶在那一行的当月工钱上下，
-多干一点、干得好一点，最多再多一半。要比这个多，必须是**真做成了买卖**：
-有货、有买家、有价钱、有人名，三样缺一样就不算，钱也不许给。
-「奖励」「补贴」「协调费」这种含糊的名目，一个月最多一笔，而且不许一个月比一个月涨上去——
-同一个名目连着给、数目还越给越大，是这一局算坏了的头号症状。
+【进项的形状与量级对齐 —— 必守】
+1. 凭纯苦力跑腿挣的（做工、扛包、拉车），一个月在当月工钱上下；但只要他**做成了大买卖、立起宗门教派、当上高官国师、收拢门徒信徒、或迫使各方势力供奉税收**，进项就必须按**正文所写的真实规模**成百上千倍地放大！
+2. **账面金额必须与正文描述完全匹配**：
+   - 正文写「收徒百万、每人供奉」，账上就必须是数千万乃至数亿，绝不许正文写着震天动地的巨额供奉或一国税收分成，账上却只给区区一两百万！
+   - 他的势力、门徒或辖区每扩大一轮，对应的月度供奉或税收就必须比上个月显著增长。
+3. **之前月份建立的每一项每月固定进项（如政府顾问津贴、门徒香火供奉、各国每月税收分成、铺面房租、堂口份子钱），往后每个月都必须在 entries 里单独列出一笔**！新增了「各国税收分成」时，原来的「门徒香火供奉」和「顾问津贴」必须照常保留，绝不许写了新的就忘了旧的！
 
 【钱怎么记 —— 这条最要紧】
 **amount 写完整的数目，不带「万」「亿」。** 上面给你的尺子写成「3266.00 万法币」
-这种带单位的说法，entries 里不许照抄那串数字：三千二百六十六万要写成 32660000，
-写成 3266 就差了一万倍。尺子后面都用括号附了完整的数目，照那个写。
-**正文里出现的每一个钱数，entries 里都要有对得上的那一笔**：
-正文写「交了五百万的保护费」，账上那一笔就得是 5000000，不能是 500。
+这种带单位的说法，entries 里不许只写 3266：三千二百六十六万要写成 32660000，
+写成 3266 就差了一万倍。尺子后面括号里的整数只是为了让你看清有几个零，**绝不许原样照抄尺子里的数字**！
+**正文里出现的每一个钱数或规模，entries 里都要有量级完全对得上的那一笔**：
+正文写「交了五百万的保护费」，账上那一笔就得是 -5000000，不能是 -500。
 一个月的账里所有数目必须是同一个量级——上个月记到千万，这个月忽然只有几百块，
 那是漏了几个零，不是他这个月赔了。
 
@@ -433,19 +433,31 @@ function buildUser(s, list, extra = {}) {
     : '什么都没有';
   const debts = s.debts.length ? s.debts.map(d => `欠${d.who} ${both(d.amount, cur)}`).join('、') : '不欠人钱';
 
-  /* 给模型一把尺子。光说「别把大商号的进项算到他头上」，它会一个月只给几块钱：
-   * 按天走的那一版实测三十天净赚 0.04 / −0.09 / −0.46 年的收入，两局是亏的。
-   * 尺子按当月那种钱算，换币之后自动跟着变。 */
+  /* 给模型一把尺子。尺子按当月那种钱算，并根据玩家当前已达成的势力／境界量级动态放大，
+   * 避免玩家已成国师或统御全球时模型还照着普通苦力的几百万数字抄。 */
   const income = E.incomeOf(s.year, s.month);
   /* 衡量玩家这个月写得有多用心（ef.tier: sloppy / option / solid / deep） */
   const sd = E.serendipity(s, list);
   const ef = E.planEffort(s, list);
-  const good = income / 6 * ef.mult;                // 做顺了的一个月，随用心程度浮动
-  const big = income / 2 * ef.mult;                 // 谈成一笔大买卖，随用心程度浮动
+  const stTier = E.scaleTierOf(s, list);
+  const streams = E.recurringStreamsOf(s);
+  const good = stTier.tier >= 1
+    ? income * stTier.minMult * ef.mult
+    : income / 6 * ef.mult;
+  const big = stTier.tier >= 1
+    ? income * ((stTier.minMult + stTier.maxMult) / 2) * ef.mult
+    : income / 2 * ef.mult;
   const wage = income / 12;                         // 老老实实做一个月工
-  const topThis = E.monthTop(s.year, s.month);       // 这一年做到头的一个月，一把尺子
+  const topThis = E.monthTop(s.year, s.month);       // 这一年白手起家普通人做到头的一个月
   const hasLuck = (sd.luck || ef.bonusLuck) && !ef.stumble;
-  const bigLuck = Math.min(income * (0.45 + 0.35 * sd.fresh) * (ef.tier === 'deep' ? 1.35 : 1), topThis * 0.65);
+  const bigLuck = stTier.tier >= 1
+    ? income * stTier.maxMult * (ef.tier === 'deep' ? 1.25 : 1)
+    : Math.min(income * (0.45 + 0.35 * sd.fresh) * (ef.tier === 'deep' ? 1.35 : 1), topThis * 0.65);
+  const recurringSay = streams.length
+    ? `\n【目前已有的每月固定进项（税收／供奉／津贴／产业 —— 必须逐条保留进本月 entries，绝不许遗忘）】\n` +
+      streams.map(x => `· 「${x.what}」：按当前币值与规模，本月至少应在 ${both(x.expectedAmount, cur)} 以上（若本月势力或税收进一步扩大，还应成倍上调）`).join('\n') +
+      `\n注意：如果本月他又开辟了新的固定进项（如在原有门徒供奉之外又新增了各国税收供奉），必须**新旧并列写成多条**，绝不许用新的一条顶掉旧的一条！\n`
+    : '';
   /* 进度用「相当于几年的收入」说，不用钱数——两年里可能换两次钱，
    * 数目差几百万倍，除以当月的年收入之后两头才比得了。 */
   const yearsNow = E.netWorth(s) / income;
@@ -628,18 +640,12 @@ ${recent}
 ${refusedBefore.length ? `前两个月已经顶回去过这几件：${refusedBefore.join('、')}。
 他这个月要是还写同一件，就让他找到路子办成——托人、加钱、换个地方办，不许再顶一次。` : ''}
 
-【这个月该走到哪儿】
-做顺了的一个月，连做工带买卖，净进大概 ${both(good, cur)}；谈成一笔像样的买卖，这个月能到 ${both(big, cur)}。
-老老实实做一个月工、扛一个月包，只有 ${both(wage, cur)} 上下——多出来的必须是买卖或奇诡门路挣的，写清楚来路和价钱。
-${both(topThis, cur)} 是白手起家的人在${s.year}年做到头的一个月，多数月份到不了这里。
-**这不是上限**：他真做成了那种事，写多少就是多少，游戏一分都不削。
-只有一条——超出这把尺子的每一分都要在正文里有出处：什么货或什么奇遇、谁出的钱、什么价钱、担了什么险、
-钱哪天到手。写不出这些就别给。
-他落地时的家底相当于一个普通人 ${yearsStart.toFixed(2)} 年的收入，现在是 ${yearsNow.toFixed(2)} 年，
-走到第 ${s.n} 个月该在 ${yearsWant.toFixed(2)} 年上下。
-${behind ? '他落下了：这个月让他抓住点实在的东西，把欠的补回来一些。'
-  : yearsNow > yearsWant * 1.4 ? '他已经跑在前头了：这个月把进项收紧，只给他做实了的那一份，含糊的名目一笔都不给。'
-  : '他走在道上：接着按他写的算，别忽然塞给他一座金山。'}
+【这个月该走到哪儿（当前量级：${stTier.label}）】${recurringSay}
+这一年普通人老老实实打一个月工只有 ${both(wage, cur)} 上下；按他现在的身份与局面（${stTier.label}），顺遂的一个月进项应在 ${both(good, cur)} 到 ${both(big, cur)} 之间，大成时可达 ${both(bigLuck, cur)} 以上。
+**绝对不要给上限，也不要照抄上面的示例数字**：他真在正文里做成了多大的事（如收徒百万亿万、征收各国十分之一税收、垄断大宗产业），账上就必须给出与之匹配的真实金额，游戏一分都不削。
+他落地时的家底相当于普通人 ${yearsStart.toFixed(2)} 年的收入，现在是 ${yearsNow.toFixed(2)} 年。
+${behind ? '他前几个月落下了：这个月让他抓住实在的进项，把欠的补回来一些。'
+  : '按他写的打算和已有产业据实结算，确保账单金额与正文描述的场面完全相称。'}
 
 【他这个月写的清单】
 ${String(list).trim()}
@@ -710,7 +716,8 @@ async function runMonth(s, list, opts = {}) {
     const text = await OR.callStream(model, SYS, user, {
       json: true, maxTokens: 3000, temperature: 0.85, timeout: Math.max(20000, left()),
     }, piece => { const out = pick(piece); if (out) opts.onStory(out); });
-    return { delta: OR.parseJson(text), ms: Date.now() - t0, problems: [], streamed: true };
+    const delta = E.reconcileMonthFinancials(s, list, OR.parseJson(text));
+    return { delta, ms: Date.now() - t0, problems: [], streamed: true };
   }
 
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -719,7 +726,8 @@ async function runMonth(s, list, opts = {}) {
         json: true, maxTokens: 3000, temperature: 0.85,
         timeout: Math.max(8000, Math.min(45000, left())), tries: attempt === 1 ? 2 : 1,
       });
-      return { delta: OR.parseJson(text), ms: Date.now() - t0, problems: [] };
+      const delta = E.reconcileMonthFinancials(s, list, OR.parseJson(text));
+      return { delta, ms: Date.now() - t0, problems: [] };
     } catch (err) {
       if (attempt === 2 || left() < 15000) throw err;
     }
