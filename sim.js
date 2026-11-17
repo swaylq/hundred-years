@@ -835,8 +835,8 @@ function optionsLocal(s, salt, echoes) {
     ? { what: wPick.way, why: `${wPick.name} · ${wPick.hook.slice(0, 28)}` }
     : one(other, '换个方向试试');
   return [
-    one(steady, '稳当糊口，但照点建议回报微薄'),
-    one(rich, '来钱快，但风险也大'),
+    one(steady, '稳当营生'),
+    one(rich, '来钱快，风险也大'),
     third,
   ].filter(Boolean);
 }
