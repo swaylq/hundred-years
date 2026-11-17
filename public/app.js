@@ -1570,7 +1570,7 @@ async function resume(id) {
       addToken(k, true);
       history.replaceState(null, '', location.pathname + location.search);
       go('mine');
-      toast('已找回存档记录');
+      toast('已接回之前的记录');
       return;
     }
   }
