@@ -326,7 +326,6 @@ h3.mh { font: 500 17px/1.4 var(--serif); margin: 34px 0 2px; letter-spacing: .04
   height: auto;
   aspect-ratio: 16 / 9;
   object-fit: cover;
-  animation: rise .45s ease-out;
 }
 .month-art.pending {
   display: flex;
@@ -740,12 +739,12 @@ button, summary { -webkit-tap-highlight-color: transparent; }
 table.board { font-size: 14px; }
 table.board th { font-size: 13px; }
 table.board td { padding-top: 12px; padding-bottom: 12px; border-bottom-style: solid; overflow-wrap: anywhere; vertical-align: middle; }
-table.board td.s { white-space: normal; }
+table.board td.s, table.board th:last-child { white-space: nowrap; }
 .go-in { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 3px; background: var(--paper-2); font-size: 11.5px; color: var(--ink-2); }
 table.board tr.mine-go:hover .go-in, table.board tr.peek:hover .go-in { background: color-mix(in srgb, var(--seal) 12%, var(--sheet)); color: var(--seal-ink); }
 .board-who { display: flex; align-items: center; gap: 10px; }
 .board-art {
-  flex: 0 0 auto; width: 88px; aspect-ratio: 16 / 9; object-fit: cover;
+  flex: 0 0 auto; width: 88px; height: 50px; aspect-ratio: 16 / 9; object-fit: cover;
   border-radius: 4px; border: 1px solid var(--rule-2); background: var(--paper-2); display: block;
 }
 .board-art.pending {
@@ -759,7 +758,7 @@ table.board tr.mine-go:hover .go-in, table.board tr.peek:hover .go-in { backgrou
 .board-meta .go-in { margin-left: 2px; }
 @media (max-width: 720px) {
   .board-who { gap: 8px; }
-  .board-art { width: 64px; }
+  .board-art { width: 64px; height: 36px; }
 }
 .score-card, .review { box-shadow: none; border-radius: 6px; }
 .rev-text p { text-indent: 0; }

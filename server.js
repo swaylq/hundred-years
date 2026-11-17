@@ -195,11 +195,13 @@ function serveStatic(req, res, pathname) {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return oops(res, 404, '没有这个页面');
     const ext = path.extname(file);
+    const noCache = ext === '.html' || ext === '.js' || ext === '.css';
     res.writeHead(200, {
       'content-type': MIME[ext] || 'application/octet-stream',
       'content-length': st.size,
-      'cache-control': ext === '.html' ? 'no-cache' : 'max-age=60, must-revalidate',
+      'cache-control': noCache ? 'no-store' : 'max-age=60, must-revalidate',
     });
+    if (req.method === 'HEAD') return res.end();
     fs.createReadStream(file).pipe(res);
   });
 }
@@ -696,7 +698,27 @@ const routes = {
   'GET /api/mine': async (req, res, q) => {
     const raw = q.tokens || q.token;
     if (!raw) return json(res, 200, { rows: [] });
-    json(res, 200, { rows: DB.myRuns(String(raw)) });
+    const rows = DB.myRuns(String(raw)).map(r => {
+      const isEx = r.extra_status === 'done';
+      let image = finaleImgUrlOf(r.id, isEx) || finaleImgUrlOf(r.id, false);
+      if (!image) {
+        const cap = Math.max(24, Number(r.month) || 0, Number(r.extra_months) || 0) + 2;
+        for (let m = cap; m >= 1; m--) {
+          const u = imgUrlOf(r.id, m);
+          if (u) { image = u; break; }
+        }
+      }
+      let title = '';
+      for (const s of [r.extra_review, r.review]) {
+        if (!s) continue;
+        try {
+          const rv = JSON.parse(s);
+          if (rv && rv.title) { title = String(rv.title); break; }
+        } catch {}
+      }
+      return { ...r, image, title };
+    });
+    json(res, 200, { rows });
   },
 
   'GET /api/load': async (req, res, q) => {

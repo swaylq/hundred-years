@@ -1470,10 +1470,10 @@ async function loadBoard() {
   for (const r of d.rows) {
     const tr = el('tr');
     const thumb = r.image
-      ? `<img class="board-art" src="${esc(r.image)}" alt="" loading="lazy">`
+      ? `<img class="board-art" src="${esc(r.image)}" alt="">`
       : (r.rank <= 6 ? `<span class="board-art pending" data-board-art="${esc(r.id)}"></span>` : '');
     const who = `<div class="board-who">${thumb}<div class="board-meta"><b>${esc(r.nick)}</b>${r.title ? `<em class="board-title">${esc(r.title)}</em>` : ''}<span class="go-in">查看 →</span></div></div>`;
-    if (!r.image && r.rank <= 6 && r.id) pendingArts.push(r.id);
+    if (!r.image && r.rank <= 6 && r.id) pendingArts.push({ id: r.id, extra: boardScope === 'extra' });
     tr.innerHTML = boardScope === 'extra'
       ? `<td class="r">${r.rank}</td><td>${who}</td>
          <td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td>
@@ -1500,14 +1500,16 @@ async function loadBoard() {
     tb.appendChild(tr);
   }
   t.appendChild(tb); box.appendChild(t);
-  if (pendingArts.length) fillBoardArts(pendingArts, boardScope === 'extra');
+  if (pendingArts.length) fillBoardArts(pendingArts, 'board');
 }
 
-async function fillBoardArts(ids, extra) {
-  for (const id of ids.slice(0, 3)) {
-    if (document.body.dataset.screen !== 'board') return;
+async function fillBoardArts(items, screen = 'board') {
+  for (const raw of items.slice(0, 4)) {
+    if (document.body.dataset.screen !== screen) return;
+    const id = typeof raw === 'string' ? raw : raw.id;
+    const extra = typeof raw === 'string' ? (boardScope === 'extra') : !!raw.extra;
     try {
-      const res = await post('/api/finale-image', { id, extra: !!extra });
+      const res = await post('/api/finale-image', { id, extra });
       const slot = document.querySelector(`[data-board-art="${CSS.escape(id)}"]`);
       if (!slot) continue;
       if (res && res.ok && res.image) {
@@ -1538,6 +1540,7 @@ async function loadMine() {
   const t = el('table', 'board');
   t.innerHTML = '<thead><tr><th>降临年月</th><th>穿越者</th><th>状态</th><th style="text-align:right">抵几年收入</th></tr></thead>';
   const tb = el('tbody');
+  const pendingArts = [];
   for (const r of d.rows) {
     const tr = el('tr');
     /* 按天走三十天的老局接不上新规矩了，标一下，也别让人点进去 */
@@ -1550,7 +1553,12 @@ async function loadMine() {
       : done ? '已结算' : '进行中';
     const actTxt = old ? '' : (done && r.extra_status !== 'playing' ? '回看 →' : '继续 →');
     const sc = r.extra_status === 'done' && r.extra_score != null ? r.extra_score : r.score;
-    tr.innerHTML = `<td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td><td>${esc(r.nick)}</td>
+    const thumb = r.image
+      ? `<img class="board-art" src="${esc(r.image)}" alt="">`
+      : (!old && done ? `<span class="board-art pending" data-board-art="${esc(r.id)}"></span>` : '');
+    if (!r.image && !old && done && r.id) pendingArts.push({ id: r.id, extra: r.extra_status === 'done' });
+    const who = `<div class="board-who">${thumb}<div class="board-meta"><b>${esc(r.nick)}</b>${r.title ? `<em class="board-title">${esc(r.title)}</em>` : ''}</div></div>`;
+    tr.innerHTML = `<td class="y">${r.year}.${String(r.month).padStart(2, '0')}</td><td>${who}</td>
       <td>${where}${actTxt ? `<span class="go-in">${actTxt}</span>` : ''}</td>
       <td class="s">${sc == null ? '—' : (Math.abs(sc) < 10 ? sc.toFixed(2) : sc.toFixed(1)) + ' 年'}</td>`;
     if (!old && r.extra_status === 'playing') { tr.classList.add('mine-go'); tr.addEventListener('click', () => resume(r.id)); }
@@ -1566,6 +1574,7 @@ async function loadMine() {
     tb.appendChild(tr);
   }
   t.appendChild(tb); box.appendChild(t);
+  if (pendingArts.length) fillBoardArts(pendingArts, 'mine');
 }
 
 function lastOf(state) {
