@@ -1306,29 +1306,80 @@ const WEIRD_THEMES = [
 const BOND_RE = /(成婚|结婚|纳妾|收房|迎娶|提亲|拜堂|娶|嫁|夫妻|道侣|双修|圆房|洞房|订婚|结拜|义结金兰|拜把子|结盟|合伙|师徒|拜师|收徒|宿敌|决战|比武)/;
 const MAJOR_DEED_RE = /(创立|开山|立宗|门派|帮会|垄断|首富|名震|轰动|显灵|渡劫|金丹|筑基|古神|祭坛|封印|鬼市之主|成婚|纳妾|拜堂|道侣|结拜)/;
 
-/** 判定这个月是否撞上超现实奇妙剧情。
- *  玩家主动写了相关词必中；若玩家写的是明确的人际/婚嫁/纳妾等专属指令，则不塞无关支线抢戏。 */
+/** 判定这个月是否触发超现实奇妙剧情。
+ *  规矩：超现实的东西极少自己往外蹦（不主动写就绝不触发）；
+ *  就算写了，第一次随口一提也只给半真半假的传闻或闭门羹（stage='rumor'），
+ *  除非玩家玩法非常明确、连着多个月再三追寻，或者带着明确底子且长篇详写，才真正开启超凡（stage='unlocked'）。 */
 function weirdRoll(s, list) {
   const txt = String(list || '');
   const asked = WEIRD_THEMES.filter(w => w.re.test(txt));
-  if (asked.length) {
-    return { active: true, byPlayer: true, themes: asked.slice(0, 2) };
+  if (!asked.length) {
+    return { active: false, byPlayer: false, stage: 'none', pastAsked: 0, themes: [] };
   }
-  const knownPeople = ((s && s.memo && s.memo.people) || []).map(p => p.key || whoKey(p.who)).filter(k => k && k.length >= 2);
-  if (BOND_RE.test(txt) || knownPeople.some(k => txt.includes(k))) {
-    return { active: false, byPlayer: false, themes: [] };
-  }
+  const pastMonths = (s && Array.isArray(s.months)) ? s.months : [];
+  const pastAsked = pastMonths.filter(d => WEIRD_THEMES.some(w => w.re.test(String((d && d.list) || '')))).length;
   const traitsTxt = ((s && s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what + ' ' + (t.notes || []).map(x => x.note).join(' ')).join(' ');
-  const hasWeirdTrait = WEIRD_THEMES.some(w => w.re.test(traitsTxt) || w.re.test((s && s.persona) || ''));
-  const seed = ((s && s.seed) || 1) * 65537 + ((s && s.n) || 1) * 314159;
-  const r1 = hash32(seed) / 2 ** 32;
-  const r2 = hash32(seed ^ 0x7f4a7c15) >>> 0;
-  const prob = hasWeirdTrait ? 0.35 : 0.25;
-  const pick = WEIRD_THEMES[r2 % WEIRD_THEMES.length];
+  const hasWeirdTrait = WEIRD_THEMES.some(w => w.re.test(traitsTxt));
+  const personaWeird = WEIRD_THEMES.some(w => w.re.test((s && s.persona) || ''));
+  const fresh = offScript(txt, (s && s.options) || []);
+  const ownHan = Math.round(countHan(txt) * fresh);
+
+  /* 真正踏入超凡的条件：之前月份已经明确追寻过至少 1 次，或身上已修出超凡本事，
+   * 或开局人物底子明确写了超凡且本月亲手详写 >= 30 字，或本月长篇明确连提多处超凡细节（>= 55 字） */
+  const unlocked = pastAsked >= 1 || hasWeirdTrait || (personaWeird && ownHan >= 30) || (asked.length >= 2 && ownHan >= 55);
   return {
-    active: r1 < prob,
-    byPlayer: false,
-    themes: [pick],
+    active: true,
+    byPlayer: true,
+    stage: unlocked ? 'unlocked' : 'rumor',
+    pastAsked,
+    themes: asked.slice(0, 2),
+  };
+}
+
+/** 衡量玩家这个月写得有多用心，以及是不是在连续乱点选项/敷衍。
+ *  - sloppy（惩罚档）：连续两个月以上直接点选项（fresh < 0.25），或只写不到 10 个汉字敷衍了事 → 收益腰斩并吃暗亏
+ *  - option（点选项档）：当月直接点选项或手写不足 18 字 → 奖励微薄，只够糊口
+ *  - solid（认真手写，18–54 字）：正常偏高回报
+ *  - deep（用心详写，亲手写 >= 55 字）：高额回报 + 极易触发好事与贵人机缘 */
+function planEffort(s, list) {
+  const txt = String(list || '');
+  const han = countHan(txt);
+  const fresh = offScript(txt, (s && s.options) || []);
+  const ownHan = Math.round(han * fresh);
+  const past = (s && Array.isArray(s.months)) ? s.months : [];
+  let prevLazy = 0;
+  for (let i = past.length - 1; i >= 0; i--) {
+    const d = past[i];
+    const df = d && d.fresh != null ? d.fresh : 1;
+    const dh = countHan((d && d.list) || '');
+    if (df < 0.25 || dh < 12) prevLazy++;
+    else break;
+  }
+  if (han < 10 || (fresh < 0.25 && prevLazy >= 1)) {
+    const streak = prevLazy + 1;
+    return {
+      tier: 'sloppy', han, ownHan, fresh, lazyStreak: streak,
+      mult: Math.max(0.25, 0.5 - 0.08 * prevLazy),
+      stumble: true, bonusLuck: false,
+    };
+  }
+  if (fresh < 0.35 || ownHan < 18) {
+    return {
+      tier: 'option', han, ownHan, fresh, lazyStreak: 1,
+      mult: 0.6, stumble: false, bonusLuck: false,
+    };
+  }
+  if (ownHan >= 55) {
+    return {
+      tier: 'deep', han, ownHan, fresh, lazyStreak: 0,
+      mult: Math.min(2.1, 1.55 + (ownHan - 55) / 150),
+      stumble: false, bonusLuck: true,
+    };
+  }
+  return {
+    tier: 'solid', han, ownHan, fresh, lazyStreak: 0,
+    mult: 1.15 + (ownHan - 18) / 120,
+    stumble: false, bonusLuck: ownHan >= 38,
   };
 }
 
@@ -1374,7 +1425,7 @@ function extractWorldTrace(s, played, delta, res1) {
 }
 
 module.exports = {
-  WEIRD_THEMES, weirdRoll, extractWorldTrace,
+  WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,
   DAYS, MONTHS, MONTHS_EXTRA, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   lastMonthOf, extraRoom, reopen,

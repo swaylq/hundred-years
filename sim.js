@@ -41,19 +41,12 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 穿进一座城里过两年——一个月一步，一共二十四个月。他每个月写一份自己要做的事的清单，
 你写出这一个月里真的发生了什么。
 
-【表里世界：人间烟火与奇诡超凡并存】
-这个世界的表层是那一年真实的街景、物价、币制与世道；但在常人看不见的暗处，**超现实与奇诡力量是真实存在的**：
-· **修仙与求道**：红尘隐世的练气士、残缺吐纳功法、灵石丹药、洞天遗迹、渡劫异象。
-· **武侠与江湖**：内家真气、飞檐走壁、古拳谱、隐世刀客剑客、门派恩怨与江湖暗花。
-· **玄学与算命**：瞎眼相师、奇门遁甲、批八字改运、寻龙点穴看风水、画符镇宅驱邪，算卦占卜皆有真验。
-· **百鬼与志异**：子夜半步鬼市、百年老宅狐仙、黄大仙讨封、纸人借寿、阴阳两界奇货交易。
-· **克苏鲁与旧日低语**：浓雾码头的蛙貌深潜者、令人梦魇的深海黑石雕、旧日支配者密教集会、不可名状的古神遗物。
-· **西洋魔法与炼金**：钟表铺或洋行暗室里的炼金术士、坩埚魔药、鲁恩符文器物、塔罗占星与黑猫使魔。
-· **神魔与山海神话**：破庙讨香火的落魄神明、江河走蛟化龙、人间行走的黑白无常、恶魔契约、《山海经》异兽与南海鲛人奇珍。
-
-他主动去寻访、修炼、算命、闯鬼市、查古神教派或拜师学艺时，**一律当真事往下写，让他真有所获**（记进 traits、assetsAdd 或 entries）；
-平常过日子时，若提示里给出了「本月触发的奇诡机缘」，也要把这桩奇事自然融进当月的街巷与买卖里。
-绝不许拿「迷信」「不科学」「世上没有鬼神」把他顶回去！
+【表里世界：人间世俗为主，超凡奇诡深藏不露】
+这个世界的表层是那一年真实的街景、物价、币制与世道。
+只有在常人难及的极深处，才潜藏着超现实与奇诡力量（修仙求道、武侠江湖、玄学算命、百鬼志异、克苏鲁旧日低语、西洋炼金魔法、神魔契约、山海神话）。
+**重要门槛**：
+· 平常月份如果他没主动提这些超现实事物，就**纯粹按当年的真实历史人间写**，绝不许自己塞神仙、道士、鬼怪或密教进来！
+· 即便他主动提了，也要看下面的提示是「初探边缘（暂不给真神通）」还是「超凡正式开启（已多次明确追寻）」：头一回随口一提只给传闻或考验，只有他执着再三追寻、玩法非常明确时，才真正向他敞开超凡世界的大门！
 
 【其他穿越者与跨局因果】
 同一年的时空里还有其他穿越者（别的穿越者留下的事迹与名字会列在提示里）。
@@ -444,21 +437,15 @@ function buildUser(s, list, extra = {}) {
    * 按天走的那一版实测三十天净赚 0.04 / −0.09 / −0.46 年的收入，两局是亏的。
    * 尺子按当月那种钱算，换币之后自动跟着变。 */
   const income = E.incomeOf(s.year, s.month);
-  /* 三条纸条是稳当那一份；自己动手写的路子才是这个游戏好玩的地方，所以尺子跟着抬：
-   * 全是自己写的一个月，做顺了多五成、谈成一笔多三成，另外还多一次撞上奇遇的机会。 */
+  /* 衡量玩家这个月写得有多用心（ef.tier: sloppy / option / solid / deep） */
   const sd = E.serendipity(s, list);
-  const good = income / 6 * (1 + 0.25 * sd.fresh);  // 做顺了的一个月：两个月的收入
-  const big = income / 2 * (1 + 0.3 * sd.fresh);    // 谈成一笔：半年的收入
-  const wage = income / 12;                     // 老老实实做一个月工
-  const topThis = E.monthTop(s.year, s.month);   // 这一年做到头的一个月，一把尺子（2026-09-03 起不再是闸）
-  /* 奖励要落在**撞上奇遇的那几个月**，不是每个月的底薪都抬一截：
-   * 底薪抬五成的那一版，1962 那一局二十四个月光靠「做顺了」就摸到了那一年的天花板，
-   * 正文写得像模像样，钱却全是「做顺了」堆出来的，看不出他做成了什么。 */
-  /* 奇遇给多少，按这一年的量级收一道：1962 年做到头的一个月才 1.2 年的收入，
-   * 一次奇遇张口就给 0.8 年，那一年就没有别的事可做了。宽年份（2015 年是 108 年）
-   * 根本碰不到这条线。收的是**奇遇这一项给多大**，不是他这个月能挣多少——
-   * 他自己写出来的买卖照样可以超过这个数。 */
-  const bigLuck = Math.min(income * (0.45 + 0.35 * sd.fresh), topThis * 0.6);
+  const ef = E.planEffort(s, list);
+  const good = income / 6 * ef.mult;                // 做顺了的一个月，随用心程度浮动
+  const big = income / 2 * ef.mult;                 // 谈成一笔大买卖，随用心程度浮动
+  const wage = income / 12;                         // 老老实实做一个月工
+  const topThis = E.monthTop(s.year, s.month);       // 这一年做到头的一个月，一把尺子
+  const hasLuck = (sd.luck || ef.bonusLuck) && !ef.stumble;
+  const bigLuck = Math.min(income * (0.45 + 0.35 * sd.fresh) * (ef.tier === 'deep' ? 1.35 : 1), topThis * 0.65);
   /* 进度用「相当于几年的收入」说，不用钱数——两年里可能换两次钱，
    * 数目差几百万倍，除以当月的年收入之后两头才比得了。 */
   const yearsNow = E.netWorth(s) / income;
@@ -542,13 +529,19 @@ function buildUser(s, list, extra = {}) {
         `门包、被抽的头、罚款、货被扣、被关几天；盯上他的人多一分，写进 traits。\n`
       : '');
 
-  /* 照着纸条走给稳当那一份，自己想的路子给足——这个差别要让玩家感觉得到。 */
-  const ownSay = sd.fresh >= 0.5
-    ? `\n**这个月他写的是自己想出来的路子，不是照着给他的三条走。** 敢想的就让他吃到肉：` +
-      `路子走得通就写透、给足，别拿「他还嫩」平白削他一刀。`
-    : sd.fresh <= 0.2
-      ? `\n这个月他是照着给他的三条路走的：稳当那一份给足就行，不出彩，也不出事。`
-      : '';
+  /* 按玩家用不用心拉开差距：乱点选项/敷衍受罚，长文深思熟虑给足好运与重奖 */
+  const ownSay = ef.tier === 'sloppy'
+    ? `\n【乱点选项／敷衍惩罚 —— 必须扣减回报并写出吃亏】\n` +
+      `他这个月${ef.fresh < 0.25 ? `已经是连续第 ${ef.lazyStreak} 个月直接点现成选项` : `只随手写了 ${ef.han} 个字敷衍了事`}，完全没动脑子筹划！\n` +
+      `**惩罚要求**：这个月绝不许给他丰厚回报！必须让他在正文里因为行事敷衍、轻信盲从或疏忽大意而**吃一次具体的亏**（如被人中途截胡、中人狠抽一笔、货品受潮折损、或被人算计白忙一场），本月净进必须压在 ${both(wage * 0.6, cur)} 以下，甚至小亏一笔！`
+    : ef.tier === 'option'
+      ? `\n【直接点选项／随手简写 —— 奖励从简】\n` +
+        `他这个月基本照点现成建议或写得极简（亲手写的仅 ${ef.ownHan} 字）：只给最普通的辛苦钱（净进约 ${both(wage, cur)} 到 ${both(good, cur)} 之间），不出彩、不给横财。`
+      : ef.tier === 'deep'
+        ? `\n【用心详写奖励 —— 大幅提高好运与成事回报】\n` +
+          `他这个月非常用心地亲手写了 ${ef.ownHan} 个汉字，步骤与算计都很详实！\n` +
+          `**重奖要求**：天道酬勤，必须让他在办成所写之事的同时撞上好彩头——对方见他筹划周密而高看一眼、主动让利或引荐贵人，本月进项大方给到 ${both(big, cur)} 乃至 ${both(bigLuck, cur)} 以上！`
+        : `\n**这个月他写的是自己想出来的路子（亲手写了 ${ef.ownHan} 字）。** 路子走得通就写透、给足回报。`;
 
   /* 押本钱这件事，成败由 engine 掷骰子定（顺着那几年的行情走六成八赢，逆着两成二），
    * 模型只负责写它怎么发生的。原来交给模型，它十次有九次让人赔——
@@ -580,33 +573,29 @@ function buildUser(s, list, extra = {}) {
       `正文里写行情本身怎么走的（点位、价钱、街上的人在说什么），别只写他的心情。`
     : '';
 
-  const luckSay = sd.luck
-    ? `\n【这个月给他一次奇遇 —— 必须写进正文】\n` +
-      `挑下面一种，照这一年这座城的实情写具体：\n` +
-      `· 一个人：肯带他一把、肯赊他货、把手上的门路让给他\n` +
-      `· 一样东西：低价收进来的、别人急着脱手的，后来才知道值钱\n` +
-      `· 一个消息：他比别人早知道几天——哪批货要涨、哪个厂要招人、哪条街要拆\n` +
-      `· 一笔活儿：对家临时加价，或者急着找人，价钱由他开\n` +
-      `· 一个旧账：有人还了欠他的人情，还的是实在东西\n` +
-      `奇遇不是天上掉钱：是**一个具体的人、在具体的地方、给了他一个机会**，` +
-      `他还得把这件事做完才拿得到。写清楚这人是谁、怎么碰上的、他做了什么、最后落到手多少。\n` +
+  const luckSay = hasLuck
+    ? `\n【这个月给他一次好机缘 —— 必须写进正文】\n` +
+      `因为他写得用心，挑下面一种好结果，照着他写的打算顺势放大：\n` +
+      `· 一个人：欣赏他办事周全，肯带他一把、赊他好货或把压箱底的门路交给他\n` +
+      `· 一样东西：顺着他办的事意外淘到紧俏真货，转手或留用都极值钱\n` +
+      `· 一个消息：他比别人早一步摸清风向，稳稳吃下一波行情\n` +
+      `· 一笔活儿：主家见他靠谱，当场加码或把长线大单交给他\n` +
       `这个月的进项因此可以到 ${both(bigLuck, cur)} 上下——他要是把这件事做得更透，超过也照记。\n` +
       `**不许写成他运气好**——正文里不出现「幸运」「机缘」这类字眼，只写发生了什么。\n` +
-      `奇遇要留下钩子：碰上的这个人、这批货、这个消息，下个月还用得着，` +
-      `写进 memo.people 或者 memo.threads，别写成一锤子买卖。`
+      `碰上的这个人、这批货、这个消息，下个月还用得着，写进 memo.people 或者 memo.threads。`
     : '';
 
-  /* 超现实奇诡剧情：玩家主动提及必出；没提时仅作为背景余韵，绝不抢玩家主线的戏 */
+  /* 超现实奇诡剧情：不写绝不触发；初次随口一提只给传闻/考验；唯有多次明确要求才真正开启 */
   const weird = E.weirdRoll(s, list);
-  const weirdSay = weird.active
-    ? (weird.byPlayer
-        ? `\n【本月他主动寻访的奇诡超凡剧情（${weird.themes.map(t => t.name).join(' · ')}）—— 作为主线写透】\n` +
-          weird.themes.map(t => `· ${t.name}：${t.hook}`).join('\n') + '\n' +
-          `他这个月主动去寻访或施展了这一脉的超凡事物，必须让他真遇上、真做成，并在 traits（本事/神通/法门）、assetsAdd（法器/秘籍/丹药/奇物）或 entries 里体现收获与代价。\n`
-        : `\n【本月可顺带一笔的奇诡风物（${weird.themes[0].name}）—— 仅作点缀，勿抢主线】\n` +
-          `· ${weird.themes[0].hook}\n` +
-          `在写完他交代的主线大事之余，可在街巷见闻里顺手点缀一两句这桩异事，留作下月钩子即可，篇幅不许超过两句话。\n`)
-    : '';
+  const weirdSay = !weird.active
+    ? ''
+    : weird.stage === 'unlocked'
+      ? `\n【超凡奇诡世界正式向他敞开（${weird.themes.map(t => t.name).join(' · ')}）—— 他已再三明确追寻】\n` +
+        weird.themes.map(t => `· ${t.name}：${t.hook}`).join('\n') + '\n' +
+        `他已经多次明确追寻此道（或写下了极为详尽诚心的求道计划），这个月让他真正叩开超凡之门，真遇上奇人异士、修成真本事或得手奇物，并在 traits、assetsAdd 或 entries 里体现收获。\n`
+      : `\n【初探超凡边缘（${weird.themes[0].name}）—— 暂不给真神通，先考诚意】\n` +
+        `这是他头一回试探「${weird.themes[0].name}」。超凡之事深藏于世俗之下，**这个月绝不许让他立刻练成法术、拿到真法器或一步登天**！\n` +
+        `在正文里写他只摸到一点真假莫辨的蛛丝马迹（如撞见半真半假的江湖术士、或是真正的高人见他只是随口一问便闭门谢客），并在 memo.threads 里留下一条钩子：明示他下个月还得**继续执着寻访、拿出诚意再三叩问**，才有可能见到真东西。\n`;
 
   /* 同年时空里的其他穿越者与重要留痕（严格控制字数，不撑爆上下文） */
   const ec = extra.echoes || { traces: [], myBonds: [] };
@@ -754,17 +743,17 @@ function runMonthLocal(s, list, opts = {}) {
 
   /* 写得越具体给得越多。尺子跟提示词里给模型的那把一样：
    * 做顺了的一个月约合两个月的收入（inc/6）。 */
-  const effort = 0.5 + Math.min(1, E.countHan(list) / 160);
+  const ef = E.planEffort(s, list);
   const luck = 0.5 + r() * 0.9;
   /* 自己写的路子给得多一点，撞上奇遇再加一笔——跟提示词那边是同一套规矩 */
   const sd = E.serendipity(s, list);
   const weird = E.weirdRoll(s, list);
   /* 撞上这一年没有的东西：只废掉那一件，剩下的日子照旧干活，拿平常的一半。 */
-  const gain = inc / 6 * effort * luck * (hits.some(h => h.kind !== 'banned') ? 0.5 : 1) * 0.5
-    * (1 + 0.5 * sd.fresh);
+  const gain = inc / 6 * ef.mult * luck * (hits.some(h => h.kind !== 'banned') ? 0.5 : 1) * 0.5;
   /* 兜底那份正文是模板，给的钱就别跟模型那边一样厚：模型那边奇遇能到大半年的收入，
    * 这里最多给三成——一段套话换半年工钱，玩家一眼就看出是假的。 */
-  const bonus = sd.luck ? inc * (0.15 + 0.15 * sd.fresh) : 0;
+  const bonus = (sd.luck || ef.bonusLuck) && !ef.stumble ? inc * (0.15 + 0.15 * sd.fresh) : 0;
+  const penalty = ef.stumble ? -Math.round(inc / 18 * 100) / 100 : 0;
   /* 押了本钱的月份，兜底这一份也要认账：赢赔照 engine 掷的骰子来，
    * 本钱按他手里钱的一半算（模型那边由模型定，这里没人写正文，只能定死一个）。 */
   const bet = E.speculation(s, list);
@@ -781,19 +770,23 @@ function runMonthLocal(s, list, opts = {}) {
     : banned.length
       ? `这一件这两年抓得紧，你还是做了。中人抽了一道，门包也送出去两笔，剩下的钱落进自己兜里。` +
         `月底有人来打听过你，${way.who}那边照旧要人，你就接着做${way.way}。`
-      : `你按写下的去做了。${way.way}这条路，${way.who}。` +
-        `起早贪黑跑了一个月，鞋底磨薄了一层。到月底结账的时候，事情算是有了个着落。`;
+      : ef.stumble
+        ? `你这个月没怎么动脑子筹划，照着老套路敷衍过去。${way.way}的活计被精明的同行抢了先，中人又趁你不留神狠抽了一笔，忙活到月底也没落下几个钱。`
+        : `**你按写下的打算去做了。** ${way.way}这条路，${way.who}。` +
+          `起早贪黑跑了一个月，鞋底磨薄了一层。到月底结账的时候，事情算是有了个着落。`;
   const storyBet = bet.bet
     ? (bet.win
         ? `你押进去的那笔钱翻了${bet.mult >= 1 ? '一番还多' : '一小截'}，出手的时候手是抖的。`
         : `你押进去的那笔钱亏掉了${Math.round(Math.abs(bet.mult) * 100)}%，剩下的那点拿回来的时候，你在门口站了很久。`)
     : '';
   const storyWeird = weird.active && weird.themes[0]
-    ? `月末夜里你在巷口撞见一桩奇事：${weird.themes[0].hook}`
+    ? (weird.stage === 'unlocked'
+        ? `你在寻访中终于叩开暗门：${weird.themes[0].hook}`
+        : `你打听了一圈「${weird.themes[0].name}」的传闻，只听到些真假莫辨的风声，看来不拿出诚意再三追寻是见不到真东西的。`)
     : '';
   const storyLuck = bonus
-    ? `${story}月中你在${way.who}那边碰上一个人，手里正压着一批货急着脱手，价钱压得很低。` +
-      `你把手头的钱都押了进去，转手出了大半，剩下的还压在屋里。`
+    ? `${story}月中你在${way.who}那边碰上一个人，见你办事周全，把手里一批紧俏货低价让给了你。` +
+      `你转手出了大半，狠赚了一笔。`
     : story;
 
   return {
@@ -801,7 +794,8 @@ function runMonthLocal(s, list, opts = {}) {
       story: storyLuck + storyBet + storyWeird,
       entries: [
         { what: hits.length ? '白忙半个月的开销' : (way.way || '打零工'), amount: Math.round(gain * 100) / 100 },
-        ...(bonus ? [{ what: '碰上的那一笔', amount: Math.round(bonus * 100) / 100 }] : []),
+        ...(bonus ? [{ what: '筹划周密碰上的外快', amount: Math.round(bonus * 100) / 100 }] : []),
+        ...(penalty ? [{ what: '行事敷衍被人抽头折损', amount: penalty }] : []),
         ...(bet.bet ? [{ what: bet.win ? '押的那一把，赚的' : '押的那一把，赔的', amount: Math.round(betGain * 100) / 100 }] : []),
         { what: '一个月的吃住', amount: -Math.round(inc / 24 * 100) / 100 },
       ],
@@ -821,7 +815,7 @@ function runMonthLocal(s, list, opts = {}) {
  * 断网、没密钥、模型没给，都退回 optionsLocal——照年卡里的路子拼，
  * 一分钱不花，也永远有三条。 */
 
-/** 照年卡里的挣钱路子 + 奇诡支线拼三条：稳的、来钱最快的、一条奇诡超凡或同行穿越者支线 */
+/** 照年卡里的挣钱路子拼三条：默认全是世俗路子，只有玩家已经多次追寻修仙/奇诡且入道后才在第三条给超凡支线 */
 function optionsLocal(s, salt, echoes) {
   const c = card(s.year);
   const r = rng((s.seed || 1) * 31 + s.n * 7919 + (salt || 0));
@@ -830,18 +824,19 @@ function optionsLocal(s, salt, echoes) {
   const byMoney = ways.slice().sort((a, b) => (b.ceilingYears || 0) - (a.ceilingYears || 0));
   const rich = byMoney[0];
   const steady = byMoney[byMoney.length - 1];
-  const wPick = E.WEIRD_THEMES[Math.floor(r() * E.WEIRD_THEMES.length)];
-  const fellow = echoes && echoes.traces && echoes.traces[0] && echoes.traces[0].nick
-    ? echoes.traces[0]
-    : null;
-  const third = (fellow && r() < 0.45)
-    ? { what: `去寻访同在${s.city}的穿越者「${fellow.nick}」，看看能否合伙或结缘`, why: `同年穿越者 · ${fellow.summary.slice(0, 28)}` }
-    : { what: wPick.way, why: `${wPick.name} · ${wPick.hook.slice(0, 28)}` };
+  const rest = ways.filter(w => w !== rich && w !== steady);
+  const other = rest.length ? rest[Math.floor(r() * rest.length)] : ways[Math.floor(r() * ways.length)];
   const tail = x => String(x || '').replace(/[（(][^）)]*[）)]/g, '').replace(/[。；，、\s]+$/, '');
   const one = (w, label) => w && { what: tail(w.way).slice(0, 40), why: label.slice(0, 46) };
+  const traitsTxt = ((s && s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what).join(' ');
+  const alreadyWeird = E.WEIRD_THEMES.some(w => w.re.test(traitsTxt));
+  const wPick = E.WEIRD_THEMES[Math.floor(r() * E.WEIRD_THEMES.length)];
+  const third = alreadyWeird
+    ? { what: wPick.way, why: `${wPick.name} · ${wPick.hook.slice(0, 28)}` }
+    : one(other, '换个方向试试');
   return [
-    one(steady, '稳当营生'),
-    one(rich, '来钱最快，也最容易出事'),
+    one(steady, '稳当糊口，但照点建议回报微薄'),
+    one(rich, '来钱快，但风险也大'),
     third,
   ].filter(Boolean);
 }
@@ -851,15 +846,15 @@ const OPT_SYS = `你是《这一百年》的记事人。一位穿越者落在中
 
 三条各有各的用处：
 1. 一条是稳当的世俗营生（接着做手头的活计，或城里稳妥的买卖）。
-2. 一条是奇诡超凡机缘（从修仙求道、武侠江湖、玄学算命、百鬼夜行、克苏鲁古神、西洋炼金魔法、神魔契约、山海神话里挑一种跟当年这座城贴合的奇遇）。
-3. 一条是搏一把的险路，或者去结交、合谋、比试、提亲迎娶同年在城里的其他穿越者。
+2. 一条是搏一把的世俗险路（押本钱、倒紧俏货、走远路）。
+3. 一条是换个方向的新路子（注意：只有当他之前已经多次深入修仙/武侠/玄学/诡秘且身上已有相关本事时，才给超凡支线；否则一律给符合当年历史的世俗或同行穿越者路子，不要主动塞玄幻修仙选项）。
 
-每条都要有具体的人、地方、价钱或奇物：「去码头找活」不算，
-「一早去十六铺找工头老周，扛包按件算，一件八分」或「子夜提灯去城西半步鬼市找瞎眼相师算一卦」才算。
+每条都要有具体的人、地方、价钱：「去码头找活」不算，
+「一早去十六铺找工头老周，扛包按件算，一件八分」才算。
 只写那一年没有跨时代科技硬伤的事，不出现游戏用语。
 
 只输出一个 JSON 对象：
-{"options":[{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者有什么奇遇与风险，一句话"}]}`;
+{"options":[{"what":"下个月能做的一件事，二十来个字","why":"为什么值得做、或者要担什么风险，一句话"}]}`;
 
 async function runOptions(s, opts = {}) {
   const OR = require('./tools/or.js');
