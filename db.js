@@ -469,6 +469,7 @@ const qTrace = {
   ins: db.prepare(`INSERT INTO year_traces (run_id,nick,year,month,city,kind,partner,bond_type,summary,importance,created)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?)`),
   findBond: db.prepare(`SELECT id FROM year_traces WHERE run_id = ? AND year = ? AND kind = 'bond' AND partner = ? LIMIT 1`),
+  findBondAny: db.prepare(`SELECT id, year, bond_type FROM year_traces WHERE run_id = ? AND kind = 'bond' AND partner = ? ORDER BY created DESC LIMIT 1`),
   updBond: db.prepare(`UPDATE year_traces SET month = ?, city = ?, bond_type = ?, summary = ?, importance = ?, created = ? WHERE id = ?`),
   countRunYear: db.prepare(`SELECT COUNT(*) n FROM year_traces WHERE run_id = ? AND year = ? AND kind <> 'bond'`),
   dupCheck: db.prepare(`SELECT 1 FROM year_traces WHERE run_id = ? AND year = ? AND summary = ? LIMIT 1`),
@@ -507,10 +508,16 @@ function addTrace(runId, tr) {
   if (tr.kind === 'bond' && tr.partner) {
     const partner = String(tr.partner).trim();
     if (!partner || partner === nick || SKIP_NICK.test(partner)) return false;
+    const bType = tr.bondType ? String(tr.bondType) : null;
     const hit = qTrace.findBond.get(rid, yr, partner);
     if (hit && hit.id) {
-      qTrace.updBond.run(mo, city, tr.bondType ? String(tr.bondType) : null, summary, imp, now(), hit.id);
+      qTrace.updBond.run(mo, city, bType, summary, imp, now(), hit.id);
       return true;
+    }
+    const prevAny = qTrace.findBondAny.get(rid, partner);
+    if (prevAny && prevAny.bond_type && bType && prevAny.bond_type === bType) {
+      /* 同一局对同一穿越者跨年仍是相同名分（如去年已记「同盟」，今年又来「同盟」），不再跨年复制刷屏 */
+      return false;
     }
   } else {
     if (qTrace.dupCheck.get(rid, yr, summary)) return false;

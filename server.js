@@ -982,18 +982,12 @@ async function runOneMonthInner(req, res, b, s) {
     const contextText = `${b.list || ''}\n${out.delta.story || ''}`;
     const rawValidBond = E.normalizeBond(out.delta.bond, s, echoes, contextText);
     const tBeatNow = E.travelerBeat(s, b.list, echoes);
-    const prevMonth = s.months[s.months.length - 1] || null;
-    const isStaleRepeatBond = !!(
-      rawValidBond &&
-      prevMonth &&
-      prevMonth.bond &&
-      prevMonth.bond.with === rawValidBond.with &&
-      prevMonth.bond.rel === rawValidBond.rel &&
-      (!tBeatNow.active || tBeatNow.target !== rawValidBond.with || E.ROUTINE_BOND_NOTE_RE.test(rawValidBond.note || ''))
-    );
+    const isStaleRepeatBond = E.isRedundantBond(s, rawValidBond, tBeatNow);
     const validBond = isStaleRepeatBond ? null : rawValidBond;
-    /* applyMemo 仍保留原始结缘备注以免漏记人脉，但月度战报与时空留痕只认真正有新进展的 validBond */
-    out.delta.bond = rawValidBond;
+    /* applyMemo 仅写入非套话或有实质新变化的关系进展，避免同一套「利益深度绑定」灌满记忆与战报 */
+    out.delta.bond = (!isStaleRepeatBond || (rawValidBond && !E.ROUTINE_BOND_NOTE_RE.test(rawValidBond.note || '')))
+      ? rawValidBond
+      : null;
     const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month, tally }, { echoes, contextText });
     out.delta.bond = validBond;
     const traceCand = E.extractWorldTrace(s, { year: s.year, month: s.month, list: b.list }, out.delta, res1, echoes);

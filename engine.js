@@ -441,10 +441,33 @@ function unpairedBuys(delta, wage) {
   return { items: buys.map(e => ({ what: e.what, amount: Number(e.amount) })), spent, added, sold };
 }
 
+const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
+
+/** 防止同一笔存货跌价被扣两遍：
+ *  模型在「买了 8000 钢材、行情大跌后只剩 1500 残值」时，常既记「购入钢材 -8000」、
+ *  assetsAdd 记残值 1500，又在 entries 里额外扣一笔「钢材库存贬值损耗 -6500」，
+ *  导致现金和净值被重复扣掉双倍。未卖出的账面跌价已在 assetsAdd.worth 体现，不应再扣现金。 */
+function stripPaperLossEntries(delta) {
+  if (!delta || !Array.isArray(delta.entries) || !delta.entries.length) return null;
+  const hasBuyOrAsset = delta.entries.some(e => e && Number(e.amount) < 0 && BUY_WORD.test(String(e.what || '')))
+    || (Array.isArray(delta.assetsAdd) && delta.assetsAdd.length > 0);
+  if (!hasBuyOrAsset) return null;
+  const removed = [];
+  delta.entries = delta.entries.filter(e => {
+    if (e && Number(e.amount) < 0 && PAPER_LOSS_RE.test(String(e.what || ''))) {
+      removed.push(String(e.what));
+      return false;
+    }
+    return true;
+  });
+  return removed.length ? { removed } : null;
+}
+
 function applyMonth(s, delta) {
   const before = netWorth(s);
   const flipped = fixSigns(delta);       // 一笔出账都没有？先把忘掉的负号补回去
   const rescaled = fixScale(s, delta);   // 整个月的账写小了几个数量级？补上再算
+  stripPaperLossEntries(delta);          // 账面跌价已折在 assetsAdd 估值里，不重复从现金里再扣一遍
   const missedGoods = unpairedBuys(delta, incomeOf(s.year, s.month) / 12);   // 进了货却没记下东西？
 
   const entries = (delta.entries || [])
@@ -659,8 +682,8 @@ function venueOf(text) {
 /* 押本钱的说法。囤货也算——1948 年 8 月囤货砸手里、1946 年囤货发财，
  * 都该由行情表说了算，而不是由模型的胆子说了算。 */
 const BET = /(炒股|股票|证券|交易所|大盘|基金|建仓|加仓|满仓|抄底|追高|期货|标金|公债|国债|外汇|美钞|黄金|金条|银元|比特币|虚拟货币|炒房|炒币|认购证|倒卖|倒腾|投机|囤|押|下注|赌|梭哈|杠杆|配资|借钱买|抵押)/;
-/* 反着做：这几个词出现就算他在往下押（清仓、换现钱、做空） */
-const BET_SHORT = /(做空|卖空|清仓|空仓|离场|割肉|抛掉|全卖|换成现钱|换成现金|落袋)/;
+/* 反着做：这几个词出现就算他在往下押（清仓、换现钱、撤出、做空） */
+const BET_SHORT = /(做空|卖空|清仓|空仓|离场|割肉|抛掉|全卖|换成现钱|换成现金|落袋|撤出|套现|出清|脱手)/;
 /* 借来的钱押进去，输光了还欠着 */
 const BET_DEBT = /(杠杆|配资|借钱|借的钱|抵押|当掉|高利贷|印子钱)/;
 
@@ -1641,10 +1664,34 @@ function formatBondTrace(nick, partner, city, rel, note) {
   return trimTrace(cleanNote ? `${head}：${cleanNote}` : head, 50);
 }
 
-const ROUTINE_BOND_NOTE_RE = /^(深度绑定|继续合作|合作顺畅|例行分账|维持合作|稳步推进|正常分润)/;
+const ROUTINE_BOND_NOTE_RE = /(深度绑定|利益绑定|绑定加深|继续合作|合作顺畅|例行分账|维持合作|稳步推进|正常分润|深度合作|深度战略|达成共识|高度契合|资源深度共享|深化产能合作|稳产共识)/;
+
+/** 判定本月返回的 bond 是否属于无实质变化的冗余重复：
+ *  跨月扫描历史记录（不只看上个月），只要该搭档名分未变且间隔不足 6 个月、
+ *  或备注落入套话、或本月互动焦点并非此人，即判为冗余，避免 24 个月清一色「同盟」刷屏。 */
+function isRedundantBond(s, bond, tBeat) {
+  if (!bond || !bond.with) return false;
+  const key = whoKey(bond.with);
+  const past = (s && Array.isArray(s.months)) ? s.months : [];
+  let prev = null;
+  for (let i = past.length - 1; i >= 0; i--) {
+    const pm = past[i];
+    if (pm && pm.bond && whoKey(pm.bond.with) === key) {
+      prev = pm;
+      break;
+    }
+  }
+  if (!prev) return false;
+  if (prev.bond.rel !== bond.rel) return false;
+  const gap = ((s && s.n) || (past.length + 1)) - (prev.n || 0);
+  if (gap < 6) return true;
+  if (ROUTINE_BOND_NOTE_RE.test(bond.note || '')) return true;
+  if (!tBeat || !tBeat.active || whoKey(tBeat.target) !== key) return true;
+  return false;
+}
 
 /** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
- *  严格克制：普通打工买卖或无新进展的例行合伙返回 null，只有关系转折或真正大事才记入该年。 */
+ *  严格克制：普通打工买卖或名分未变的例行合伙/同盟返回 null，只有初次结缘、关系跃迁或真正大事才记入该年。 */
 function extractWorldTrace(s, played, delta, res1, echoes) {
   const year = played ? played.year : s.year;
   const month = played ? played.month : s.month;
@@ -1658,18 +1705,17 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
     const rel = validBond.rel;
     const bNote = oneLine(validBond.note || '', 34);
     const past = (s && Array.isArray(s.months)) ? s.months : [];
-    let prevSameRelGap = 99;
+    const pKey = whoKey(partner);
+    let alreadySameRel = false;
     for (let i = past.length - 1; i >= 0; i--) {
       const pm = past[i];
-      if (pm && pm.bond && whoKey(pm.bond.with) === whoKey(partner)) {
-        if (pm.bond.rel === rel && pm.year === year) {
-          prevSameRelGap = ((s && s.n) || (past.length + 1)) - pm.n;
-        }
+      if (pm && pm.bond && whoKey(pm.bond.with) === pKey) {
+        if (pm.bond.rel === rel) alreadySameRel = true;
         break;
       }
     }
-    /* 同一年与同一穿越者关系名分未变且刚留过痕（或仅为「深度绑定」套话），不反复刷屏覆盖最初结缘 */
-    if (prevSameRelGap < 4 && (prevSameRelGap <= 2 || ROUTINE_BOND_NOTE_RE.test(bNote))) {
+    /* 本局对该穿越者已留过同一关系名分的印记（哪怕跨了日历年）或备注是空洞套话，不再反复刷屏 */
+    if (alreadySameRel || ROUTINE_BOND_NOTE_RE.test(bNote)) {
       return null;
     }
     const summary = formatBondTrace(nick, partner, city, rel, bNote);
@@ -1845,7 +1891,7 @@ function deriveHeadline(headline, summary, memoLine, story) {
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
-  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, normalizeAssetKind,
+  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isRedundantBond, normalizeAssetKind, stripPaperLossEntries,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,

@@ -166,6 +166,11 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
   const fellows = st.fellows || [];
   const bonds = st.travelerBonds || [];
   const wantTravelerFocus = monthIdx === 2 || monthIdx === 6 || monthIdx === 12 || monthIdx === 18 || (bonds.length > 0 && monthIdx % 5 === 0);
+  const travelerFlavor = monthIdx === 12
+    ? '或因为抢同一批货/分润不均跟其中一位正面交锋、讨价还价，或者约最合拍的那位痛饮交心、拜把结交'
+    : monthIdx === 18
+      ? '约最投契的穿越者吃酒深谈（推进知己/结拜/姻缘等私交），或与老对手再分高下'
+      : '去跟对方对暗号试探、合伙做一笔买卖、互通情报、切磋较量、或加深私交';
   const sys = `你是正在玩《这一百年》的真人穿越者「${st.nick}」。
 人物底子：${st.persona}（偏好方向：${st.style || '顺势而为'}）。
 你要写出这一个月（第 ${st.n}/24 个月，${st.year} 年 ${st.month} 月，${st.city}）的具体行动打算，字数控制在 45 到 85 个汉字之间。
@@ -173,8 +178,8 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
 1. 像真正在那个年代闯荡的聪明现代人一样写具体行动：去哪儿、找谁、做什么买卖或学什么手艺、怎么应对当月时局或通胀换币。
 2. 严禁写 ${st.year} 年还不存在的现代科技物件（禁用：${((yearCard.tech && yearCard.tech['没有']) || []).slice(0, 8).join('、')}），也不要写毁天灭地/殖民星球等离谱神通。
 3. ${wantTravelerFocus
-    ? `**本月重点与同行穿越者互动**：主动点名城里的穿越者（${[...bonds.map(b => `${b.nick}[已${b.rel}]`), ...fellows.map(f => `${f.nick}[${f.stance || f.tag}]`)].slice(0, 3).join('、')}），去跟对方对暗号试探、合伙做一笔买卖、互通情报、切磋较量、或加深结拜/知己/姻缘关系，同时兼顾手头营生！`
-    : `围绕既有家业与人脉稳步升级，若顺手也可跟同城穿越者或老熟人配合。`}
+    ? `**本月重点与同行穿越者互动**：主动点名城里的穿越者（${[...bonds.map(b => `${b.nick}[已${b.rel}]`), ...fellows.map(f => `${f.nick}[${f.stance || f.tag}]`)].slice(0, 3).join('、')}），${travelerFlavor}，同时兼顾手头营生！`
+    : `围绕既有家业与人脉稳步升级，不必每个月都硬拉全部穿越者出场。`}
 只输出行动打算正文（纯文本一段话），不要加标题、引号或解释。`;
 
   const recentTxt = (st.recent || []).slice(-2).map(d =>
