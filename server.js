@@ -232,7 +232,17 @@ function view(s, runId) {
     incomeText: E.money(E.incomeOf(s.year, s.month), cur),
     listLimit: E.LIST_LIMIT,
     options: s.options || [],
-    recent: s.months.slice(-3).map(d => ({ ...d, image: (rid && imgUrlOf(rid, d.n)) || d.image || null })),
+    recent: s.months.slice(-3).map(d => {
+      const summary = d.summary || E.deriveSummary(d.story, '');
+      const headline = E.deriveHeadline(d.headline, summary, '', d.story);
+      return {
+        ...d,
+        headline,
+        summary,
+        assetsAdded: d.assetsAdded || [],
+        image: (rid && imgUrlOf(rid, d.n)) || d.image || null,
+      };
+    }),
   };
 }
 
@@ -244,10 +254,14 @@ function monthList(s, runId) {
   const trail = new Map(((s.memo || {}).trail || []).map(t => [t.n, t]));
   return (s.months || []).map(d => {
     const t = trail.get(d.n);
+    const say = t ? t.say : '';
+    const summary = d.summary || E.deriveSummary(d.story, say);
+    const headline = E.deriveHeadline(d.headline, summary, say, d.story);
     return {
       n: d.n, year: d.year, month: d.month,
-      list: d.list, story: d.story, tally: d.tally,
-      say: t ? t.say : '', worth: t ? t.worth : '',
+      list: d.list, headline, summary, story: d.story, tally: d.tally,
+      assetsAdded: d.assetsAdded || [],
+      say, worth: t ? t.worth : '',
       refused: d.refused || [], overTop: !!d.overTop,
       moved: d.moved || null,
       worldTrace: d.worldTrace || null,
@@ -716,7 +730,21 @@ const routes = {
           if (rv && rv.title) { title = String(rv.title); break; }
         } catch {}
       }
-      return { ...r, image, title };
+      const yInfo = E.yearOf(r.year);
+      let city = (yInfo && yInfo.city) || '';
+      let stepN = null, totalMonths = E.MONTHS;
+      if (r.status !== 'done' || r.extra_status === 'playing') {
+        try {
+          const full = DB.getRow(r.id);
+          const st = full && full.state ? JSON.parse(full.state) : null;
+          if (st) {
+            if (st.city) city = st.city;
+            totalMonths = E.lastMonthOf(st);
+            stepN = Math.min(Number(st.n) || 1, totalMonths);
+          }
+        } catch {}
+      }
+      return { ...r, city, stepN, totalMonths, image, title };
     });
     json(res, 200, { rows });
   },
@@ -784,7 +812,12 @@ async function runOneMonthInner(req, res, b, s) {
         out.why = r.why === 'ip' ? '你这十分钟问得太密了，这个月先由本地算' : '这会儿全站都很忙，这个月先由本地算';
       } else {
         try {
-          out = await SIM.runMonth(s, b.list, sse ? { onStory: t => sse.send('story', { t }), echoes } : { echoes });
+          out = await SIM.runMonth(s, b.list, sse ? {
+            onField: (field, t) => {
+              if (field === 'headline' || field === 'summary') sse.send(field, { t });
+            },
+            echoes,
+          } : { echoes });
         } catch (err) {
           /* 原话只进服务端日志。它是服务商回的英文 JSON，直接印到页面上，
              玩家读到的是「HTTP 402 {"error":{"message":"This request would exceed
@@ -818,9 +851,20 @@ async function runOneMonthInner(req, res, b, s) {
     const traceCand = E.extractWorldTrace(s, { year: s.year, month: s.month, list: b.list }, out.delta, res1);
     const traceSaved = traceCand && DB.addTrace(b.id, traceCand) ? traceCand : null;
 
+    const assetsAdded = (out.delta.assetsAdd || [])
+      .slice(0, 8)
+      .map(a => String((a && a.name) || '').trim())
+      .filter(Boolean);
+    const memoLine = (out.delta.memo && out.delta.memo.line) || '';
+    const summaryText = String(out.delta.summary || '').trim() || E.deriveSummary(out.delta.story, memoLine);
+    const headlineText = E.deriveHeadline(out.delta.headline, summaryText, memoLine, out.delta.story);
+
     s.months.push({
       n: s.n, year: s.year, month: s.month, list: String(b.list).slice(0, 2000),
+      headline: headlineText,
+      summary: summaryText,
       story: out.delta.story, tally, entries: res1.entries,
+      assetsAdded,
       refused: out.delta.refused || [], local: usedLocal,
       /* 这个月挣得超过了「那一年做到头的一个月」。以前这里是削顶的记号，
        * 2026-09-03 不削了，留着它只为在界面上给这个月一句话。 */
@@ -854,7 +898,10 @@ async function runOneMonthInner(req, res, b, s) {
       /* 刚过完的是哪一个月——前端拿它写正文的小标题，别自己去猜 */
       at: { n: played.n, year: played.year, month: played.month },
       list: played.list,
+      headline: played.headline,
+      summary: played.summary,
       story: out.delta.story,
+      assetsAdded: played.assetsAdded || [],
       image: imgUrlOf(b.id, played.n) || null,
       imagePending: HAS_KEY && !imgUrlOf(b.id, played.n),
       tally,
@@ -878,7 +925,7 @@ async function runOneMonthInner(req, res, b, s) {
       memoAdd,
       local: usedLocal, why: out.why || null,
       options: s.options,
-      state: view(s),
+      state: view(s, b.id),
       done: s.n > E.lastMonthOf(s),
     };
     if (sse) { sse.send('done', payload); sse.end(); }

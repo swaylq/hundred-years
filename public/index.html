@@ -3,149 +3,156 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#e9e0c9">
+<meta name="theme-color" content="#f3eee4">
 <title>这一百年</title>
-<link rel="stylesheet" href="/style.css?v=20261117b">
+<link rel="stylesheet" href="/style.css?v=20261118a">
 </head>
-<body data-screen="pick">
+<body data-screen="pick" data-theme="light">
 
-<header id="top">
-  <button class="brand" data-go="pick">这一百年</button>
-  <nav>
-    <button data-go="pick" class="on">选择年份</button>
-    <button data-go="board">排行榜</button>
-    <button data-go="mine">我的记录</button>
-  </nav>
+<header class="app-nav" id="top">
+  <div class="nav-inner">
+    <button class="brand" type="button" data-go="pick">
+      <span class="brand-seal" aria-hidden="true">百</span>这一百年
+    </button>
+    <nav class="nav-links" aria-label="主导航">
+      <button type="button" data-go="pick" class="on">年份</button>
+      <button type="button" data-go="play" id="nav-play" hidden>正在玩</button>
+      <button type="button" data-go="board">排行</button>
+      <button type="button" data-go="mine">记录</button>
+      <button type="button" class="theme-btn" id="btn-theme" aria-label="切换深浅色" title="切换深浅色">☾</button>
+    </nav>
+  </div>
 </header>
 
-<main>
+<main class="app-main">
 
-<!-- 挑一年 -->
-<section id="s-pick" class="screen on">
-  <div class="pick">
-    <div class="hero-title">
-      <h1>这一百年</h1>
-      <span class="hero-seal" aria-hidden="true">这一百年</span>
+  <!-- 1. 选择年份 -->
+  <section id="s-pick" class="screen on">
+    <div class="pick-head">
+      <h1>挑一年落脚</h1>
+      <p>1926 — 2025 · 过上两年</p>
     </div>
-    <div class="pick-body">
-      <p class="lede-big">挑一年落脚，在那时候的人间过上两年。</p>
-      <div id="grid" class="century"><p class="wait">正在加载年份…</p></div>
-      <div class="grid-foot">
-        <p id="grid-cap" class="cap-line">1926 — 2025</p>
-        <p class="legend">
-          <span><i class="lg-heat"></i>机缘深浅</span>
-          <span><i class="lg-dot"></i>币制改革</span>
-        </p>
+    <div class="era-bar" id="era-bar" role="tablist" aria-label="按时代筛选">
+      <button type="button" class="era-btn on" data-era="all">全部百年</button>
+      <button type="button" class="era-btn" data-era="1926">民国 26–49</button>
+      <button type="button" class="era-btn" data-era="1950">建国 50–77</button>
+      <button type="button" class="era-btn" data-era="1978">改开 78–08</button>
+      <button type="button" class="era-btn" data-era="2009">近年 09–25</button>
+    </div>
+    <div id="grid" class="year-grid"><p class="wait">正在加载年份…</p></div>
+    <div class="pick-legend">
+      <span><i class="lg-heat"></i>机缘深浅</span>
+      <span><i class="lg-dot"></i>币制改革</span>
+    </div>
+    <div class="pick-preview" id="pick-preview" hidden>
+      <div class="pick-pv-text">
+        <strong id="pv-title"></strong>
+        <span id="pv-desc"></span>
       </div>
+      <button type="button" class="btn-primary pick-pv-go" id="pv-enter">进入 →</button>
     </div>
-  </div>
-</section>
+  </section>
 
-<!-- 一年的详情 + 选月 -->
-<section id="s-year" class="screen">
-  <button class="back" data-go="pick">← 换个年份</button>
-  <div id="year-head"></div>
-  <!-- 开场白和换钱提醒摆在挑月份上面：一个是钩子，一个是挑哪个月的依据。
-       这一年的资料（在发生什么、物价、路子、祸事）挪到动身之后，
-       想细看的往下翻——sway 2026-09-04：动身操作放在「这一年在发生什么」前面。 -->
-  <div id="year-intro"></div>
-  <div class="mh-row">
-    <h3 class="mh">选择开局月份</h3>
-    <span class="mo-legend"><i class="dot"></i>当月有大事</span>
-  </div>
-  <div id="months" class="months"></div>
-  <div id="mo-detail" class="mo-detail" aria-live="polite" hidden></div>
-  <div id="start-box" class="start-box" hidden>
-    <div class="start-fields">
-      <label class="nick-field"><span>穿越者名字</span><input id="nick" maxlength="16" placeholder="留在榜上的名字"></label>
-      <label class="who"><span>人物底子 <em class="optional">选填</em></span><span id="persona-count" class="count">0 / 50</span>
-        <input id="persona" maxlength="80" placeholder="如：走街串巷的木匠，略通风水" aria-describedby="persona-count">
-      </label>
+  <!-- 2. 选月开局 -->
+  <section id="s-year" class="screen">
+    <button class="back-link" type="button" data-go="pick">← 换个年份</button>
+    <div id="year-hero" class="year-hero"></div>
+    <div id="months" class="mo-grid" role="group" aria-label="选择开局月份"></div>
+    <div id="mo-metrics" class="mo-metrics" hidden></div>
+    <div id="mo-warn" class="warn-strip" hidden></div>
+    <div id="start-box" class="start-card" hidden>
+      <div class="field-row">
+        <div class="field">
+          <label for="nick">穿越者名字</label>
+          <input id="nick" maxlength="16" placeholder="留在榜上的名字">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label for="persona">人物底子（选填）</label>
+            <span id="persona-count" class="field-count num">0 / 50</span>
+          </div>
+          <input id="persona" maxlength="80" placeholder="如：走街串巷的木匠，略通风水" aria-describedby="persona-count">
+        </div>
+      </div>
+      <button id="start" type="button" class="btn-primary start-go">穿去这一年 →</button>
     </div>
-    <button id="start" class="primary">穿去这一年</button>
-  </div>
-  <details class="fold year-background"><summary>当年世道与物价</summary><div id="year-body"></div></details>
-</section>
+  </section>
 
-<!-- 玩 -->
-<section id="s-play" class="screen">
-  <div class="play">
-    <aside id="play-bar" class="bar"></aside>
-    <div class="play-main">
-      <div id="play-story" class="story"></div>
-      <div id="play-write" class="write">
-        <div class="write-head">
-          <label for="list" id="write-label">本月打算</label>
-          <div class="write-meta">
-            <span id="depth-bar" class="depth-bar" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span id="count" class="count">0 / 500</span>
+  <!-- 3. 游玩主屏 -->
+  <section id="s-play" class="screen">
+    <div class="play-shell">
+      <aside id="play-bar" class="hud"></aside>
+      <div class="play-stage">
+        <article id="play-story" class="hero-art-card"></article>
+        <div id="play-write" class="dock">
+          <div class="dock-head">
+            <label for="list" id="write-label">本月打算</label>
+            <div class="dock-meta">
+              <span id="depth-bar" class="depth-bar" data-lv="0" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span id="count" class="num">0 / 500</span>
+            </div>
+          </div>
+          <textarea id="list" rows="2" aria-describedby="count" placeholder="写下这个月要办的事…"></textarea>
+          <div id="picks" class="quick-picks" hidden></div>
+          <div class="dock-foot">
+            <button id="send" type="button" class="btn-primary">过这个月 →</button>
           </div>
         </div>
-        <textarea id="list" rows="4" aria-describedby="count" placeholder="写下这个月要办的事…"></textarea>
-        <div id="picks" class="picks" hidden>
-          <div class="picks-head"><span class="picks-tag">参考路子</span><button id="picks-more" type="button" class="more">↻ 换一批</button></div>
-          <div id="picks-list"></div>
-        </div>
-        <div class="write-foot">
-          <button id="send" class="primary">过这个月</button>
-        </div>
-      </div>
-      <div class="play-drawers">
-        <details id="ref" class="fold"><summary>当年物价与门路</summary><div id="ref-body"></div></details>
-        <details id="memo" class="fold"><summary id="memo-sum">人脉与家业</summary><div id="memo-body"></div></details>
-        <details id="ledger" class="fold"><summary id="ledger-sum">近期账本</summary><div id="ledger-body"></div></details>
       </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<!-- 结算 + 收梢的总评 -->
-<section id="s-done" class="screen">
-  <div id="done-body"></div>
-  <div id="done-review" class="review"></div>
-  <div id="done-more" class="more-box" hidden></div>
-  <div class="done-acts">
-    <button id="done-share" class="primary">生成分享海报</button>
-    <button class="ghost-btn" data-go="pick">再开一局</button>
-    <button class="ghost-btn" data-go="board">查看排行榜</button>
-  </div>
-  <div id="done-days"></div>
-</section>
+  <!-- 4. 结算画报 -->
+  <section id="s-done" class="screen">
+    <div id="done-body"></div>
+  </section>
 
-<!-- 一局的详情：从「我的局」和排行榜点进来 -->
-<section id="s-detail" class="screen">
-  <button class="back" id="detail-back">← 返回</button>
-  <div id="detail-body"></div>
-</section>
+  <!-- 5. 详情 / 榜上查看画报 -->
+  <section id="s-detail" class="screen">
+    <button class="back-link" id="detail-back" type="button">← 返回</button>
+    <div id="detail-body"></div>
+  </section>
 
-<!-- 排行榜 -->
-<section id="s-board" class="screen">
-  <h2>排行榜</h2>
-  <div id="board-tabs" class="tabs"></div>
-  <div id="board-body"></div>
-</section>
-
-<!-- 我的局 -->
-<section id="s-mine" class="screen">
-  <h2>我的记录</h2>
-  <div id="mine-body"></div>
-</section>
+  <!-- 6. 排行榜与我的记录 -->
+  <section id="s-board" class="screen">
+    <div class="board-bar">
+      <div class="board-pills" role="tablist" aria-label="排行与记录切换">
+        <button type="button" class="era-btn on" data-bmode="world">排行榜</button>
+        <button type="button" class="era-btn" data-bmode="mine">我的记录</button>
+      </div>
+      <select class="board-select" id="board-filter" aria-label="按榜单筛选"></select>
+    </div>
+    <div class="rank-list" id="rank-world"></div>
+    <div class="rank-list" id="rank-mine" hidden></div>
+  </section>
 
 </main>
 
+<!-- 底部抽屉：家当 / 人脉 / 世道（按需查看，平时不占版面） -->
+<div class="sheet-backdrop" id="sheet-bg" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-bar">
+      <h3 id="sheet-title"></h3>
+      <button class="sheet-close" id="sheet-close" type="button" aria-label="关闭">✕</button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+</div>
+
+<!-- 分享海报弹窗 -->
 <div id="poster-modal" class="poster-modal" role="dialog" aria-modal="true" aria-label="分享海报" hidden>
   <div class="poster-sheet">
     <div class="poster-wrap"><img id="poster-img" alt="分享海报"></div>
     <div class="poster-acts">
-      <a id="poster-dl" class="primary" download="这一百年-海报.jpg">保存海报</a>
-      <button id="poster-share" type="button" class="ghost-btn" hidden>系统分享</button>
-      <button id="poster-close" type="button" class="ghost-btn">关闭</button>
+      <a id="poster-dl" class="btn-primary" download="这一百年-海报.jpg">保存海报</a>
+      <button id="poster-share" type="button" class="btn-ghost" hidden>系统分享</button>
+      <button id="poster-close" type="button" class="btn-ghost">关闭</button>
     </div>
   </div>
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="/app.js?v=20261117b"></script>
+<script src="/app.js?v=20261118a"></script>
 </body>
 </html>

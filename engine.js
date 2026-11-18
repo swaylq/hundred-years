@@ -1233,8 +1233,8 @@ const PERSONA_NO = [
     say: '刚穿过来时还是凡胎俗骨，高深武艺或神通得进城后再寻访拜师' },
   { re: /过目不忘|过耳不忘|一目十行|心算如神|未卜先知|读心|摄魂|算无遗策|从不出错|永远不会错|无所不知|精通一切|样样精通/,
     say: '刚穿过来时本事还在常人范围——记性好、懂算命玄学可以，过目不忘不行' },
-  { re: /系统|金手指|外挂|开挂|时间循环|存档|读档|不死之身|原地飞升/,
-    say: '身为穿越者落地时没有系统外挂，修仙、魔法或神魔奇遇要在城里自己去撞' },
+  { re: /系统|金手指|外挂|开挂|时间循环|存档|读档|不死之身|原地飞升|灵根|仙体|圣体|神格|法力无边|神通广大|天下无敌|绝世高手|满级/,
+    say: '刚穿过来时还是普通人底子，不能自带系统、灵根或通天神通' },
   { re: /首富|大亨|巨富|富二代|官二代|家财万贯|腰缠万贯|富可敌国|继承[^。，]{0,6}(家产|遗产|万贯|家业)|背景深厚|后台很硬|上头有人|通天的关系/,
     say: '穿越落地的盘缠由那一年决定，不能在设定里自带万贯家产或后台' },
 ];
@@ -1342,11 +1342,11 @@ function weirdRoll(s, list) {
   };
 }
 
-/** 衡量玩家这个月写得有多用心，以及是不是在连续乱点选项/敷衍。
- *  - sloppy（惩罚档）：连续两个月以上直接点选项（fresh < 0.25），或只写不到 10 个汉字敷衍了事 → 收益腰斩并吃暗亏
- *  - option（点选项档）：当月直接点选项或手写不足 18 字 → 奖励微薄，只够糊口
- *  - solid（认真手写，18–54 字）：正常偏高回报
- *  - deep（用心详写，亲手写 >= 55 字）：高额回报 + 极易触发好事与贵人机缘 */
+/** 衡量这个月写得有多具体，温和拉开差距，不搞极端重罚也不搞字数刷钱。
+ *  - brief（连续照点三次以上或不足 4 字）：平淡过渡，勉强糊口，不强行倒霉
+ *  - option（当月直接点现成参考或自写不足 10 字）：稳当平实，按常理结算
+ *  - solid（自己动手写，10–44 字）：路子活，正常发挥并有机会撞上好机缘
+ *  - deep（用心详写，亲手写 >= 45 字）：筹划更细致，成事更稳、小幅增幅，但不保证必发横财 */
 function planEffort(s, list) {
   const txt = String(list || '');
   const han = countHan(txt);
@@ -1358,34 +1358,34 @@ function planEffort(s, list) {
     const d = past[i];
     const df = d && d.fresh != null ? d.fresh : 1;
     const dh = countHan((d && d.list) || '');
-    if (df < 0.25 || dh < 12) prevLazy++;
+    if (df < 0.25 || dh < 6) prevLazy++;
     else break;
   }
-  if (han < 10 || (fresh < 0.25 && prevLazy >= 1)) {
+  if (han < 4 || (fresh < 0.25 && prevLazy >= 2)) {
     const streak = prevLazy + 1;
     return {
-      tier: 'sloppy', han, ownHan, fresh, lazyStreak: streak,
-      mult: Math.max(0.25, 0.5 - 0.08 * prevLazy),
-      stumble: true, bonusLuck: false,
+      tier: 'brief', han, ownHan, fresh, lazyStreak: streak,
+      mult: 0.72,
+      stumble: false, bonusLuck: false,
     };
   }
-  if (fresh < 0.35 || ownHan < 18) {
+  if (fresh < 0.35 || ownHan < 10) {
     return {
       tier: 'option', han, ownHan, fresh, lazyStreak: 1,
-      mult: 0.6, stumble: false, bonusLuck: false,
+      mult: 0.88, stumble: false, bonusLuck: false,
     };
   }
-  if (ownHan >= 55) {
+  if (ownHan >= 45) {
     return {
       tier: 'deep', han, ownHan, fresh, lazyStreak: 0,
-      mult: Math.min(2.1, 1.55 + (ownHan - 55) / 150),
-      stumble: false, bonusLuck: true,
+      mult: Math.min(1.38, 1.25 + (ownHan - 45) / 260),
+      stumble: false, bonusLuck: false,
     };
   }
   return {
     tier: 'solid', han, ownHan, fresh, lazyStreak: 0,
-    mult: 1.15 + (ownHan - 18) / 120,
-    stumble: false, bonusLuck: ownHan >= 38,
+    mult: 1.05 + (ownHan - 10) / 175,
+    stumble: false, bonusLuck: false,
   };
 }
 
@@ -1430,32 +1430,25 @@ function extractWorldTrace(s, played, delta, res1) {
   };
 }
 
-/* ── 持续性月度进项（税收／供奉／津贴／产业）与剧情量级对齐 ─────────────
- * 解决两类核心失真：
- * 1. 玩家在前面月份已经建立的每月固定税收、门徒香火供奉、政府顾问津贴或产业月利，
- *    过一两个月或新增一项进项后被模型漏掉；
- * 2. 正文里写着「百万门徒」「亿万信徒」「各国每月供奉全国税收的十分之一」「殖民星球」，
- *    账单却因为模型照抄普通工薪尺子只给一两百万。 */
+/* ── 持续性月度进项（铺面／租金／津贴／堂口）与写实量级对齐 ─────────────
+ * 只保住既往已经落地的合理持续进项（如铺面月利、房租、顾问津贴、堂口规费），
+ * 不再根据单月手写狂想把账面人为抬高几百倍。 */
 const LABOR_ENTRY_RE = /(临工|临时|杂工|零散|搬运|卸货|扛包|短工|打杂)/;
 const ONEOFF_ENTRY_RE = /(安家费|定金|押金|变卖|售卖|转卖|变现|悬赏|赔偿|退还|收回|借款|借入|补差|折算价值|截获)/;
 
 function recurringBucketOf(what) {
   const w = String(what || '');
   if (!w || LABOR_ENTRY_RE.test(w)) return null;
-  if (ONEOFF_ENTRY_RE.test(w) && !/(月度|每月|例行|常规|津贴|税收|香火|供奉)/.test(w)) return null;
-  if (/(税收|赋税|岁币|进贡|朝贡|各国.*供奉|列强.*供奉|首脑.*供奉|全国.*供奉)/.test(w) && !/(信徒|门徒|教徒)/.test(w)) return 'tax';
-  if (/(门徒|信徒|教徒|香火|愿力|教派|宗门|教区|合欢宗|安魂.*露|供奉余利)/.test(w) && /(供奉|香火|愿力|余利|月费|会费|收益|进项|分成|税收)/.test(w)) {
-    if (/(税收|赋税)/.test(w) && /(教区|信仰|首脑|各国)/.test(w)) return 'tax_and_sect';
-    return 'sect';
-  }
-  if (/(顾问|国师|俸禄|津贴|官俸)/.test(w) && !/(额外|赏金)/.test(w)) return 'advisor';
+  if (ONEOFF_ENTRY_RE.test(w) && !/(月度|每月|例行|常规|津贴|房租|香火|月利)/.test(w)) return null;
+  if (/(门徒|信徒|教徒|香火|宗门|堂口香火)/.test(w) && /(供奉|香火|月费|会费|收益|进项|余利)/.test(w)) return 'sect';
+  if (/(顾问|俸禄|津贴|官俸|固定薪水|月俸)/.test(w) && !/(额外|赏金)/.test(w)) return 'advisor';
   if (/(房租|租金|田租|地租|铺租)/.test(w)) return 'rent';
   if (/(份子|保护费|堂口|抽头|规费)/.test(w)) return 'dues';
-  if (/(销售收益|经营净利|经营收入|分红|股息|红利|月利|余利)/.test(w)) return 'biz';
+  if (/(销售收益|经营净利|经营收入|分红|股息|红利|月利|余利|铺面收益)/.test(w)) return 'biz';
   return null;
 }
 
-/** 扫描历史月份，提取当前仍存续的每月固定进项桶（按当月购买力折算） */
+/** 扫描历史月份，提取当前仍存续的每月固定进项桶（按当月购买力折算，带合理上限） */
 function recurringStreamsOf(s) {
   const past = (s && Array.isArray(s.months)) ? s.months : [];
   if (!past.length) return [];
@@ -1471,25 +1464,14 @@ function recurringStreamsOf(s) {
       if (!b) continue;
       const ratio = Number(e.amount) / mInc;
       if (ratio < 0.05) continue;
-      if (b === 'tax_and_sect') {
-        const target = map.has('sect') ? 'tax' : 'sect';
-        const prev = map.get(target);
-        map.set(target, {
-          bucket: target,
-          what: target === 'tax' ? '各国例行税收供奉分成' : String(e.what).replace(/^首月/, '月度'),
-          ratio: prev ? Math.max(prev.ratio, ratio) : ratio,
-          rawAmount: prev ? Math.max(prev.rawAmount || 0, Number(e.amount)) : Number(e.amount),
-          lastN: m.n,
-        });
-        continue;
-      }
+      /* 固定流水的单桶折算比例温和设限，防止单次异动被当成永久月薪无限滚雪球 */
+      const cappedRatio = Math.min(ratio, 3.0);
       const prev = map.get(b);
       const cleanName = String(e.what).replace(/首月/g, '月度').replace(/安家费及/g, '');
       map.set(b, {
         bucket: b,
         what: cleanName,
-        /* 顾问固定月薪保持原有名义或购买力水平，门徒/税收等扩张型进项取历史最高购买力比例 */
-        ratio: b === 'advisor' ? ratio : (prev ? Math.max(prev.ratio * 0.95, ratio) : ratio),
+        ratio: prev ? (prev.ratio * 0.4 + cappedRatio * 0.6) : cappedRatio,
         rawAmount: Number(e.amount),
         lastN: m.n,
       });
@@ -1497,121 +1479,59 @@ function recurringStreamsOf(s) {
   }
 
   return [...map.values()].filter(st => {
-    if (st.bucket === 'advisor' && /顾问|国师/.test(lostTxt)) return false;
-    if (st.bucket === 'sect' && /教主|宗主|宗门|教派/.test(lostTxt)) return false;
+    if (st.bucket === 'advisor' && /顾问|差事|官职/.test(lostTxt)) return false;
+    if (st.bucket === 'sect' && /堂口|宗门|教派|武馆/.test(lostTxt)) return false;
+    if (st.bucket === 'biz' && /铺子|摊子|商号|作坊/.test(lostTxt)) return false;
     return true;
   }).map(st => ({
     ...st,
-    expectedAmount: st.bucket === 'advisor'
-      ? Math.max(st.rawAmount, Math.round(st.ratio * curInc))
-      : Math.round(st.ratio * curInc),
+    expectedAmount: Math.round(st.ratio * curInc),
   }));
 }
 
-/** 根据玩家当前境界/势力、历史规模、当月打算与正文，判定本月事件的真实经济量级 */
-function scaleTierOf(s, list, story = '') {
+/** 仅根据已经攒下的真实身价与既往经历（traits）判定当下人间尺度，绝不听信当月空口许愿 */
+function scaleTierOf(s) {
   const traitsTxt = ((s && s.memo && s.memo.traits) || [])
     .filter(t => !t.lost)
     .map(t => `${t.what} ${(t.notes || []).map(x => x.note).join(' ')}`)
     .join(' ');
-  const curText = `${list || ''} ${story || ''}`;
-  const allText = `${traitsTxt} ${curText}`;
+  const inc = (s && s.year && s.month) ? (incomeOf(s.year, s.month) || 1) : 1;
+  const yearsWorth = s ? (netWorth(s) / inc) : 0;
 
-  if (/(其他宇宙|多元宇宙|打破.*虚空|太阳系|殖民.*星球|殖民月球|轰碎.*星球|横穿星际)/.test(allText)) {
-    return { tier: 4, label: '星际与跨界霸主', minMult: 420, maxMult: 780 };
+  if (yearsWorth >= 20 || /(总商会|大商帮|垄断全城|城中巨擘|大号东家|数百家|百人以上)/.test(traitsTxt)) {
+    return { tier: 3, sub: 'tycoon', label: '城中巨擘与大商号东家', minMult: 1.8, maxMult: 4.5 };
   }
-  if (/(全国税收|各国税收|税收的十分之一|10%\s*的?税收|西方列强.*臣服|各国首脑.*臣服|各国首脑.*觐见|全球至高统治|全球.*1\s*\/\s*3|三分之一.*信徒|徒弟过亿|亿万门徒|亿万信徒|全球收徒)/.test(allText)) {
-    const hasTax = /(税收|列强.*臣服|首脑.*臣服|首脑.*觐见|至高统治)/.test(allText);
-    return hasTax
-      ? { tier: 3, sub: 'global_tax', label: '全球税收与万国朝贡', minMult: 260, maxMult: 480 }
-      : { tier: 3, sub: 'global_sect', label: '全球亿万信徒供奉', minMult: 95, maxMult: 210 };
+  if (yearsWorth >= 6 || /(商号|堂主|高阶顾问|高级顾问|名师|几处铺面|数十人|行会会长|钱庄股东)/.test(traitsTxt)) {
+    return { tier: 2, sub: 'notable', label: '一方人物与体面门面', minMult: 0.8, maxMult: 2.0 };
   }
-  if (/(千万门徒|千万信徒|一百万|百万门徒|百万信徒|全国收徒|成为.*国师|全国的?国师|世界第一大|垄断全国|举国供奉)/.test(allText)) {
-    const isTenM = /(千万门徒|千万信徒|世界第一大.*千万)/.test(allText);
-    return isTenM
-      ? { tier: 2, sub: 'ten_million', label: '千万门徒大宗', minMult: 45, maxMult: 85 }
-      : { tier: 2, sub: 'national', label: '举国国师与百万门徒', minMult: 18, maxMult: 38 };
+  if (yearsWorth >= 1.5 || /(铺子|作坊|摊位|工头|掌柜|顾问|手艺|小堂口|帮手|熟客)/.test(traitsTxt)) {
+    return { tier: 1, sub: 'settled', label: '站稳脚跟的熟手东家', minMult: 0.32, maxMult: 0.95 };
   }
-  if (/(一万人|万人规模|万人香火|千人规模|1000\s*人|高级顾问|战略安全顾问|陆地神仙|元婴|化神|开山立宗|开辟教派|总商会|垄断全城)/.test(allText)) {
-    const isWan = /(一万人|万人)/.test(allText);
-    return isWan
-      ? { tier: 1, sub: 'wan_sect', label: '万人宗门与一方巨擘', minMult: 4.5, maxMult: 9.5 }
-      : { tier: 1, sub: 'regional', label: '一方豪强与高官顾问', minMult: 1.6, maxMult: 3.8 };
-  }
-  return { tier: 0, sub: 'mortal', label: '市井营生', minMult: 0.15, maxMult: 0.6 };
+  return { tier: 0, sub: 'mortal', label: '市井起步', minMult: 0.12, maxMult: 0.45 };
 }
 
 /** 校准当月模型返回的账单：
- *  1) 补齐被模型遗忘的既往每月固定进项（如门徒香火供奉、各国税收分成、政府顾问津贴等）；
- *  2) 将与正文描述严重脱节的缩水进项（如正文写各国供奉 10% 税收或亿万信徒、账面却照抄普通人尺子给 200 万）拉齐到真实量级。 */
+ *  只补齐被模型漏记的既往持续性固定进项（铺面月利、房租、顾问津贴等），
+ *  不做脱离实际的百倍放大。 */
 function reconcileMonthFinancials(s, list, delta) {
   if (!delta || !Array.isArray(delta.entries)) return delta;
   const inc = incomeOf(s.year, s.month);
   if (!(inc > 0)) return delta;
 
   const streams = recurringStreamsOf(s);
-  const scale = scaleTierOf(s, list, delta.story || '');
+  if (!streams.length) return delta;
+
   const seed = (s.seed || 1) * 48271 + (s.n || 1) * 16807;
-  const frac = (hash32(seed) / 2 ** 32);
-
-  /* 1. 先拉齐当月模型自己写出的各条进项，使其符合正文描述的真实量级 */
-  if (scale.tier >= 1) {
-    const baseMult = scale.minMult + (scale.maxMult - scale.minMult) * (0.35 + 0.55 * frac);
-    const nonAdvisorPos = delta.entries.filter(e => e && Number(e.amount) > 0 && recurringBucketOf(e.what) !== 'advisor');
-
-    for (let idx = 0; idx < nonAdvisorPos.length; idx++) {
-      const e = nonAdvisorPos[idx];
-      const b = recurringBucketOf(e.what);
-      const effectiveB = b === 'tax_and_sect' ? 'tax' : b;
-      const prevSt = streams.find(x => x.bucket === effectiveB);
-      const itemFrac = (hash32(seed ^ ((idx + 1) * 997)) / 2 ** 32);
-
-      let wantAmt = Number(e.amount);
-      if (effectiveB === 'tax') {
-        /* 各国/全国税收供奉：在 Tier 3/4 下应当是数百倍普通人年收入的巨款 */
-        const taxMult = scale.tier >= 3 ? (240 + 180 * itemFrac) : (40 + 40 * itemFrac);
-        wantAmt = Math.max(wantAmt, Math.round(inc * taxMult));
-      } else if (effectiveB === 'sect') {
-        /* 门徒/信徒香火供奉：按门徒规模（千人→万人→百万→亿万）阶梯放大 */
-        const sectMult = scale.tier >= 3 ? (110 + 90 * itemFrac)
-          : scale.sub === 'ten_million' ? (50 + 35 * itemFrac)
-          : scale.tier === 2 ? (22 + 16 * itemFrac)
-          : scale.sub === 'wan_sect' ? (5.5 + 3.5 * itemFrac)
-          : (2.0 + 1.5 * itemFrac);
-        wantAmt = Math.max(wantAmt, Math.round(inc * sectMult));
-      } else if ( idx === 0 || /(殖民|月球|太阳系|宇宙|跨界|神迹|国师|截获)/.test(e.what) ) {
-        /* 当月专项大动作（如星际殖民、月球神迹、跨界开拓、国师重赏） */
-        const featMult = scale.tier >= 4 ? (180 + 160 * itemFrac)
-          : scale.tier === 3 ? (80 + 70 * itemFrac)
-          : scale.tier === 2 ? (15 + 15 * itemFrac)
-          : (1.8 + 1.5 * itemFrac);
-        wantAmt = Math.max(wantAmt, Math.round(inc * featMult));
-      }
-
-      if (prevSt && wantAmt < prevSt.expectedAmount * 1.02) {
-        wantAmt = Math.round(prevSt.expectedAmount * (1.03 + 0.08 * itemFrac));
-      }
-      e.amount = wantAmt;
-    }
-  }
-
-  /* 2. 检查并补齐被模型遗忘的既往持续性固定进项（如有了各国税收后忘了原本的亿万门徒香火供奉） */
   const presentBuckets = new Set();
   for (const e of delta.entries) {
     if (!e || !(Number(e.amount) > 0)) continue;
     const b = recurringBucketOf(e.what);
-    if (b === 'tax_and_sect') {
-      /* 如果模型把门徒香火和国家税收混写成了一条，改清名字归入税收，让门徒香火单独补齐 */
-      e.what = '各国首脑例行税收供奉分成';
-      presentBuckets.add('tax');
-    } else if (b) {
-      presentBuckets.add(b);
-    }
+    if (b) presentBuckets.add(b);
   }
 
   for (const st of streams) {
     if (!presentBuckets.has(st.bucket)) {
-      const jitter = st.bucket === 'advisor' ? 1 : (1.02 + 0.06 * ((hash32(seed ^ st.lastN) / 2 ** 32)));
+      const jitter = 0.95 + 0.1 * (hash32(seed ^ st.lastN) / 2 ** 32);
       const amt = Math.round(st.expectedAmount * jitter);
       if (amt > 0) {
         delta.entries.push({ what: st.what, amount: amt });
@@ -1620,25 +1540,43 @@ function reconcileMonthFinancials(s, list, delta) {
     }
   }
 
-  /* 3. 若进项已放大至亿级（高阶规模），同步放大对应的教务/总部/阵法运营支出，避免账单出现 -0.00 亿 */
-  if (scale.tier >= 1) {
-    const posTotal = delta.entries.filter(e => e && Number(e.amount) > 0).reduce((t, e) => t + Number(e.amount), 0);
-    const negEntries = delta.entries.filter(e => e && Number(e.amount) < 0);
-    for (let i = 0; i < negEntries.length; i++) {
-      const ne = negEntries[i];
-      if (Math.abs(Number(ne.amount)) < posTotal * 0.01) {
-        const outRatio = 0.025 + 0.025 * ((hash32(seed ^ ((i + 7) * 331)) / 2 ** 32));
-        ne.amount = -Math.round((posTotal * outRatio) / negEntries.length);
-      }
-    }
-  }
-
   return delta;
+}
+
+/** 从完整正文或月记里兜底提取 2–3 句精简概要（供老记录或模型漏写 summary 时使用） */
+function deriveSummary(story, memoLine) {
+  const clean = String(story || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  if (clean) {
+    const sents = clean.match(/[^。！？\n]+[。！？]?/g) || [clean];
+    let out = '';
+    for (const s of sents) {
+      const t = s.trim();
+      if (!t) continue;
+      if (out && (out.length + t.length > 96 || (out.length >= 42 && sents.length > 2))) break;
+      out += t;
+      if (out.length >= 52) break;
+    }
+    if (out) return out.slice(0, 110);
+  }
+  return oneLine(memoLine || '', 96);
+}
+
+/** 从标题、概要或正文里兜底提取 10–22 字短标题 */
+function deriveHeadline(headline, summary, memoLine, story) {
+  const h = oneLine(String(headline || '').replace(/\*\*/g, '').replace(/[《》「」『』""''。！？!?.，,;；：:]+$/g, ''), 26);
+  if (h.length >= 4) return h;
+  const src = String(summary || memoLine || story || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  if (!src) return '';
+  const first = src.split(/[。！？；\n]/)[0].trim();
+  if (first.length <= 24) return first;
+  const sub = first.split(/[，,]/)[0].trim();
+  return (sub.length >= 8 && sub.length <= 24 ? sub : first.slice(0, 22)).replace(/[，,、：:]+$/, '');
 }
 
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
+  deriveSummary, deriveHeadline,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,
   DAYS, MONTHS, MONTHS_EXTRA, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
   lastMonthOf, extraRoom, reopen,
