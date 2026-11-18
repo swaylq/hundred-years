@@ -58,8 +58,55 @@ const YEAR_ART_V = '1';
 const yearArtUrl = y => (Number(y) >= 1926 && Number(y) <= 2025) ? `/assets/years/${Number(y)}.webp?v=${YEAR_ART_V}` : null;
 const yearThumbUrl = y => (Number(y) >= 1926 && Number(y) <= 2025) ? `/assets/years/thumb/${Number(y)}.webp?v=${YEAR_ART_V}` : null;
 
-function applyTheme(theme) {
+const reducedMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function animatePanel(node, cls = 'panel-in-up') {
+  if (!node || reducedMotion()) return;
+  node.classList.remove('panel-in-l', 'panel-in-r', 'panel-in-up');
+  void node.offsetWidth;
+  node.classList.add(cls);
+  node.addEventListener('animationend', () => node.classList.remove(cls), { once: true });
+}
+
+const overlayTimers = new WeakMap();
+function showOverlay(node) {
+  if (!node) return;
+  const prev = overlayTimers.get(node);
+  if (prev) { clearTimeout(prev); overlayTimers.delete(node); }
+  node.hidden = false;
+  if (reducedMotion()) { node.dataset.state = 'open'; return; }
+  delete node.dataset.state;
+  void node.offsetWidth;
+  node.dataset.state = 'open';
+}
+function hideOverlay(node, ms = 180) {
+  if (!node || node.hidden) return;
+  const prev = overlayTimers.get(node);
+  if (prev) { clearTimeout(prev); overlayTimers.delete(node); }
+  if (reducedMotion()) {
+    delete node.dataset.state;
+    node.hidden = true;
+    return;
+  }
+  node.dataset.state = 'closing';
+  const t = setTimeout(() => {
+    overlayTimers.delete(node);
+    if (node.dataset.state === 'closing') {
+      delete node.dataset.state;
+      node.hidden = true;
+    }
+  }, ms);
+  overlayTimers.set(node, t);
+}
+
+let themeSwitchT = null;
+function applyTheme(theme, animate = false) {
   const t = theme === 'dark' ? 'dark' : 'light';
+  if (animate && !reducedMotion()) {
+    document.documentElement.classList.add('theme-switching');
+    clearTimeout(themeSwitchT);
+    themeSwitchT = setTimeout(() => document.documentElement.classList.remove('theme-switching'), 260);
+  }
   document.body.dataset.theme = t;
   localStorage.setItem(THEME_KEY, t);
   const btn = $('#btn-theme');
@@ -71,9 +118,9 @@ function applyTheme(theme) {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', t === 'dark' ? '#272522' : '#f3eee4');
 }
-applyTheme(localStorage.getItem(THEME_KEY) || 'light');
+applyTheme(localStorage.getItem(THEME_KEY) || 'light', false);
 $('#btn-theme').addEventListener('click', () => {
-  applyTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark');
+  applyTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark', true);
 });
 
 /* ── 网络与轻提示 ───────────────────────────────────────── */
@@ -92,33 +139,127 @@ let toastT = null;
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
-  t.hidden = false;
+  showOverlay(t);
   clearTimeout(toastT);
-  toastT = setTimeout(() => { t.hidden = true; }, 3400);
+  toastT = setTimeout(() => hideOverlay(t, 160), 3400);
 }
 
-/* ── 换屏 ──────────────────────────────────────────────── */
+/* ── 换屏（方向感知双相过渡 + 滚动位还原） ─────────────────── */
+const NAV_ORDER = { pick: 0, year: 0, play: 1, done: 1, board: 2, mine: 3, detail: 2.5 };
+const TR_ALL = [
+  'is-leaving',
+  'tr-in-push', 'tr-out-push',
+  'tr-in-pop', 'tr-out-pop',
+  'tr-in-tab-r', 'tr-out-tab-r',
+  'tr-in-tab-l', 'tr-out-tab-l',
+  'tr-in-fade', 'tr-out-fade',
+];
+const screenScroll = new Map();
+let screenLeaveT = null;
+let screenEnterT = null;
+
+function resolveTransition(from, to) {
+  if (!from || from === to) return 'fade';
+  if (
+    (from === 'pick' && to === 'year') ||
+    (from === 'year' && to === 'play') ||
+    (from === 'play' && to === 'done') ||
+    (from === 'done' && to === 'play') ||
+    ((from === 'board' || from === 'mine') && to === 'detail')
+  ) return 'push';
+  if (
+    (from === 'year' && to === 'pick') ||
+    (from === 'detail' && (to === 'board' || to === 'mine')) ||
+    (from === 'done' && to === 'pick')
+  ) return 'pop';
+  const a = NAV_ORDER[from], b = NAV_ORDER[to];
+  if (a != null && b != null && a !== b) return b > a ? 'tab-r' : 'tab-l';
+  return 'fade';
+}
+
+function flashNavProgress() {
+  const bar = $('#nav-progress');
+  if (!bar || reducedMotion()) return;
+  bar.classList.remove('run');
+  void bar.offsetWidth;
+  bar.classList.add('run');
+}
+
 function syncNavPlay() {
   const navPlay = $('#nav-play');
   if (navPlay) navPlay.hidden = !run;
 }
 
-function go(name) {
+function go(name, opts = {}) {
   if (name !== 'play' && voice && voice.isActive()) voice.cancel();
+  const prevName = document.body.dataset.screen || 'pick';
+  const prevScreenId = prevName === 'mine' ? 'board' : prevName;
   const targetScreen = name === 'mine' ? 'board' : name;
-  $$('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + targetScreen));
+  const dir = opts.dir || resolveTransition(prevName, name);
+
+  screenScroll.set(prevName, window.scrollY);
+  const targetY = (dir === 'pop' && !opts.top && screenScroll.has(name))
+    ? (screenScroll.get(name) || 0)
+    : 0;
+
+  const oldEl = $('#s-' + prevScreenId);
+  const newEl = $('#s-' + targetScreen);
+
+  if (prevScreenId !== targetScreen && newEl) {
+    const oldY = window.scrollY;
+    const mainEl = $('.app-main');
+    const padTop = mainEl ? (parseFloat(getComputedStyle(mainEl).paddingTop) || 16) : 16;
+
+    clearTimeout(screenLeaveT);
+    clearTimeout(screenEnterT);
+    $$('.screen').forEach(s => {
+      s.classList.remove(...TR_ALL);
+      s.style.top = '';
+      s.style.maxHeight = '';
+      s.style.overflow = '';
+      if (s !== newEl) s.classList.remove('on');
+    });
+    newEl.classList.add('on');
+    window.scrollTo({ top: targetY, behavior: 'instant' });
+    const newY = window.scrollY;
+
+    if (!opts.instant && !reducedMotion() && oldEl && oldEl !== newEl) {
+      oldEl.style.top = `${padTop + newY - oldY}px`;
+      oldEl.style.maxHeight = `${Math.max(240, oldY + window.innerHeight - padTop)}px`;
+      oldEl.style.overflow = 'hidden';
+      oldEl.classList.add('is-leaving', `tr-out-${dir}`);
+      newEl.classList.add(`tr-in-${dir}`);
+      flashNavProgress();
+      screenLeaveT = setTimeout(() => {
+        oldEl.classList.remove(...TR_ALL);
+        oldEl.style.top = '';
+        oldEl.style.maxHeight = '';
+        oldEl.style.overflow = '';
+      }, 230);
+      screenEnterT = setTimeout(() => {
+        newEl.classList.remove(...TR_ALL);
+      }, 320);
+    }
+  } else {
+    $$('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + targetScreen));
+    if (prevName !== name) flashNavProgress();
+    window.scrollTo({ top: targetY, behavior: 'instant' });
+  }
+
   $$('#top .nav-links button[data-go]').forEach(b => {
     const k = b.dataset.go;
     const active = k === name || (name === 'year' && k === 'pick') || (name === 'detail' && k === detailBack);
     b.classList.toggle('on', active);
   });
   document.body.dataset.screen = name;
-  window.scrollTo({ top: 0, behavior: 'instant' });
-  if (name === 'board') { setBoardMode('world'); loadBoard(); }
-  if (name === 'mine') { setBoardMode('mine'); loadMine(); }
+  if (name === 'board') { setBoardMode('world', { animate: prevScreenId === 'board' && prevName !== 'board' }); loadBoard(); }
+  if (name === 'mine') { setBoardMode('mine', { animate: prevScreenId === 'board' && prevName !== 'mine' }); loadMine(); }
 }
 
-$$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
+$$('[data-go]').forEach(b => b.addEventListener('click', () => {
+  const fromNav = !!b.closest('#top');
+  go(b.dataset.go, fromNav ? { top: true } : {});
+}));
 
 /* ── 1. 选择年份（焦点年份舞台 + 百年画卷墙） ─────────────── */
 const ERA_RANGES = {
@@ -231,9 +372,11 @@ function renderYearGrid(era = 'all') {
 }
 
 $$('#era-bar button').forEach(b => b.addEventListener('click', () => {
+  const was = currentEra;
   $$('#era-bar button').forEach(x => x.classList.remove('on'));
   b.classList.add('on');
   renderYearGrid(b.dataset.era);
+  if (was !== b.dataset.era) animatePanel($('#grid'), 'panel-in-up');
 }));
 $('#sp-enter').addEventListener('click', () => {
   if (selectedYear) openYear(selectedYear);
@@ -272,25 +415,26 @@ function updateYearStepButtons(y) {
     prevBtn.hidden = !prev;
     if (prev) {
       prevBtn.textContent = `‹ ${prev.year}`;
-      prevBtn.onclick = () => openYear(prev.year);
+      prevBtn.onclick = () => openYear(prev.year, { flip: 'prev' });
     }
   }
   if (nextBtn) {
     nextBtn.hidden = !next;
     if (next) {
       nextBtn.textContent = `${next.year} ›`;
-      nextBtn.onclick = () => openYear(next.year);
+      nextBtn.onclick = () => openYear(next.year, { flip: 'next' });
     }
   }
 }
 
-async function openYear(y) {
+async function openYear(y, opts = {}) {
   selectedYear = y;
   const infoRow = (years || []).find(x => x.year === y);
   if (infoRow) renderSpotlight(infoRow);
   updateYearStepButtons(y);
-  go('year');
+  if (document.body.dataset.screen !== 'year') go('year');
   const hero = $('#year-hero');
+  if (opts.flip) animatePanel(hero, opts.flip === 'prev' ? 'panel-in-l' : 'panel-in-r');
   const art = yearArtUrl(y);
   hero.innerHTML =
     `${art ? `<div class="year-hero-media"><img src="${art}" alt="${y} 年风貌"></div>` : ''}
@@ -1047,6 +1191,7 @@ async function sendMonth() {
     $('#count').classList.remove('over');
     updateDepthBar(0);
     renderPlay(d);
+    animatePanel($('#play-story'), 'panel-in-up');
     goTop();
     if (d.done) toast(d.state.phase === 'extra' ? '这几年过完了，可以去算总账了' : '满两年了，可以去算这两年的账了');
   } catch (e) {
@@ -1062,9 +1207,12 @@ async function sendMonth() {
 /* ── 底部抽屉：家当 / 人脉 / 世道 ────────────────────────── */
 let sheetPrevFocus = null;
 function closeSheet() {
-  $('#sheet-bg').hidden = true;
+  hideOverlay($('#sheet-bg'), 180);
   if (sheetPrevFocus && typeof sheetPrevFocus.focus === 'function') sheetPrevFocus.focus();
   sheetPrevFocus = null;
+}
+function closePosterModal() {
+  hideOverlay($('#poster-modal'), 170);
 }
 $('#sheet-close').addEventListener('click', closeSheet);
 $('#sheet-bg').addEventListener('click', e => { if (e.target.id === 'sheet-bg') closeSheet(); });
@@ -1072,7 +1220,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (!$('#comic-modal').hidden) closeComicLightbox();
     else if (!$('#sheet-bg').hidden) closeSheet();
-    else if (!$('#poster-modal').hidden) $('#poster-modal').hidden = true;
+    else if (!$('#poster-modal').hidden) closePosterModal();
   } else if (!$('#comic-modal').hidden) {
     if (e.key === 'ArrowLeft') stepComicLightbox(-1);
     else if (e.key === 'ArrowRight') stepComicLightbox(1);
@@ -1101,7 +1249,7 @@ async function openSheet(kind, opts = {}) {
   const titleEl = $('#sheet-title');
   const body = $('#sheet-body');
   body.innerHTML = '';
-  bg.hidden = false;
+  showOverlay(bg);
 
   if (kind === 'assets' && run) {
     const s = run.state;
@@ -1377,11 +1525,11 @@ function openComicLightbox(items, idx) {
   if (!Array.isArray(items) || !items.length) return;
   comicLbState = { items, idx: Math.max(0, Math.min(items.length - 1, idx)) };
   renderComicLightbox();
-  $('#comic-modal').hidden = false;
+  showOverlay($('#comic-modal'));
 }
 
 function closeComicLightbox() {
-  $('#comic-modal').hidden = true;
+  hideOverlay($('#comic-modal'), 170);
 }
 
 function stepComicLightbox(delta) {
@@ -1389,6 +1537,9 @@ function stepComicLightbox(delta) {
   if (next < 0 || next >= comicLbState.items.length) return;
   comicLbState.idx = next;
   renderComicLightbox();
+  const cls = delta > 0 ? 'panel-in-r' : 'panel-in-l';
+  animatePanel($('.comic-lb-stage'), cls);
+  animatePanel($('.comic-lb-cap'), cls);
 }
 
 $('#lb-close').addEventListener('click', closeComicLightbox);
@@ -1449,14 +1600,18 @@ function renderComicStrip(host, cfg) {
   /* 连环画主画册 */
   const book = el('div', 'comic-book');
   btnScroll.addEventListener('click', () => {
+    if (!book.classList.contains('is-grid')) return;
     btnScroll.classList.add('on');
     btnGrid.classList.remove('on');
     book.classList.remove('is-grid');
+    animatePanel(book, 'panel-in-up');
   });
   btnGrid.addEventListener('click', () => {
+    if (book.classList.contains('is-grid')) return;
     btnGrid.classList.add('on');
     btnScroll.classList.remove('on');
     book.classList.add('is-grid');
+    animatePanel(book, 'panel-in-up');
   });
 
   let prevYear = null;
@@ -1711,16 +1866,21 @@ function renderMagazineView(container, cfg) {
     ['verdict', '记事人判词'],
   ];
 
-  for (const [key, label] of tabDefs) {
+  let activeTabIdx = 0;
+  tabDefs.forEach(([key, label], idx) => {
     const b = el('button', key === defaultTab ? 'on' : '', label);
     b.type = 'button';
     b.dataset.tab = key;
     b.addEventListener('click', () => {
+      if (idx === activeTabIdx) return;
+      const cls = idx > activeTabIdx ? 'panel-in-r' : 'panel-in-l';
+      activeTabIdx = idx;
       tabs.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
       Object.entries(panes).forEach(([k, p]) => { p.hidden = k !== key; });
+      animatePanel(panes[key], cls);
     });
     tabs.appendChild(b);
-  }
+  });
   container.appendChild(tabs);
 
   /* Tab 1: 连环画（所有月份首尾相连） */
@@ -1875,10 +2035,12 @@ const peekUrl = id => `/api/peek?id=${encodeURIComponent(id)}${token ? '&token='
 
 async function openDetail(id, back = 'mine') {
   const box = $('#detail-body');
+  const alreadyDetail = document.body.dataset.screen === 'detail';
   box.innerHTML = '<p class="wait">正在打开记录…</p>';
   detailBack = back;
   peekFor = null;
-  go('detail');
+  if (!alreadyDetail) go('detail');
+  else animatePanel(box, 'panel-in-r');
   try {
     const d = await api(`/api/detail?id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}`);
     renderMagazineView(box, {
@@ -2050,7 +2212,7 @@ async function openComicExport(pctx) {
   const imgEl = $('#poster-img');
   const shareEl = $('#poster-share');
   const statusEl = $('#poster-status');
-  modal.hidden = false;
+  showOverlay(modal);
   imgEl.removeAttribute('src');
   imgEl.alt = '正在拼接连环画…';
   shareEl.hidden = true;
@@ -2083,7 +2245,7 @@ async function openComicExport(pctx) {
     loaded++;
     setStatus(`正在加载画帧（${loaded} / ${urls.length}）…`);
   }));
-  if (modal.hidden) return;
+  if (modal.hidden || modal.dataset.state === 'closing') return;
 
   setStatus('正在拼接整卷连环画…');
   const logoImg = imgMap.get('/assets/apple-touch-icon.png') || null;
@@ -2407,10 +2569,11 @@ async function openSharePoster(pctx) {
   const dlEl = $('#poster-dl');
   const shareEl = $('#poster-share');
   const statusEl = $('#poster-status');
-  modal.hidden = false;
+  showOverlay(modal);
   imgEl.removeAttribute('src');
   imgEl.alt = '正在生成海报…';
   shareEl.hidden = true;
+  if (statusEl) { statusEl.hidden = false; statusEl.textContent = '正在生成分享海报…'; }
   if (statusEl) { statusEl.hidden = false; statusEl.textContent = '正在生成分享海报…'; }
 
   const r = pctx.result;
@@ -2649,17 +2812,22 @@ async function openSharePoster(pctx) {
   }
 }
 
-$('#poster-close').addEventListener('click', () => { $('#poster-modal').hidden = true; });
-$('#poster-modal').addEventListener('click', e => { if (e.target.id === 'poster-modal') $('#poster-modal').hidden = true; });
+$('#poster-close').addEventListener('click', closePosterModal);
+$('#poster-modal').addEventListener('click', e => { if (e.target.id === 'poster-modal') closePosterModal(); });
 
 /* ── 6. 排行榜与我的记录（画报卡片流） ────────────────────── */
-function setBoardMode(mode) {
-  boardMode = mode === 'mine' ? 'mine' : 'world';
+function setBoardMode(mode, opts = {}) {
+  const next = mode === 'mine' ? 'mine' : 'world';
+  const changed = next !== boardMode;
+  boardMode = next;
   const isMine = boardMode === 'mine';
   $$('[data-bmode]').forEach(b => b.classList.toggle('on', b.dataset.bmode === boardMode));
   $('#rank-world').hidden = isMine;
   $('#rank-mine').hidden = !isMine;
   $('#board-filter').hidden = isMine;
+  if (opts.animate && changed) {
+    animatePanel(isMine ? $('#rank-mine') : $('#rank-world'), isMine ? 'panel-in-r' : 'panel-in-l');
+  }
   $$('#top .nav-links button[data-go]').forEach(b => {
     if (b.dataset.go === 'board' || b.dataset.go === 'mine') {
       b.classList.toggle('on', b.dataset.go === (isMine ? 'mine' : 'board'));
@@ -2669,7 +2837,8 @@ function setBoardMode(mode) {
 
 $$('[data-bmode]').forEach(b => b.addEventListener('click', () => {
   const m = b.dataset.bmode;
-  setBoardMode(m);
+  if (m === boardMode) return;
+  setBoardMode(m, { animate: true });
   document.body.dataset.screen = m === 'mine' ? 'mine' : 'board';
   if (m === 'mine') loadMine();
   else loadBoard();
@@ -2953,7 +3122,7 @@ if (window.HYVoice) {
     if (k) {
       addToken(k, true);
       history.replaceState(null, '', location.pathname + location.search);
-      go('mine');
+      go('mine', { instant: true });
       toast('已接回之前的记录');
       return;
     }
@@ -2966,7 +3135,7 @@ if (window.HYVoice) {
         run = { id: rid, state: d.state };
         syncNavPlay();
         renderPlay(lastOf(d.state));
-        go('play');
+        go('play', { instant: true });
         toast('已接上上次的进度');
       } else {
         localStorage.removeItem(RUN_KEY);
