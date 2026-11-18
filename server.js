@@ -284,6 +284,34 @@ function monthList(s, runId) {
   });
 }
 
+/** 排行榜公开可见的连环画分镜：只给年月、AI 标题、精简剧情配文与插画，
+ *  不透出玩家手写的打算原文（list）、人物底子（persona）、memo 或完整正文（story）。 */
+function comicList(s, runId) {
+  const rid = runId || s.id || '';
+  const trail = new Map(((s.memo || {}).trail || []).map(t => [t.n, t]));
+  return (s.months || []).map(d => {
+    const t = trail.get(d.n);
+    const say = t ? t.say : '';
+    const summary = d.summary || E.deriveSummary(d.story, say);
+    const headline = E.deriveHeadline(d.headline, summary, say, d.story);
+    return {
+      n: d.n,
+      year: d.year,
+      month: d.month,
+      headline,
+      summary,
+      say,
+      worth: t ? t.worth : '',
+      tally: d.tally || '',
+      moved: d.moved || null,
+      worldTrace: d.worldTrace
+        ? { kind: d.worldTrace.kind, partner: d.worldTrace.partner, summary: d.worldTrace.summary }
+        : null,
+      image: (rid && imgUrlOf(rid, d.n)) || d.image || null,
+    };
+  });
+}
+
 /** 老存档（按天走的那一版）读不动，好好说一声，别抛异常 */
 const isOldRun = s => !s || typeof s.n !== 'number' || !Array.isArray(s.months);
 const OLD_SAY = '这条旧版记录无法继续，请重新开始一局。';
@@ -446,7 +474,7 @@ const routes = {
       const rev0 = row.review ? JSON.parse(row.review) : null;
       if (HAS_KEY && !finaleImgUrlOf(b.id, false)) ensureFinaleImage(b.id, s, r0, rev0, false).catch(() => {});
       return json(res, 200, {
-        result: r0, already: true, ...mainRanks(r0), months: monthList(s, b.id),
+        result: r0, already: true, mainMonths: E.MONTHS, ...mainRanks(r0), months: monthList(s, b.id),
         review: rev0, finaleImage: finaleImgUrlOf(b.id, false), extraRoom: E.extraRoom(s),
       });
     }
@@ -455,7 +483,7 @@ const routes = {
       const rev0 = row.extra_review ? JSON.parse(row.extra_review) : null;
       if (HAS_KEY && !finaleImgUrlOf(b.id, true)) ensureFinaleImage(b.id, s, r0, rev0, true).catch(() => {});
       return json(res, 200, {
-        result: r0, already: true, phase: 'extra', ...extraRanks(r0), months: monthList(s, b.id),
+        result: r0, already: true, phase: 'extra', mainMonths: E.MONTHS, ...extraRanks(r0), months: monthList(s, b.id),
         review: rev0, finaleImage: finaleImgUrlOf(b.id, true),
         main: row.result ? JSON.parse(row.result) : null,
       });
@@ -481,7 +509,7 @@ const routes = {
       DB.finishExtra(b.id, s, r);
       if (HAS_KEY) ensureFinaleImage(b.id, s, r, null, true).catch(() => {});
       return json(res, 200, {
-        result: r, phase: 'extra', ...extraRanks(r), months: monthList(s, b.id),
+        result: r, phase: 'extra', mainMonths: E.MONTHS, ...extraRanks(r), months: monthList(s, b.id),
         finaleImage: finaleImgUrlOf(b.id, true),
         main: row.result ? JSON.parse(row.result) : null,      // 两年那一刻的成绩，对照着看
       });
@@ -490,10 +518,10 @@ const routes = {
     if (!wrote) {
       /* 冻结闸挡下了：库里已经有一份两年的成绩，端那一份出来 */
       const r0 = JSON.parse(DB.getRow(b.id).result);
-      return json(res, 200, { result: r0, already: true, ...mainRanks(r0), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false) });
+      return json(res, 200, { result: r0, already: true, mainMonths: E.MONTHS, ...mainRanks(r0), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false) });
     }
     if (HAS_KEY) ensureFinaleImage(b.id, s, r, null, false).catch(() => {});
-    json(res, 200, { result: r, ...mainRanks(r), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false), extraRoom: E.extraRoom(s) });
+    json(res, 200, { result: r, mainMonths: E.MONTHS, ...mainRanks(r), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false), extraRoom: E.extraRoom(s) });
   },
 
   /* 接着走下去：两年结完账，最多再走五年。
@@ -558,9 +586,11 @@ const routes = {
     json(res, 200, {
       id: row.id, nick: row.nick, year: row.year, month: row.month, city: st.city,
       created: row.created, updated: row.updated, mine,
+      mainMonths: E.MONTHS,
       result, rank: mainRanks(result),
       review, writing: !review,
       finaleImage: finaleImgUrlOf(id, false),
+      comic: comicList(st, id),
       extraStatus: row.extra_status || null,
       extraTo: row.extra_months || 0,
       extraResult: xDone ? JSON.parse(row.extra_result) : null,

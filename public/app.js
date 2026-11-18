@@ -1070,8 +1070,12 @@ $('#sheet-close').addEventListener('click', closeSheet);
 $('#sheet-bg').addEventListener('click', e => { if (e.target.id === 'sheet-bg') closeSheet(); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (!$('#sheet-bg').hidden) closeSheet();
-    if (!$('#poster-modal').hidden) $('#poster-modal').hidden = true;
+    if (!$('#comic-modal').hidden) closeComicLightbox();
+    else if (!$('#sheet-bg').hidden) closeSheet();
+    else if (!$('#poster-modal').hidden) $('#poster-modal').hidden = true;
+  } else if (!$('#comic-modal').hidden) {
+    if (e.key === 'ArrowLeft') stepComicLightbox(-1);
+    else if (e.key === 'ArrowRight') stepComicLightbox(1);
   }
 });
 
@@ -1218,6 +1222,7 @@ async function settle() {
       review: d.review || null,
       finaleImage: d.finaleImage || null,
       months: d.months || [],
+      mainMonths: d.mainMonths || 24,
       extraRoom: d.extraRoom || 0,
       phase,
       main: d.main || null,
@@ -1236,8 +1241,13 @@ async function settle() {
   }
 }
 
-function attachFinaleCover(cover, id, url, extra, stampText, fallbackYear) {
+function attachFinaleCover(cover, id, url, extra, stampText, fallbackYear, container) {
   cover.innerHTML = '';
+  const syncComicFinale = imgSrc => {
+    const scope = container || document;
+    const target = scope.querySelector('[data-comic-finale-img]');
+    if (target && imgSrc) target.src = imgSrc;
+  };
   const showFallback = () => {
     cover.classList.remove('pending');
     cover.innerHTML = '';
@@ -1248,6 +1258,7 @@ function attachFinaleCover(cover, id, url, extra, stampText, fallbackYear) {
       im.alt = `${fallbackYear} 年风貌`;
       im.crossOrigin = 'anonymous';
       cover.appendChild(im);
+      syncComicFinale(art);
     }
     cover.appendChild(el('span', 'done-stamp', stampText));
   };
@@ -1273,6 +1284,7 @@ function attachFinaleCover(cover, id, url, extra, stampText, fallbackYear) {
           im.crossOrigin = 'anonymous';
           cover.appendChild(im);
           cover.appendChild(el('span', 'done-stamp', stampText));
+          syncComicFinale(d.image);
         } else {
           showFallback();
         }
@@ -1329,54 +1341,285 @@ function fillTimelineBox(tlBox, rv) {
   }
 }
 
-function renderFootList(box, months, mainMonths = 24) {
-  box.innerHTML = '';
-  for (const d of months) {
-    if (d.n === mainMonths + 1) {
-      box.appendChild(el('div', 'foot-cut', '两年之后'));
-    }
-    const det = el('details', 'foot-card');
-    const sum = el('summary', d.image ? '' : 'no-img');
-    if (d.image) {
-      const im = el('img');
-      im.src = d.image;
-      im.alt = `${d.year} 年 ${d.month} 月`;
-      sum.appendChild(im);
-    }
-    const info = el('div');
-    const net = parseNetInfo(d.tally, null, '');
-    const head = el('div', 'foot-head');
-    head.appendChild(el('strong', 'num', `${d.year}.${String(d.month).padStart(2, '0')}${net ? ' · ' + net.short : ''}`));
-    if (d.worth) head.appendChild(el('em', 'num', `家底 ${d.worth}`));
-    info.appendChild(head);
-    info.appendChild(el('p', 'foot-sum', (d.summary || d.say || clientSummaryOf(d)).replace(/\*\*/g, '')));
-    sum.appendChild(info);
-    det.appendChild(sum);
+/* ── 连环画翻页看图器（小人书单帧沉浸） ──────────────────── */
+let comicLbState = { items: [], idx: 0 };
 
-    const body = el('div', 'foot-detail');
-    if (d.list) {
-      const pe = el('div', 'plan-echo');
-      pe.innerHTML = `当月打算：<b>${esc(d.list)}</b>`;
-      body.appendChild(pe);
-    }
-    if (d.image) {
-      const big = el('img', 'foot-full-img');
-      big.src = d.image;
-      big.alt = `${d.year} 年 ${d.month} 月插画`;
-      body.appendChild(big);
-    }
-    const sb = el('div', 'story-body');
-    sb.innerHTML = formatParagraphsHtml(d.story || '', d.list || '');
-    body.appendChild(sb);
-    if (d.tally) body.appendChild(el('div', 'story-notice', d.tally));
-    if (d.moved && d.moved.to) body.appendChild(el('div', 'story-notice', `本月从${d.moved.from}搬到了${d.moved.to}。`));
-    if (d.worldTrace && d.worldTrace.summary) body.appendChild(el('div', 'story-notice', d.worldTrace.summary));
-    if (d.refused && d.refused.length) {
-      body.appendChild(el('div', 'story-notice warn', '当年尚无：' + d.refused.map(x => `${x.what}（${x.why}）`).join('；')));
-    }
-    det.appendChild(body);
-    box.appendChild(det);
+function renderComicLightbox() {
+  const { items, idx } = comicLbState;
+  const item = items[idx];
+  if (!item) return;
+  const ym = `${item.year} 年 ${item.month} 月`;
+  $('#lb-pos').textContent = `第 ${String(idx + 1).padStart(2, '0')} / ${String(items.length).padStart(2, '0')} 帧 · ${ym}`;
+  const im = $('#lb-img');
+  im.src = item.image || yearArtUrl(item.year) || '';
+  im.alt = item.headline || ym;
+  const net = parseNetInfo(item.tally, null, '');
+  const netEl = $('#lb-net');
+  if (net) {
+    netEl.hidden = false;
+    netEl.textContent = net.short;
+    netEl.className = 'comic-net num' + (net.neg ? ' neg' : '');
+  } else {
+    netEl.hidden = true;
   }
+  $('#lb-head').textContent = item.headline || clientHeadlineOf(item, ym);
+  $('#lb-text').textContent = String(item.summary || item.say || clientSummaryOf(item) || '').replace(/\*\*/g, '');
+  const metaParts = [];
+  if (item.worth) metaParts.push(`家底 ${item.worth}`);
+  if (item.moved && item.moved.to) metaParts.push(`搬至${item.moved.to}`);
+  if (item.worldTrace && item.worldTrace.summary) metaParts.push(item.worldTrace.summary);
+  $('#lb-meta').textContent = metaParts.join(' · ');
+  $('#lb-prev').disabled = idx <= 0;
+  $('#lb-next').disabled = idx >= items.length - 1;
+}
+
+function openComicLightbox(items, idx) {
+  if (!Array.isArray(items) || !items.length) return;
+  comicLbState = { items, idx: Math.max(0, Math.min(items.length - 1, idx)) };
+  renderComicLightbox();
+  $('#comic-modal').hidden = false;
+}
+
+function closeComicLightbox() {
+  $('#comic-modal').hidden = true;
+}
+
+function stepComicLightbox(delta) {
+  const next = comicLbState.idx + delta;
+  if (next < 0 || next >= comicLbState.items.length) return;
+  comicLbState.idx = next;
+  renderComicLightbox();
+}
+
+$('#lb-close').addEventListener('click', closeComicLightbox);
+$('#comic-modal').addEventListener('click', e => { if (e.target.id === 'comic-modal') closeComicLightbox(); });
+$('#lb-prev').addEventListener('click', () => stepComicLightbox(-1));
+$('#lb-next').addEventListener('click', () => stepComicLightbox(1));
+
+/* ── 连环画渲染（把所有月份首尾相连成一卷连环画） ──────────── */
+function comicCaptionOf(d) {
+  return String(d.summary || d.say || clientSummaryOf(d) || '').replace(/\*\*/g, '').trim();
+}
+function comicHeadlineOf(d) {
+  return String(d.headline || clientHeadlineOf(d, `${d.year} 年 ${d.month} 月`) || '').replace(/\*\*/g, '').trim();
+}
+
+function renderComicStrip(host, cfg) {
+  host.innerHTML = '';
+  const months = cfg.months || [];
+  const mainMonths = cfg.mainMonths || 24;
+  const r = cfg.result;
+  const rv = cfg.review || {};
+  const canPaint = !!(cfg.id && token && (cfg.mode === 'done' || cfg.mode === 'detail'));
+  const hasOwnerDetail = cfg.mode === 'done' || cfg.mode === 'detail';
+  const paintedCount = months.filter(m => !!m.image).length;
+
+  const wrap = el('div', 'comic-wrap');
+
+  /* 顶栏：卷名 + 帧数 + 长卷/分镜切换 + 导出连环画长图 */
+  const bar = el('div', 'comic-bar');
+  const bt = el('div', 'comic-bar-title');
+  const tEl = el('strong', '', rv.title ? `《${rv.title}》连环画` : `${r.nick} 的百年连环画`);
+  tEl.dataset.comicTitle = '1';
+  bt.appendChild(tEl);
+  const subParts = [`共 ${months.length} 帧 · ${r.year}.${String(r.month).padStart(2, '0')} — ${r.endYear}.${String(r.endMonth).padStart(2, '0')}`];
+  if (paintedCount > 0 && paintedCount < months.length) subParts.push(`含 ${paintedCount} 帧专属月画`);
+  bt.appendChild(el('span', 'num', subParts.join(' · ')));
+  bar.appendChild(bt);
+
+  const tools = el('div', 'comic-bar-tools');
+  const modeGrp = el('div', 'comic-mode');
+  modeGrp.setAttribute('role', 'group');
+  modeGrp.setAttribute('aria-label', '连环画排版');
+  const btnScroll = el('button', 'on', '长卷');
+  btnScroll.type = 'button';
+  const btnGrid = el('button', '', '分镜');
+  btnGrid.type = 'button';
+  modeGrp.appendChild(btnScroll);
+  modeGrp.appendChild(btnGrid);
+  tools.appendChild(modeGrp);
+
+  const expBtn = el('button', 'btn-ghost comic-export-btn', '导出长图');
+  expBtn.type = 'button';
+  expBtn.addEventListener('click', () => openComicExport(lastPosterCtx));
+  tools.appendChild(expBtn);
+  bar.appendChild(tools);
+  wrap.appendChild(bar);
+
+  /* 连环画主画册 */
+  const book = el('div', 'comic-book');
+  btnScroll.addEventListener('click', () => {
+    btnScroll.classList.add('on');
+    btnGrid.classList.remove('on');
+    book.classList.remove('is-grid');
+  });
+  btnGrid.addEventListener('click', () => {
+    btnGrid.classList.add('on');
+    btnScroll.classList.remove('on');
+    book.classList.add('is-grid');
+  });
+
+  let prevYear = null;
+  months.forEach((d, idx) => {
+    const isPhaseCut = d.n === mainMonths + 1;
+    const isYearCut = prevYear !== null && d.year !== prevYear && !isPhaseCut;
+    prevYear = d.year;
+
+    if (isPhaseCut) {
+      book.appendChild(el('div', 'comic-phase-cut', '两年之后 · 续走篇'));
+    } else if (isYearCut) {
+      book.appendChild(el('div', 'comic-year-cut num', `${d.year} 年`));
+    } else if (idx > 0) {
+      book.appendChild(el('div', 'comic-seam'));
+    }
+
+    const panel = el('article', 'comic-panel');
+    const ym = `${d.year}.${String(d.month).padStart(2, '0')}`;
+    const isFallback = !d.image;
+    const imgSrc = d.image || yearArtUrl(d.year);
+    const net = parseNetInfo(d.tally, null, '');
+
+    const art = el('div', 'comic-art');
+    art.setAttribute('role', 'button');
+    art.setAttribute('tabindex', '0');
+    art.setAttribute('aria-label', `放大查看第 ${d.n} 帧 ${ym}`);
+    const im = el('img', isFallback ? `is-fallback pos-${idx % 3}` : '');
+    if (imgSrc) im.src = imgSrc;
+    im.alt = `${d.year} 年 ${d.month} 月`;
+    im.loading = idx < 3 ? 'eager' : 'lazy';
+    im.decoding = 'async';
+    art.appendChild(im);
+
+    art.appendChild(el('span', 'comic-no num', `第 ${String(idx + 1).padStart(2, '0')} 帧 · ${ym}`));
+    if (net) {
+      art.appendChild(el('span', 'comic-net num' + (net.neg ? ' neg' : ''), net.short));
+    }
+
+    if (canPaint && isFallback) {
+      const pBtn = el('button', 'comic-paint-btn', '补绘此帧');
+      pBtn.type = 'button';
+      pBtn.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        pBtn.disabled = true;
+        pBtn.textContent = '绘图中…';
+        try {
+          const res = await post('/api/month-image', { id: cfg.id, token, n: d.n });
+          if (res && res.ok && res.image) {
+            d.image = res.image;
+            im.className = '';
+            im.src = res.image;
+            pBtn.remove();
+            toast(`第 ${d.n} 帧专属插画已补绘`);
+          } else {
+            pBtn.disabled = false;
+            pBtn.textContent = '补绘此帧';
+            toast('暂时没能画出这一帧，请稍后再试');
+          }
+        } catch (err) {
+          pBtn.disabled = false;
+          pBtn.textContent = '补绘此帧';
+          toast(err.message);
+        }
+      });
+      art.appendChild(pBtn);
+    }
+
+    const openLb = () => openComicLightbox(months, idx);
+    art.addEventListener('click', openLb);
+    art.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openLb(); }
+    });
+    panel.appendChild(art);
+
+    /* 紧贴画框的连环画配文栏 */
+    const cap = el('div', 'comic-caption');
+    const head = el('div', 'comic-cap-head');
+    head.appendChild(el('h4', '', comicHeadlineOf(d)));
+    if (d.worth) head.appendChild(el('em', 'num', `家底 ${d.worth}`));
+    cap.appendChild(head);
+
+    const capTxt = comicCaptionOf(d);
+    if (capTxt) cap.appendChild(el('p', 'comic-cap-text', capTxt));
+
+    const tags = [];
+    if (d.moved && d.moved.to) tags.push(el('span', 'pill', `搬至 · ${d.moved.to}`));
+    if (d.worldTrace && d.worldTrace.summary) {
+      tags.push(el('span', 'pill pill-indigo', d.worldTrace.kind === 'bond' ? `结缘 · ${d.worldTrace.partner || '同行者'}` : '时空留痕'));
+    }
+    if (tags.length) {
+      const tr = el('div', 'comic-cap-tags');
+      for (const t of tags) tr.appendChild(t);
+      cap.appendChild(tr);
+    }
+
+    /* 本人视角：可按需展开当月打算与完整正文 */
+    if (hasOwnerDetail && (d.list || d.story)) {
+      const more = el('details', 'comic-more');
+      more.appendChild(el('summary', '', '展开本月打算与全文 ▾'));
+      const mb = el('div', 'comic-more-body');
+      if (d.list) {
+        const pe = el('div', 'plan-echo');
+        pe.innerHTML = `当月打算：<b>${esc(d.list)}</b>`;
+        mb.appendChild(pe);
+      }
+      if (d.story) {
+        const sb = el('div', 'story-body');
+        sb.innerHTML = formatParagraphsHtml(d.story, d.list || '');
+        mb.appendChild(sb);
+      }
+      if (d.tally) mb.appendChild(el('div', 'story-notice', d.tally));
+      if (d.worldTrace && d.worldTrace.summary) mb.appendChild(el('div', 'story-notice', d.worldTrace.summary));
+      if (d.refused && d.refused.length) {
+        mb.appendChild(el('div', 'story-notice warn', '当年尚无：' + d.refused.map(x => `${x.what}（${x.why}）`).join('；')));
+      }
+      more.appendChild(mb);
+      cap.appendChild(more);
+    }
+
+    panel.appendChild(cap);
+    book.appendChild(panel);
+  });
+
+  /* 终章收官帧：把最后一个月连到收官画卷与结局落款 */
+  if (months.length) {
+    book.appendChild(el('div', 'comic-seam'));
+    const fin = el('article', 'comic-finale');
+    const fa = el('div', 'comic-finale-art');
+    const fim = el('img');
+    fim.dataset.comicFinaleImg = '1';
+    fim.src = cfg.finaleImage || yearArtUrl(r.endYear || r.year) || '';
+    fim.alt = '终章收官画卷';
+    fim.loading = 'lazy';
+    fa.appendChild(fim);
+    fa.appendChild(el('span', 'done-stamp', cfg.phase === 'extra' ? '终章 · 续走收官' : '终章 · 两年收官'));
+    fin.appendChild(fa);
+
+    const fb = el('div', 'comic-finale-body');
+    const ftop = el('div', 'comic-finale-top');
+    const ft = el('strong', '', rv.title ? `《${rv.title}》` : `${r.nick} 的这段日子`);
+    ft.dataset.comicFinaleTitle = '1';
+    ftop.appendChild(ft);
+    const yrs = (r.score < 0 ? '−' : '') + Math.abs(r.score).toFixed(2);
+    ftop.appendChild(el('span', 'num', `抵普通人 ${yrs} 年收入`));
+    fb.appendChild(ftop);
+
+    const bec = el('p', 'comic-finale-became', rv.became || `${r.year}.${String(r.month).padStart(2, '0')} 至 ${r.endYear}.${String(r.endMonth).padStart(2, '0')}，落脚${r.city}，净赚 ${r.yearEarnedText}。`);
+    bec.dataset.comicBecame = '1';
+    fb.appendChild(bec);
+
+    const ffoot = el('div', 'comic-finale-foot');
+    ffoot.appendChild(el('span', 'comic-finale-score num', `净赚 ${r.yearEarnedText}`));
+    const saveBtn = el('button', 'btn-primary comic-export-btn', '保存整卷连环画长图');
+    saveBtn.type = 'button';
+    saveBtn.addEventListener('click', () => openComicExport(lastPosterCtx));
+    ffoot.appendChild(saveBtn);
+    fb.appendChild(ffoot);
+    fin.appendChild(fb);
+    book.appendChild(fin);
+  }
+
+  wrap.appendChild(book);
+  host.appendChild(wrap);
 }
 
 function renderMagazineView(container, cfg) {
@@ -1388,6 +1631,8 @@ function renderMagazineView(container, cfg) {
   const stampText = extra
     ? `续走结算 · 续走榜第 ${ranks.rankExtra ?? '—'}`
     : `两年结算 · 总榜第 ${ranks.rankWorld ?? '—'}`;
+  const months = Array.isArray(cfg.months) ? cfg.months : [];
+  const hasMonths = months.length > 0;
 
   lastPosterCtx = {
     id: cfg.id,
@@ -1395,13 +1640,15 @@ function renderMagazineView(container, cfg) {
     ranks,
     review: cfg.review || null,
     finaleImage: cfg.finaleImage || null,
+    months,
+    mainMonths: cfg.mainMonths || 24,
     extra,
   };
 
   /* 1. 封面英雄卡 */
   const hero = el('div', 'done-hero');
   const cover = el('div', 'done-cover');
-  attachFinaleCover(cover, cfg.id, cfg.finaleImage, extra, stampText, r.year);
+  attachFinaleCover(cover, cfg.id, cfg.finaleImage, extra, stampText, r.year, container);
   hero.appendChild(cover);
 
   const sm = el('div', 'done-summary');
@@ -1417,13 +1664,19 @@ function renderMagazineView(container, cfg) {
   sm.appendChild(titleRow);
 
   const acts = el('div', 'done-actions');
-  const shareBtn = el('button', 'btn-primary', '生成分享海报');
+  if (hasMonths) {
+    const comicBtn = el('button', 'btn-primary', '保存连环画长图');
+    comicBtn.type = 'button';
+    comicBtn.addEventListener('click', () => openComicExport(lastPosterCtx));
+    acts.appendChild(comicBtn);
+  }
+  const shareBtn = el('button', hasMonths ? 'btn-ghost' : 'btn-primary', '生成分享海报');
   shareBtn.type = 'button';
   shareBtn.addEventListener('click', () => openSharePoster(lastPosterCtx));
   acts.appendChild(shareBtn);
 
   if (cfg.mode === 'peek' && cfg.mine) {
-    const detBtn = el('button', 'btn-ghost', '查看逐月经历');
+    const detBtn = el('button', 'btn-ghost', '查看逐月详情');
     detBtn.type = 'button';
     detBtn.addEventListener('click', () => openDetail(cfg.id, 'board'));
     acts.appendChild(detBtn);
@@ -1448,18 +1701,18 @@ function renderMagazineView(container, cfg) {
   hero.appendChild(sm);
   container.appendChild(hero);
 
-  /* 2. 分段 Tab（总览与转折 / 记事人判词 / N 月足迹） */
-  const hasMonths = Array.isArray(cfg.months) && cfg.months.length > 0;
+  /* 2. 分段 Tab（连环画默认展示 / 总览与转折 / 记事人判词） */
+  const defaultTab = hasMonths ? 'comic' : 'overview';
   const tabs = el('div', 'seg-tabs' + (hasMonths ? '' : ' two'));
   const panes = {};
   const tabDefs = [
+    ...(hasMonths ? [['comic', `连环画 · ${months.length} 帧`]] : []),
     ['overview', '总览与转折'],
     ['verdict', '记事人判词'],
-    ...(hasMonths ? [['foot', `${cfg.months.length} 月足迹`]] : []),
   ];
 
   for (const [key, label] of tabDefs) {
-    const b = el('button', key === 'overview' ? 'on' : '', label);
+    const b = el('button', key === defaultTab ? 'on' : '', label);
     b.type = 'button';
     b.dataset.tab = key;
     b.addEventListener('click', () => {
@@ -1470,8 +1723,18 @@ function renderMagazineView(container, cfg) {
   }
   container.appendChild(tabs);
 
-  /* Tab 1: 总览与转折 */
+  /* Tab 1: 连环画（所有月份首尾相连） */
+  if (hasMonths) {
+    const pComic = el('div');
+    pComic.hidden = defaultTab !== 'comic';
+    panes.comic = pComic;
+    renderComicStrip(pComic, { ...cfg, months });
+    container.appendChild(pComic);
+  }
+
+  /* Tab 2: 总览与转折 */
   const pOver = el('div');
+  pOver.hidden = defaultTab !== 'overview';
   panes.overview = pOver;
   const sg = el('div', 'stat-grid');
   const rankLabel = extra
@@ -1518,7 +1781,7 @@ function renderMagazineView(container, cfg) {
   }
   container.appendChild(pOver);
 
-  /* Tab 2: 记事人判词 */
+  /* Tab 3: 记事人判词 */
   const pVer = el('div');
   pVer.hidden = true;
   panes.verdict = pVer;
@@ -1540,17 +1803,6 @@ function renderMagazineView(container, cfg) {
     pVer.appendChild(vbx);
   }
   container.appendChild(pVer);
-
-  /* Tab 3: 逐月足迹 */
-  if (hasMonths) {
-    const pFoot = el('div');
-    pFoot.hidden = true;
-    panes.foot = pFoot;
-    const fl = el('div', 'foot-list');
-    renderFootList(fl, cfg.months, cfg.mainMonths || 24);
-    pFoot.appendChild(fl);
-    container.appendChild(pFoot);
-  }
 }
 
 function patchMagazineReview(container, rv, extra = false) {
@@ -1558,6 +1810,12 @@ function patchMagazineReview(container, rv, extra = false) {
   if (!extra) {
     const t = container.querySelector('[data-mag-title]');
     if (t && rv.title) t.textContent = `《${rv.title}》`;
+    const ct = container.querySelector('[data-comic-title]');
+    if (ct && rv.title) ct.textContent = `《${rv.title}》连环画`;
+    const cft = container.querySelector('[data-comic-finale-title]');
+    if (cft && rv.title) cft.textContent = `《${rv.title}》`;
+    const cb = container.querySelector('[data-comic-became]');
+    if (cb && rv.became) cb.textContent = rv.became;
     const tl = container.querySelector('[data-mag-timeline]');
     if (tl) fillTimelineBox(tl, rv);
     const vb = container.querySelector('[data-mag-verdict]');
@@ -1660,6 +1918,8 @@ async function openPeek(id) {
       review: d.review || null,
       waiting: !!d.writing,
       finaleImage: d.finaleImage || null,
+      months: d.comic || [],
+      mainMonths: d.mainMonths || 24,
       mine: !!d.mine,
       extraStatus: d.extraStatus,
       extraResult: d.extraResult,
@@ -1725,16 +1985,433 @@ function loadImgForCanvas(url) {
   });
 }
 
+function drawCoverImage(ctx, img, x, y, w, h, focalX = 0.5) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) {
+    ctx.fillStyle = '#e7e1d4';
+    ctx.fillRect(x, y, w, h);
+    return;
+  }
+  const ir = img.naturalWidth / img.naturalHeight;
+  const br = w / h;
+  let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
+  if (ir > br) {
+    sw = Math.round(sh * br);
+    sx = Math.round((img.naturalWidth - sw) * focalX);
+  } else {
+    sh = Math.round(sw / br);
+    sy = Math.round((img.naturalHeight - sh) * 0.5);
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+function drawRoundedRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function bindPosterOutput(cvs, fileName, shareTitle, imgAlt) {
+  const imgEl = $('#poster-img');
+  const dlEl = $('#poster-dl');
+  const shareEl = $('#poster-share');
+  const statusEl = $('#poster-status');
+  if (statusEl) statusEl.hidden = true;
+  const dataUrl = cvs.toDataURL('image/jpeg', 0.89);
+  imgEl.src = dataUrl;
+  imgEl.alt = imgAlt;
+  dlEl.href = dataUrl;
+  dlEl.download = fileName;
+  dlEl.textContent = '保存图片';
+
+  if (navigator.canShare && window.File) {
+    cvs.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], fileName, { type: 'image/jpeg' });
+      if (navigator.canShare({ files: [file] })) {
+        shareEl.hidden = false;
+        shareEl.onclick = () => navigator.share({ title: shareTitle, files: [file] }).catch(() => {});
+      }
+    }, 'image/jpeg', 0.89);
+  } else {
+    shareEl.hidden = true;
+  }
+}
+
+async function openComicExport(pctx) {
+  if (!pctx || !pctx.result || !Array.isArray(pctx.months) || !pctx.months.length) {
+    return toast('暂无可拼接的月份连环画');
+  }
+  const modal = $('#poster-modal');
+  const imgEl = $('#poster-img');
+  const shareEl = $('#poster-share');
+  const statusEl = $('#poster-status');
+  modal.hidden = false;
+  imgEl.removeAttribute('src');
+  imgEl.alt = '正在拼接连环画…';
+  shareEl.hidden = true;
+
+  const r = pctx.result;
+  const rv = pctx.review || {};
+  const panels = pctx.months;
+  const mainMonths = pctx.mainMonths || 24;
+  const setStatus = txt => {
+    if (!statusEl) return;
+    statusEl.hidden = !txt;
+    statusEl.textContent = txt || '';
+  };
+  setStatus(`正在准备连环画画卷（共 ${panels.length} 帧）…`);
+
+  /* 去重并行加载全部帧图、收官图与印章 Logo */
+  const urlSet = new Set(['/assets/apple-touch-icon.png']);
+  const finaleUrl = pctx.finaleImage || yearArtUrl(r.endYear || r.year);
+  if (finaleUrl) urlSet.add(finaleUrl);
+  for (const d of panels) {
+    const u = d.image || yearArtUrl(d.year);
+    if (u) urlSet.add(u);
+  }
+  const urls = [...urlSet];
+  const imgMap = new Map();
+  let loaded = 0;
+  await Promise.all(urls.map(async u => {
+    const im = await loadImgForCanvas(u);
+    imgMap.set(u, im);
+    loaded++;
+    setStatus(`正在加载画帧（${loaded} / ${urls.length}）…`);
+  }));
+  if (modal.hidden) return;
+
+  setStatus('正在拼接整卷连环画…');
+  const logoImg = imgMap.get('/assets/apple-touch-icon.png') || null;
+  const finaleArt = finaleUrl ? imgMap.get(finaleUrl) : null;
+  const SERIF = '"Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif';
+  const SANS = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif';
+
+  const twoCol = panels.length > 28;
+  const W = twoCol ? 960 : 760;
+  const PAD = twoCol ? 40 : 42;
+  const IN_W = W - PAD * 2;
+  const GAP = 20;
+  const COL_W = twoCol ? Math.floor((IN_W - GAP) / 2) : IN_W;
+  const ART_H = Math.round(COL_W * 9 / 16);
+
+  const mctx = document.createElement('canvas').getContext('2d');
+  const titleStr = rv.title ? `《${rv.title}》` : `${r.nick} 的百年连环画`;
+  const yrs = (r.score < 0 ? '−' : '') + Math.abs(r.score).toFixed(2);
+  mctx.font = `400 ${twoCol ? 16 : 18.5}px ${SERIF}`;
+
+  const measured = panels.map((d, idx) => {
+    const head = comicHeadlineOf(d);
+    const cap = comicCaptionOf(d);
+    const lines = wrapCanvasLines(mctx, cap, COL_W - (twoCol ? 24 : 34)).slice(0, twoCol ? 3 : 4);
+    const lineH = twoCol ? 23 : 28;
+    const capH = (twoCol ? 12 : 15) + (twoCol ? 24 : 28) + (lines.length ? 6 + lines.length * lineH : 0) + (twoCol ? 12 : 16);
+    const net = parseNetInfo(d.tally, null, '');
+    return {
+      d, idx, head, lines, lineH, capH,
+      totalH: ART_H + capH,
+      net,
+      img: imgMap.get(d.image || yearArtUrl(d.year)) || null,
+      isFallback: !d.image,
+    };
+  });
+
+  /* 预先排布每个块并精确计算画布总高度 */
+  const HEADER_H = 148;
+  const layout = [];
+  let curY = HEADER_H;
+
+  if (!twoCol) {
+    let prevYear = null;
+    for (let i = 0; i < measured.length; i++) {
+      const m = measured[i];
+      const isPhase = m.d.n === mainMonths + 1;
+      const isYear = prevYear !== null && m.d.year !== prevYear && !isPhase;
+      prevYear = m.d.year;
+      if (isPhase) {
+        layout.push({ kind: 'phase', y: curY, h: 48, text: '两年之后 · 续走篇' });
+        curY += 48;
+      } else if (isYear) {
+        layout.push({ kind: 'year', y: curY, h: 40, text: `${m.d.year} 年` });
+        curY += 40;
+      } else if (i > 0) {
+        layout.push({ kind: 'seam', y: curY, h: 26 });
+        curY += 26;
+      }
+      layout.push({ kind: 'panel', x: PAD, y: curY, w: COL_W, h: m.totalH, m });
+      curY += m.totalH;
+    }
+  } else {
+    /* 超过 28 帧自动采用经典双栏小人书画册排版，防超长画布超限 */
+    const groups = [];
+    const mainList = measured.filter(m => m.d.n <= mainMonths);
+    const extraList = measured.filter(m => m.d.n > mainMonths);
+    if (mainList.length) groups.push({ label: null, items: mainList });
+    if (extraList.length) groups.push({ label: '两年之后 · 续走篇', items: extraList });
+    for (const grp of groups) {
+      if (grp.label) {
+        layout.push({ kind: 'phase', y: curY, h: 52, text: grp.label });
+        curY += 52;
+      }
+      for (let i = 0; i < grp.items.length; i += 2) {
+        const left = grp.items[i];
+        const right = grp.items[i + 1] || null;
+        const rowH = Math.max(left.totalH, right ? right.totalH : 0);
+        layout.push({ kind: 'panel', x: PAD, y: curY, w: COL_W, h: rowH, m: left });
+        if (right) layout.push({ kind: 'panel', x: PAD + COL_W + GAP, y: curY, w: COL_W, h: rowH, m: right });
+        curY += rowH + 16;
+      }
+    }
+  }
+
+  /* 终章收官板尺寸 */
+  const FIN_ART_H = finaleArt ? Math.round(IN_W * 9 / 16) : 0;
+  mctx.font = `400 19px ${SERIF}`;
+  const becameLines = rv.became ? wrapCanvasLines(mctx, rv.became, IN_W - 44).slice(0, 2) : [];
+  const FIN_BODY_H = 128 + becameLines.length * 28;
+  const FIN_H = FIN_ART_H + FIN_BODY_H;
+  const FIN_Y = curY + 26;
+  const H = FIN_Y + FIN_H + 84;
+
+  const cvs = document.createElement('canvas');
+  cvs.width = W;
+  cvs.height = H;
+  const c = cvs.getContext('2d');
+
+  /* 暖宣纸底 + 古籍双线外框 */
+  c.fillStyle = '#f5f2eb';
+  c.fillRect(0, 0, W, H);
+  c.strokeStyle = '#c2bdb2';
+  c.lineWidth = 2;
+  c.strokeRect(18, 18, W - 36, H - 36);
+  c.strokeStyle = '#e0dcd2';
+  c.lineWidth = 1;
+  c.strokeRect(24, 24, W - 48, H - 48);
+
+  /* 卷首抬头 */
+  let tx = PAD;
+  if (logoImg) {
+    c.drawImage(logoImg, PAD, 44, 42, 42);
+    tx = PAD + 52;
+  }
+  c.fillStyle = '#1e2431';
+  c.font = `600 34px ${SERIF}`;
+  c.fillText('这一百年', tx, 75);
+
+  c.fillStyle = '#b53426';
+  c.fillRect(tx + 150, 48, 76, 30);
+  c.fillStyle = '#fbf4e6';
+  c.font = `500 16px ${SERIF}`;
+  c.fillText('连环画', tx + 164, 69);
+
+  c.textAlign = 'right';
+  c.fillStyle = '#4a5160';
+  c.font = `500 19px ${SERIF}`;
+  c.fillText(`${r.nick} · ${r.city}`, W - PAD, 62);
+  c.fillStyle = '#6b6860';
+  c.font = `400 15px ${SANS}`;
+  c.fillText(`${r.year}.${String(r.month).padStart(2, '0')} — ${r.endYear}.${String(r.endMonth).padStart(2, '0')} · 共 ${panels.length} 帧`, W - PAD, 84);
+  c.textAlign = 'left';
+
+  c.fillStyle = '#1e2431';
+  c.font = `600 22px ${SERIF}`;
+  c.fillText(titleStr, PAD, 118);
+  c.strokeStyle = '#1e2431';
+  c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(PAD, 132); c.lineTo(W - PAD, 132); c.stroke();
+
+  /* 绘制每一帧与连接线 */
+  for (const item of layout) {
+    if (item.kind === 'seam') {
+      const cx = W / 2;
+      c.strokeStyle = '#c8c3b8';
+      c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(cx, item.y); c.lineTo(cx, item.y + item.h); c.stroke();
+      c.save();
+      c.translate(cx, item.y + item.h / 2);
+      c.rotate(Math.PI / 4);
+      c.fillStyle = '#b53426';
+      c.fillRect(-4, -4, 8, 8);
+      c.restore();
+      continue;
+    }
+    if (item.kind === 'year' || item.kind === 'phase') {
+      const cy = item.y + item.h / 2;
+      const isPh = item.kind === 'phase';
+      c.font = `600 ${isPh ? 17 : 15}px ${SERIF}`;
+      const tw = c.measureText(item.text).width;
+      c.save();
+      c.strokeStyle = isPh ? 'rgba(181,52,38,0.45)' : '#c8c3b8';
+      c.lineWidth = 1;
+      if (isPh) c.setLineDash([6, 4]);
+      c.beginPath();
+      c.moveTo(PAD, cy); c.lineTo(W / 2 - tw / 2 - 14, cy);
+      c.moveTo(W / 2 + tw / 2 + 14, cy); c.lineTo(W - PAD, cy);
+      c.stroke();
+      c.restore();
+      c.fillStyle = isPh ? '#b53426' : '#5e5a52';
+      c.textAlign = 'center';
+      c.fillText(item.text, W / 2, cy + 5);
+      c.textAlign = 'left';
+      continue;
+    }
+
+    const { x, y, w, h, m } = item;
+    const d = m.d;
+    /* 帧外框（宣纸白底 + 墨线） */
+    c.fillStyle = '#fffdf8';
+    c.fillRect(x, y, w, h);
+
+    /* 上半 16:9 画框 */
+    const focal = m.isFallback ? [0.35, 0.5, 0.65][m.idx % 3] : 0.5;
+    drawCoverImage(c, m.img, x, y, w, ART_H, focal);
+
+    /* 左上帧号徽标 */
+    const ym = `${d.year}.${String(d.month).padStart(2, '0')}`;
+    const noTxt = `第 ${String(m.idx + 1).padStart(2, '0')} 帧 · ${ym}`;
+    c.font = `500 ${twoCol ? 12.5 : 14}px ${SANS}`;
+    const nw = c.measureText(noTxt).width + 18;
+    const nh = twoCol ? 24 : 26;
+    drawRoundedRectPath(c, x + 10, y + 10, nw, nh, 5);
+    c.fillStyle = 'rgba(22, 20, 18, 0.76)';
+    c.fill();
+    c.fillStyle = '#fbf6ec';
+    c.fillText(noTxt, x + 19, y + 10 + (twoCol ? 16.5 : 18));
+
+    /* 右上盈亏徽标 */
+    if (m.net) {
+      const nt = m.net.short;
+      c.font = `600 ${twoCol ? 12 : 13.5}px ${SANS}`;
+      const bw = c.measureText(nt).width + 18;
+      drawRoundedRectPath(c, x + w - bw - 10, y + 10, bw, nh, 13);
+      c.fillStyle = m.net.neg ? 'rgba(155, 39, 28, 0.86)' : 'rgba(42, 110, 74, 0.86)';
+      c.fill();
+      c.fillStyle = '#fbf8f2';
+      c.fillText(nt, x + w - bw - 1, y + 10 + (twoCol ? 16.5 : 18));
+    }
+
+    /* 下半配文栏 */
+    c.strokeStyle = '#ded9ce';
+    c.lineWidth = 1;
+    c.beginPath(); c.moveTo(x, y + ART_H); c.lineTo(x + w, y + ART_H); c.stroke();
+
+    const px = x + (twoCol ? 12 : 17);
+    let py = y + ART_H + (twoCol ? 27 : 32);
+    c.fillStyle = '#1e2431';
+    c.font = `600 ${twoCol ? 17 : 20}px ${SERIF}`;
+    let headTxt = m.head;
+    const maxHeadW = w - (twoCol ? 24 : 34);
+    while (headTxt.length > 4 && c.measureText(headTxt).width > maxHeadW) headTxt = headTxt.slice(0, -1);
+    if (headTxt !== m.head) headTxt += '…';
+    c.fillText(headTxt, px, py);
+
+    c.fillStyle = '#333742';
+    c.font = `400 ${twoCol ? 15.5 : 18.5}px ${SERIF}`;
+    for (const ln of m.lines) {
+      py += m.lineH;
+      c.fillText(ln, px, py);
+    }
+
+    c.strokeStyle = '#c5bfb3';
+    c.lineWidth = 1.25;
+    c.strokeRect(x, y, w, h);
+  }
+
+  /* 终章连接菱 + 收官画卷落款 */
+  const fcx = W / 2;
+  c.strokeStyle = '#c8c3b8';
+  c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(fcx, curY); c.lineTo(fcx, FIN_Y); c.stroke();
+  c.save();
+  c.translate(fcx, curY + 13);
+  c.rotate(Math.PI / 4);
+  c.fillStyle = '#b53426';
+  c.fillRect(-4, -4, 8, 8);
+  c.restore();
+
+  c.fillStyle = '#fffdf8';
+  c.fillRect(PAD, FIN_Y, IN_W, FIN_H);
+  if (finaleArt) {
+    drawCoverImage(c, finaleArt, PAD, FIN_Y, IN_W, FIN_ART_H, 0.5);
+    const stTxt = pctx.extra ? '终章 · 续走收官' : '终章 · 两年收官';
+    c.font = `600 15px ${SERIF}`;
+    const sw = c.measureText(stTxt).width + 22;
+    drawRoundedRectPath(c, PAD + IN_W - sw - 12, FIN_Y + 12, sw, 30, 5);
+    c.fillStyle = '#b53426';
+    c.fill();
+    c.fillStyle = '#fbf4e6';
+    c.fillText(stTxt, PAD + IN_W - sw - 1, FIN_Y + 32);
+  }
+
+  let fy = FIN_Y + FIN_ART_H + 38;
+  c.fillStyle = '#1e2431';
+  c.font = `600 26px ${SERIF}`;
+  c.fillText(titleStr, PAD + 22, fy);
+  c.textAlign = 'right';
+  c.fillStyle = '#b53426';
+  c.font = `600 18px ${SERIF}`;
+  c.fillText(`抵当时普通人 ${yrs} 年收入`, PAD + IN_W - 22, fy);
+  c.textAlign = 'left';
+
+  fy += 36;
+  const earnStr = `净赚 ${r.yearEarnedText || ''}`;
+  let earnSz = 30;
+  c.font = `600 ${earnSz}px ${SERIF}`;
+  while (earnSz > 20 && c.measureText(earnStr).width > IN_W - 280) {
+    earnSz -= 2;
+    c.font = `600 ${earnSz}px ${SERIF}`;
+  }
+  c.fillStyle = r.yearEarned < 0 ? '#9b271c' : '#1e2431';
+  c.fillText(earnStr, PAD + 22, fy);
+  c.textAlign = 'right';
+  c.fillStyle = '#5c5951';
+  c.font = `400 16px ${SANS}`;
+  c.fillText(`折合今天美元：${r.worldUsdText || '—'}`, PAD + IN_W - 22, fy - 4);
+  c.textAlign = 'left';
+
+  if (becameLines.length) {
+    c.fillStyle = '#4a5160';
+    c.font = `400 19px ${SERIF}`;
+    for (const bl of becameLines) {
+      fy += 28;
+      c.fillText(bl, PAD + 22, fy);
+    }
+  }
+  c.strokeStyle = 'rgba(181, 52, 38, 0.55)';
+  c.lineWidth = 1.5;
+  c.strokeRect(PAD, FIN_Y, IN_W, FIN_H);
+
+  /* 页脚 */
+  const footY = H - 36;
+  c.fillStyle = '#6b6860';
+  c.font = `400 16px ${SERIF}`;
+  c.fillText('《这一百年》 · 挑一年落脚，在那时候的人间过上两年', PAD, footY);
+  c.textAlign = 'right';
+  c.fillStyle = '#9b271c';
+  c.font = `600 16px ${SANS}`;
+  c.fillText('100y.swaylab.ai', W - PAD, footY);
+  c.textAlign = 'left';
+
+  const fileName = `这一百年-连环画-${r.nick}-${r.year}.jpg`;
+  bindPosterOutput(cvs, fileName, `《这一百年》${r.nick}的${r.year}年连环画`, `${r.nick}的${r.year}年连环画`);
+}
+
 async function openSharePoster(pctx) {
   if (!pctx || !pctx.result) return toast('请先完成结算');
   const modal = $('#poster-modal');
   const imgEl = $('#poster-img');
   const dlEl = $('#poster-dl');
   const shareEl = $('#poster-share');
+  const statusEl = $('#poster-status');
   modal.hidden = false;
   imgEl.removeAttribute('src');
   imgEl.alt = '正在生成海报…';
   shareEl.hidden = true;
+  if (statusEl) { statusEl.hidden = false; statusEl.textContent = '正在生成分享海报…'; }
 
   const r = pctx.result;
   const rv = pctx.review || {};
@@ -1950,11 +2627,13 @@ async function openSharePoster(pctx) {
   c.textAlign = 'left';
 
   const dataUrl = cvs.toDataURL('image/jpeg', 0.92);
+  if (statusEl) statusEl.hidden = true;
   imgEl.src = dataUrl;
   imgEl.alt = `${r.nick}的${r.year}年分享海报`;
   const fileName = `这一百年-${r.nick}-${r.year}.jpg`;
   dlEl.href = dataUrl;
   dlEl.download = fileName;
+  dlEl.textContent = '保存海报';
 
   if (navigator.canShare && window.File) {
     cvs.toBlob(blob => {
@@ -2166,7 +2845,7 @@ async function loadMine() {
     const scoreTop = old ? '旧版记录'
       : playing ? '继续 →'
       : (sc == null ? '—' : `${Math.abs(sc) < 10 ? sc.toFixed(2) : sc.toFixed(1)} 年`);
-    const scoreSub = old ? '' : (playing ? '接上进度' : '回看 →');
+    const scoreSub = old ? '' : (playing ? '接上进度' : '连环画 →');
     const title = r.title || (playing && r.stepN ? `第 ${r.stepN} / ${r.totalMonths || 24} 月` : '');
     const ym = `${r.year}.${String(r.month).padStart(2, '0')}`;
     const sub = `${ym}${r.city ? ' · ' + r.city : ''}`;
@@ -2248,7 +2927,8 @@ if (window.HYVoice) {
     isActiveScreen: () =>
       document.body.dataset.screen === 'play' &&
       $('#sheet-bg').hidden &&
-      $('#poster-modal').hidden,
+      $('#poster-modal').hidden &&
+      $('#comic-modal').hidden,
     onSubmit: () => sendMonth(),
     onDraftChange: () => {
       const ta = $('#list');

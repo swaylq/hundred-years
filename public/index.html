@@ -12,7 +12,7 @@
 <link rel="icon" type="image/svg+xml" href="/assets/logo-mark.svg">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-<link rel="stylesheet" href="/style.css?v=20261118c">
+<link rel="stylesheet" href="/style.css?v=20261118d">
 </head>
 <body data-screen="pick" data-theme="light">
 
@@ -195,21 +195,45 @@
   </div>
 </div>
 
-<!-- 分享海报弹窗 -->
-<div id="poster-modal" class="poster-modal" role="dialog" aria-modal="true" aria-label="分享海报" hidden>
+<!-- 分享海报 / 连环画长图弹窗 -->
+<div id="poster-modal" class="poster-modal" role="dialog" aria-modal="true" aria-label="长图预览" hidden>
   <div class="poster-sheet">
-    <div class="poster-wrap"><img id="poster-img" alt="分享海报"></div>
+    <div id="poster-status" class="poster-status" hidden></div>
+    <div class="poster-wrap"><img id="poster-img" alt="长图预览"></div>
     <div class="poster-acts">
-      <a id="poster-dl" class="btn-primary" download="这一百年-海报.jpg">保存海报</a>
+      <a id="poster-dl" class="btn-primary" download="这一百年-连环画.jpg">保存图片</a>
       <button id="poster-share" type="button" class="btn-ghost" hidden>系统分享</button>
       <button id="poster-close" type="button" class="btn-ghost">关闭</button>
     </div>
   </div>
 </div>
 
+<!-- 连环画沉浸翻页器（小人书单帧翻页） -->
+<div id="comic-modal" class="comic-modal" role="dialog" aria-modal="true" aria-label="连环画翻页" hidden>
+  <div class="comic-lb">
+    <div class="comic-lb-bar">
+      <span id="lb-pos" class="num"></span>
+      <button id="lb-close" class="sheet-close" type="button" aria-label="关闭">✕</button>
+    </div>
+    <div class="comic-lb-stage">
+      <img id="lb-img" alt="">
+      <span id="lb-net" class="comic-net num" hidden></span>
+    </div>
+    <div class="comic-lb-cap">
+      <h4 id="lb-head"></h4>
+      <p id="lb-text"></p>
+      <div id="lb-meta" class="comic-lb-meta num"></div>
+    </div>
+    <div class="comic-lb-nav">
+      <button id="lb-prev" type="button" class="btn-ghost">‹ 上一帧</button>
+      <button id="lb-next" type="button" class="btn-primary">下一帧 ›</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="/voice.js?v=20261118c"></script>
-<script src="/app.js?v=20261118c"></script>
+<script src="/voice.js?v=20261118d"></script>
+<script src="/app.js?v=20261118d"></script>
 </body>
 </html>
