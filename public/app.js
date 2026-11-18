@@ -51,6 +51,7 @@ let boardMode = 'world';
 let boardScope = 'world';
 let boardYear = null;
 let lastPosterCtx = null;
+let voice = null;
 
 /* ── 主题切换（浅暖纸 / 深墨纸） ─────────────────────────── */
 function applyTheme(theme) {
@@ -95,6 +96,7 @@ function syncNavPlay() {
 }
 
 function go(name) {
+  if (name !== 'play' && voice && voice.isActive()) voice.cancel();
   const targetScreen = name === 'mine' ? 'board' : name;
   $$('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + targetScreen));
   $$('#top .nav-links button[data-go]').forEach(b => {
@@ -686,6 +688,7 @@ function renderPlay(last) {
   }
   updateDepthBar(countHan(ta.value));
   renderPicks(done ? [] : (last.options || s.options || []));
+  if (voice) voice.sync();
 }
 
 /* ── 单行参考路子药丸 ────────────────────────────────────── */
@@ -820,6 +823,7 @@ function beginStream(at, list) {
 }
 
 async function sendMonth() {
+  if (voice && voice.isActive()) await voice.stop(false);
   const list = $('#list').value;
   const n = countHan(list);
   const lim = run.state.listLimit || 500;
@@ -830,6 +834,7 @@ async function sendMonth() {
   send.disabled = true;
   send.textContent = '正在过这个月…';
   send.classList.add('busy');
+  if (voice) voice.sync();
 
   const at = { n: run.state.n, year: run.state.year, month: run.state.month };
   const goTop = () => {
@@ -908,6 +913,7 @@ async function sendMonth() {
     send.disabled = false;
     send.textContent = '过这个月 →';
     send.classList.remove('busy');
+    if (voice) voice.sync();
   }
 }
 
@@ -2056,6 +2062,39 @@ async function resume(id) {
   } catch (e) {
     toast(e.message);
   }
+}
+
+if (window.HYVoice) {
+  voice = window.HYVoice.init({
+    textarea: $('#list'),
+    dock: $('#play-write'),
+    pressLayer: $('#hold-press'),
+    micBtn: $('#btn-mic'),
+    hintBar: $('#mic-hint'),
+    hintText: $('#mic-hint-text'),
+    getTarget: () => (run && run.id && token ? { id: run.id, token } : null),
+    isDisabled: () => {
+      const ta = $('#list');
+      const send = $('#send');
+      return !run || !ta || ta.disabled || (send && send.classList.contains('busy'));
+    },
+    isActiveScreen: () =>
+      document.body.dataset.screen === 'play' &&
+      $('#sheet-bg').hidden &&
+      $('#poster-modal').hidden,
+    onSubmit: () => sendMonth(),
+    onDraftChange: () => {
+      const ta = $('#list');
+      autoResizeTa(ta);
+      const n = countHan(ta.value);
+      const lim = (run && run.state.listLimit) || 500;
+      const c = $('#count');
+      c.textContent = `${n} / ${lim}`;
+      c.classList.toggle('over', n > lim);
+      updateDepthBar(n);
+      if (!ta.disabled) $('#send').disabled = n === 0 || n > lim;
+    },
+  });
 }
 
 (async () => {

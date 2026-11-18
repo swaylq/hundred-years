@@ -18,6 +18,7 @@ const url = require('url');
 const E = require('./engine.js');
 const SIM = require('./sim.js');
 const DB = require('./db.js');
+const VOICE = require('./voice-asr.js');
 
 const PORT = Number(process.env.HY_PORT || 8801);
 const PUBLIC = path.join(__dirname, 'public');
@@ -315,9 +316,16 @@ async function writeReview(id, row, s, extra, req) {
 const routes = {
   'GET /api/health': async (req, res) => json(res, 200, {
     ok: true, ai: HAS_KEY, model: HAS_KEY ? SIM.MODEL : null,
+    voice: VOICE.hasVoice(), voiceRealtime: VOICE.hasRealtime(),
     years: CATALOG.filter(y => y.ready).length, total: CATALOG.length,
     runs: DB.doneCount(),
   }),
+
+  'POST /api/transcribe': async (req, res) =>
+    VOICE.handleTranscribe(req, res, { DB, rateOk, clientIp, json, oops }),
+
+  'POST /api/transcribe/refine': async (req, res) =>
+    VOICE.handleRefine(req, res, { DB, rateOk, clientIp, readBody, json, oops }),
 
   'GET /api/years': async (req, res) => json(res, 200, { years: CATALOG }),
 
@@ -948,9 +956,18 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('upgrade', (req, socket, head) => {
+  if (VOICE.matchesAsrUpgrade(req.url)) {
+    VOICE.handleAsrUpgrade(req, socket, head, { DB, rateOk, clientIp });
+    return;
+  }
+  socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+  socket.destroy();
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   const ready = CATALOG.filter(y => y.ready).length;
   console.log(`《这一百年》起在 http://127.0.0.1:${PORT}`);
-  console.log(`年卡 ${ready}/${CATALOG.length} 张${ready < CATALOG.length ? '（没写好的年份进不去）' : ''}，模型 ${HAS_KEY ? SIM.MODEL : '没有密钥，走本地兜底'}`);
+  console.log(`年卡 ${ready}/${CATALOG.length} 张${ready < CATALOG.length ? '（没写好的年份进不去）' : ''}，模型 ${HAS_KEY ? SIM.MODEL : '没有密钥，走本地兜底'}，语音 ${VOICE.hasRealtime() ? '实时流式' : VOICE.hasVoice() ? '整段转写' : '未开启'}`);
   console.log(`存档 ${DB.FILE}`);
 });

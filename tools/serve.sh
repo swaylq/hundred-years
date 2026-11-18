@@ -9,4 +9,4 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
-exec secret exec OPENROUTER_API_KEY -- node server.js
+exec secret exec OPENROUTER_API_KEY DASHSCOPE_API_KEY -- node server.js
