@@ -270,6 +270,7 @@ function go(name, opts = {}) {
   });
   document.body.dataset.screen = name;
   if (name === 'pick') requestAnimationFrame(syncEraBarFade);
+  if (name === 'play') requestAnimationFrame(syncPlayStripsFade);
   if (name === 'board') { setBoardMode('world', { animate: prevScreenId === 'board' && prevName !== 'board' }); loadBoard(); }
   if (name === 'mine') { setBoardMode('mine', { animate: prevScreenId === 'board' && prevName !== 'mine' }); loadMine(); }
 }
@@ -390,17 +391,27 @@ function renderYearGrid(era = 'all') {
   renderSpotlight(spotlightInfo);
 }
 
-function syncEraBarFade() {
-  const bar = $('#era-bar');
-  if (!bar) return;
-  const maxScroll = bar.scrollWidth - bar.clientWidth;
-  bar.classList.toggle('fade-l', maxScroll > 4 && bar.scrollLeft > 4);
-  bar.classList.toggle('fade-r', maxScroll > 4 && bar.scrollLeft < maxScroll - 4);
+function syncScrollFade(node) {
+  if (!node) return;
+  const maxScroll = node.scrollWidth - node.clientWidth;
+  node.classList.toggle('fade-l', maxScroll > 4 && node.scrollLeft > 4);
+  node.classList.toggle('fade-r', maxScroll > 4 && node.scrollLeft < maxScroll - 4);
+}
+function syncEraBarFade() { syncScrollFade($('#era-bar')); }
+function syncPlayStripsFade() {
+  syncScrollFade($('#fellow-bar'));
+  syncScrollFade($('#picks .quick-picks-scroll'));
 }
 if ($('#era-bar')) {
   $('#era-bar').addEventListener('scroll', syncEraBarFade, { passive: true });
-  window.addEventListener('resize', syncEraBarFade, { passive: true });
 }
+if ($('#fellow-bar')) {
+  $('#fellow-bar').addEventListener('scroll', () => syncScrollFade($('#fellow-bar')), { passive: true });
+}
+window.addEventListener('resize', () => {
+  syncEraBarFade();
+  syncPlayStripsFade();
+}, { passive: true });
 
 $$('#era-bar button').forEach(b => b.addEventListener('click', () => {
   const was = currentEra;
@@ -1060,6 +1071,8 @@ function renderFellowBar(s, done) {
     });
     bar.appendChild(btn);
   }
+  bar.scrollLeft = 0;
+  requestAnimationFrame(() => syncScrollFade(bar));
 }
 
 /* ── 单行参考路子药丸 ────────────────────────────────────── */
@@ -1069,6 +1082,7 @@ function renderPicks(list) {
   const has = Array.isArray(list) && list.length > 0;
   wrap.hidden = !has;
   if (!has) return;
+  const scroller = el('div', 'quick-picks-scroll');
   for (const o of list) {
     const b = el('button', 'q-pill', o.what || '');
     b.type = 'button';
@@ -1077,8 +1091,10 @@ function renderPicks(list) {
       writeIn(o.what || '');
       b.classList.add('used');
     });
-    wrap.appendChild(b);
+    scroller.appendChild(b);
   }
+  scroller.addEventListener('scroll', () => syncScrollFade(scroller), { passive: true });
+  wrap.appendChild(scroller);
   const sw = el('button', 'q-swap', '↻');
   sw.type = 'button';
   sw.title = '换一批参考';
@@ -1096,6 +1112,7 @@ function renderPicks(list) {
     sw.disabled = false;
   });
   wrap.appendChild(sw);
+  requestAnimationFrame(() => syncScrollFade(scroller));
 }
 
 function writeIn(text) {
@@ -1836,9 +1853,6 @@ function renderComicStrip(host, cfg) {
     imgNodes[idx] = im;
 
     art.appendChild(el('span', 'comic-no num', `第 ${String(idx + 1).padStart(2, '0')} 帧 · ${ym}`));
-    if (net) {
-      art.appendChild(el('span', 'comic-net num' + (net.neg ? ' neg' : ''), net.short));
-    }
     const bondPartner = (d.bond && d.bond.with) || (d.worldTrace && d.worldTrace.kind === 'bond' && d.worldTrace.partner) || '';
     if (bondPartner) {
       const bRel = (d.bond && d.bond.rel) || '';
@@ -1847,6 +1861,9 @@ function renderComicStrip(host, cfg) {
     panel.appendChild(art);
 
     const cap = el('div', 'comic-caption');
+    if (net) {
+      cap.appendChild(el('span', 'comic-net num' + (net.neg ? ' neg' : ''), net.short));
+    }
     const head = el('div', 'comic-cap-head');
     head.appendChild(el('h4', '', comicHeadlineOf(d)));
     cap.appendChild(head);

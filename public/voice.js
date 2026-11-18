@@ -979,9 +979,6 @@
   const PILL_BOTTOM = 100;
   const PILL_HEIGHT = 105;
   const PILL_GUTTER = 15;
-  const HOLD_TRANSCRIPT_LINE = 15 * 1.625;
-  const TRANSCRIPT_RESERVE = ZONE_H + 16.5 + 12 + 24 + 16;
-  const HOLD_TRANSCRIPT_MAX_H = `min(${8 * HOLD_TRANSCRIPT_LINE}px, 42vh, max(${HOLD_TRANSCRIPT_LINE}px, calc(80vh - ${TRANSCRIPT_RESERVE}px)))`;
 
   function midAt(d) {
     return Math.sqrt(R_MID * R_MID - d * d) - DROP;
@@ -1138,7 +1135,6 @@
       bubbleCard.className = 'hold-tint hold-bubble-card';
       transcriptBox = document.createElement('span');
       transcriptBox.className = 'hold-transcript';
-      transcriptBox.style.maxHeight = HOLD_TRANSCRIPT_MAX_H;
       transcriptSpan = document.createElement('span');
       transcriptSpan.className = 'hold-transcript-inner';
       transcriptBox.appendChild(transcriptSpan);
