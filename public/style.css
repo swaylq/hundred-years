@@ -1495,7 +1495,7 @@ html.theme-switching .rank-card-foot {
 }
 
 .toast {
-  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  position: fixed; left: 50%; bottom: calc(78px + env(safe-area-inset-bottom, 0px));
   transform: translate3d(-50%, 10px, 0) scale(0.96); z-index: 80;
   opacity: 0; pointer-events: none;
   background: var(--ink); color: var(--ink-inv);
@@ -1569,6 +1569,7 @@ html.theme-switching .rank-card-foot {
     transform: translate3d(0, 14px, 0) scale(0.965);
   }
   .sheet-body { padding-bottom: 20px; }
+  .toast { bottom: 28px; }
   .sheet-backdrop[data-state="closing"] .sheet { transform: translate3d(0, 8px, 0) scale(0.975); }
 }
 
