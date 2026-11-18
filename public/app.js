@@ -54,12 +54,20 @@ let lastPosterCtx = null;
 let voice = null;
 
 /* ── 主题切换（浅暖纸 / 深墨纸） ─────────────────────────── */
+const YEAR_ART_V = '1';
+const yearArtUrl = y => (Number(y) >= 1926 && Number(y) <= 2025) ? `/assets/years/${Number(y)}.webp?v=${YEAR_ART_V}` : null;
+const yearThumbUrl = y => (Number(y) >= 1926 && Number(y) <= 2025) ? `/assets/years/thumb/${Number(y)}.webp?v=${YEAR_ART_V}` : null;
+
 function applyTheme(theme) {
   const t = theme === 'dark' ? 'dark' : 'light';
   document.body.dataset.theme = t;
   localStorage.setItem(THEME_KEY, t);
   const btn = $('#btn-theme');
-  if (btn) btn.textContent = t === 'dark' ? '☀' : '☾';
+  if (btn) {
+    const label = t === 'dark' ? '切回浅色暖纸' : '切到深色墨纸';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', t === 'dark' ? '#272522' : '#f3eee4');
 }
@@ -112,7 +120,7 @@ function go(name) {
 
 $$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
 
-/* ── 1. 选择年份（时代胶囊筛选 + 紧凑百年年历墙） ─────────── */
+/* ── 1. 选择年份（焦点年份舞台 + 百年画卷墙） ─────────────── */
 const ERA_RANGES = {
   all: [1926, 2025],
   1926: [1926, 1949],
@@ -120,17 +128,49 @@ const ERA_RANGES = {
   1978: [1978, 2008],
   2009: [2009, 2025],
 };
+const ERA_LABELS = [
+  [1926, 1949, '民国风云'],
+  [1950, 1977, '建国岁月'],
+  [1978, 2008, '改开浪潮'],
+  [2009, 2025, '近年流光'],
+];
+const eraNameOf = y => {
+  const hit = ERA_LABELS.find(([a, b]) => y >= a && y <= b);
+  return hit ? hit[2] : '百年';
+};
 const heat = c => c >= 14 ? 3 : c >= 7 ? 2 : c >= 2 ? 1 : 0;
+const isStartableYear = info => !!(info && info.ready && (info.startMonths || []).length > 0);
 
-function selectYearTile(info, tileEl) {
+function renderSpotlight(info) {
+  const box = $('#pick-spotlight');
+  if (!info || !box) { if (box) box.hidden = true; return; }
   selectedYear = info.year;
-  $$('#grid .y-tile.sel').forEach(x => x.classList.remove('sel'));
-  if (tileEl) tileEl.classList.add('sel');
-  const pv = $('#pick-preview');
-  pv.hidden = false;
-  $('#pv-title').textContent = `${info.year} 年 · ${info.city}`;
-  const swTxt = info.switch ? ` · ${info.switch.month} 月换币` : '';
-  $('#pv-desc').textContent = (info.era || '点击进入挑开局月份') + swTxt;
+  box.hidden = false;
+  $$('#grid .y-card.sel').forEach(x => x.classList.remove('sel'));
+  const hitCard = $(`#grid .y-card[data-year="${info.year}"]`);
+  if (hitCard) hitCard.classList.add('sel');
+
+  const media = box.querySelector('.spot-media');
+  const img = $('#sp-img');
+  const art = yearArtUrl(info.year);
+  if (art && img.getAttribute('src') !== art) {
+    media.classList.add('fade');
+    img.onload = () => media.classList.remove('fade');
+    img.onerror = () => media.classList.remove('fade');
+    img.src = art;
+    img.alt = `${info.year} 年 ${info.city}`;
+    if (img.complete && img.naturalWidth > 0) media.classList.remove('fade');
+  }
+
+  const badges = [`<span class="spot-badge">${esc(eraNameOf(info.year))}</span>`];
+  if (heat(info.ceiling) >= 2) badges.push('<span class="spot-badge seal">机缘高</span>');
+  if (info.switch) badges.push(`<span class="spot-badge">${info.switch.month} 月换币</span>`);
+  $('#sp-badges').innerHTML = badges.join('');
+
+  $('#sp-year').textContent = `${info.year} 年`;
+  $('#sp-city').textContent = info.city || '';
+  $('#sp-era').textContent = info.era || '点击进入挑选开局月份。';
+  $('#sp-enter').textContent = `进入 ${info.year} 年 →`;
 }
 
 function renderYearGrid(era = 'all') {
@@ -139,39 +179,55 @@ function renderYearGrid(era = 'all') {
   const g = $('#grid');
   g.innerHTML = '';
   const list = years.filter(y => y.year >= a && y.year <= b);
-  let chosen = null;
+  const startableList = list.filter(isStartableYear);
 
-  for (const info of list) {
-    const canStart = info.ready && (info.startMonths || []).length > 0;
+  let spotlightInfo = startableList.find(x => x.year === selectedYear)
+    || startableList.find(x => x.year === 1946 || x.year === 1984 || x.year === 1958 || x.year === 2016)
+    || startableList[0]
+    || null;
+
+  const frag = document.createDocumentFragment();
+  list.forEach((info, idx) => {
+    const canStart = isStartableYear(info);
     const h = heat(info.ceiling);
-    const btn = el('button', 'y-tile num' + (h ? ' hot-' + h : ''));
+    const btn = el('button', 'y-card' + (spotlightInfo && spotlightInfo.year === info.year ? ' sel' : ''));
     btn.type = 'button';
+    btn.dataset.year = String(info.year);
     btn.disabled = !canStart;
-    btn.setAttribute('aria-label', `${info.year} 年 ${info.city}`);
-    btn.appendChild(document.createTextNode(String(info.year)));
-    if (info.switch) btn.appendChild(el('i', 'dot-sw'));
+    btn.setAttribute('aria-label', `${info.year} 年 ${info.city}${info.era ? '，' + info.era : ''}`);
+    if (info.era) btn.title = `${info.year} 年 · ${info.city}：${info.era}`;
+
+    const im = el('img');
+    im.src = yearThumbUrl(info.year);
+    im.alt = '';
+    im.decoding = 'async';
+    im.loading = idx < 10 ? 'eager' : 'lazy';
+    btn.appendChild(im);
+
+    const marks = el('span', 'y-card-marks');
+    if (!canStart) {
+      marks.appendChild(el('span', 'y-lock', '仅续走'));
+    } else {
+      if (h >= 2) marks.appendChild(el('i', 'y-dot hot'));
+      if (info.switch) marks.appendChild(el('i', 'y-dot sw'));
+    }
+    if (marks.children.length) btn.appendChild(marks);
+
+    const foot = el('span', 'y-card-foot');
+    foot.appendChild(el('strong', 'y-card-year num', String(info.year)));
+    foot.appendChild(el('span', 'y-card-city', info.city || ''));
+    btn.appendChild(foot);
+
     if (canStart) {
       btn.addEventListener('click', () => {
-        if (selectedYear === info.year) openYear(info.year);
-        else selectYearTile(info, btn);
+        selectedYear = info.year;
+        openYear(info.year);
       });
-      btn.addEventListener('dblclick', () => openYear(info.year));
-      if (!chosen && (selectedYear === info.year || info.year === 1944 || info.year === a)) {
-        chosen = { info, btn };
-      }
     }
-    g.appendChild(btn);
-  }
-  if (!chosen) {
-    const firstBtn = g.querySelector('.y-tile:not(:disabled)');
-    if (firstBtn) {
-      const y = Number(firstBtn.textContent);
-      const info = list.find(x => x.year === y);
-      if (info) chosen = { info, btn: firstBtn };
-    }
-  }
-  if (chosen) selectYearTile(chosen.info, chosen.btn);
-  else $('#pick-preview').hidden = true;
+    frag.appendChild(btn);
+  });
+  g.appendChild(frag);
+  renderSpotlight(spotlightInfo);
 }
 
 $$('#era-bar button').forEach(b => b.addEventListener('click', () => {
@@ -179,8 +235,16 @@ $$('#era-bar button').forEach(b => b.addEventListener('click', () => {
   b.classList.add('on');
   renderYearGrid(b.dataset.era);
 }));
-$('#pv-enter').addEventListener('click', () => {
+$('#sp-enter').addEventListener('click', () => {
   if (selectedYear) openYear(selectedYear);
+});
+$('#sp-rand').addEventListener('click', () => {
+  const [a, b] = ERA_RANGES[currentEra] || [1926, 2025];
+  const pool = years.filter(y => y.year >= a && y.year <= b && isStartableYear(y));
+  if (!pool.length) return;
+  const others = pool.length > 1 ? pool.filter(x => x.year !== selectedYear) : pool;
+  const pick = others[Math.floor(Math.random() * others.length)];
+  if (pick) renderSpotlight(pick);
 });
 
 async function loadYears() {
@@ -189,7 +253,7 @@ async function loadYears() {
   renderYearGrid(currentEra);
 }
 
-/* ── 2. 选月开局（零滚动直达启程） ───────────────────────── */
+/* ── 2. 选月开局（年份封面英雄卡 + 零滚动直达启程） ─────────── */
 async function fetchYearData(y) {
   if (yearCardCache.has(y)) return yearCardCache.get(y);
   const d = await api('/api/year?y=' + y);
@@ -197,10 +261,43 @@ async function fetchYearData(y) {
   return d;
 }
 
+function updateYearStepButtons(y) {
+  const startable = (years || []).filter(isStartableYear);
+  const idx = startable.findIndex(x => x.year === y);
+  const prevBtn = $('#btn-prev-year');
+  const nextBtn = $('#btn-next-year');
+  const prev = idx > 0 ? startable[idx - 1] : null;
+  const next = idx >= 0 && idx < startable.length - 1 ? startable[idx + 1] : null;
+  if (prevBtn) {
+    prevBtn.hidden = !prev;
+    if (prev) {
+      prevBtn.textContent = `‹ ${prev.year}`;
+      prevBtn.onclick = () => openYear(prev.year);
+    }
+  }
+  if (nextBtn) {
+    nextBtn.hidden = !next;
+    if (next) {
+      nextBtn.textContent = `${next.year} ›`;
+      nextBtn.onclick = () => openYear(next.year);
+    }
+  }
+}
+
 async function openYear(y) {
+  selectedYear = y;
+  const infoRow = (years || []).find(x => x.year === y);
+  if (infoRow) renderSpotlight(infoRow);
+  updateYearStepButtons(y);
   go('year');
   const hero = $('#year-hero');
-  hero.innerHTML = `<div class="year-hero-top"><span class="year-big num">${y}</span></div><p class="year-line">正在翻开这一年…</p>`;
+  const art = yearArtUrl(y);
+  hero.innerHTML =
+    `${art ? `<div class="year-hero-media"><img src="${art}" alt="${y} 年风貌"></div>` : ''}
+     <div class="year-hero-body">
+       <div class="year-hero-top"><span class="year-big num">${y}</span></div>
+       <p class="year-line">正在翻开这一年…</p>
+     </div>`;
   $('#months').innerHTML = '';
   $('#mo-metrics').hidden = true;
   $('#mo-warn').hidden = true;
@@ -208,7 +305,15 @@ async function openYear(y) {
 
   let d;
   try { d = await fetchYearData(y); }
-  catch (e) { hero.innerHTML = `<div class="year-hero-top"><span class="year-big num">${y}</span></div><p class="year-line">${esc(e.message)}</p>`; return; }
+  catch (e) {
+    hero.innerHTML =
+      `${art ? `<div class="year-hero-media"><img src="${art}" alt="${y} 年风貌"></div>` : ''}
+       <div class="year-hero-body">
+         <div class="year-hero-top"><span class="year-big num">${y}</span></div>
+         <p class="year-line">${esc(e.message)}</p>
+       </div>`;
+    return;
+  }
 
   picked = y;
   pickedMonth = null;
@@ -219,13 +324,16 @@ async function openYear(y) {
   if (d.echoes && d.echoes.length) pills.push(`<span class="pill pill-indigo">同年留痕 ${d.echoes.length}</span>`);
 
   hero.innerHTML =
-    `<div class="year-hero-top">
-       <span class="year-big num">${y}</span>
-       <div class="year-pills">${pills.join('')}</div>
-     </div>
-     <p class="year-line">${esc(c.era || '')}</p>
-     ${c.economy && c.economy.mood ? `<p class="year-mood">${esc(c.economy.mood)}</p>` : ''}
-     <button class="year-ref-link" id="btn-year-ref" type="button">查阅 ${y} 年物价与世道 ›</button>`;
+    `${art ? `<div class="year-hero-media"><img src="${art}" alt="${y} 年 ${esc(d.city)}"></div>` : ''}
+     <div class="year-hero-body">
+       <div class="year-hero-top">
+         <span class="year-big num">${y}</span>
+         <div class="year-pills">${pills.join('')}</div>
+       </div>
+       <p class="year-line">${esc(c.era || '')}</p>
+       ${c.economy && c.economy.mood ? `<p class="year-mood">${esc(c.economy.mood)}</p>` : ''}
+       <button class="year-ref-link" id="btn-year-ref" type="button">查阅 ${y} 年物价与世道 ›</button>
+     </div>`;
   $('#btn-year-ref').addEventListener('click', () => openSheet('ref', { year: y }));
 
   const mo = $('#months');
@@ -522,15 +630,18 @@ function renderPlay(last) {
     : `第 ${at.n} 月 · ${at.year}.${String(at.month).padStart(2, '0')}`;
   const headline = last.head || clientHeadlineOf(last, badgeTxt);
   const imgUrl = last.image || (recentLast ? recentLast.image : null);
+  const fallbackYear = last.first ? s.year : (at && at.year) || s.year;
+  const fallbackArt = yearArtUrl(fallbackYear);
   const shouldFetchImg = !imgUrl && !last.first && at && at.n && run && run.id && (last.story || '').length > 10 && last.imagePending !== false;
 
-  if (imgUrl || shouldFetchImg) {
-    const wrap = el('div', 'hero-art-wrap' + (imgUrl ? '' : ' pending'));
+  if (imgUrl || shouldFetchImg || fallbackArt) {
+    const wrap = el('div', 'hero-art-wrap' + (shouldFetchImg ? ' pending' : ''));
     wrap.id = 'month-art-box';
-    if (imgUrl) {
+    const showSrc = imgUrl || (shouldFetchImg ? null : fallbackArt);
+    if (showSrc) {
       const im = el('img');
-      im.src = imgUrl;
-      im.alt = `第 ${at.n} 月插画`;
+      im.src = showSrc;
+      im.alt = last.first ? `${s.year} 年 ${s.city}` : `第 ${at.n} 月插画`;
       wrap.appendChild(im);
     } else {
       wrap.appendChild(el('span', 'hero-art-status', '绘图中…'));
@@ -540,7 +651,7 @@ function renderPlay(last) {
     cap.appendChild(el('h2', '', headline));
     wrap.appendChild(cap);
     card.appendChild(wrap);
-    if (shouldFetchImg) requestMonthImage(run.id, at.n, badgeTxt, headline);
+    if (shouldFetchImg) requestMonthImage(run.id, at.n, badgeTxt, headline, fallbackYear);
   } else {
     const th = el('div', 'hero-text-head');
     th.appendChild(el('span', 'hero-text-badge num', badgeTxt));
@@ -761,7 +872,28 @@ $('#list').addEventListener('input', () => {
 });
 
 let imgReqKey = '';
-async function requestMonthImage(runId, n, badgeTxt, headline) {
+function fallbackMonthArtBox(box, badgeTxt, headline, fallbackYear) {
+  if (!box) return;
+  const art = yearArtUrl(fallbackYear);
+  if (art) {
+    box.classList.remove('pending');
+    const st = box.querySelector('.hero-art-status');
+    if (st) st.remove();
+    if (!box.querySelector('img')) {
+      const im = el('img');
+      im.src = art;
+      im.alt = `${fallbackYear} 年风貌`;
+      box.insertBefore(im, box.firstChild);
+    }
+    return;
+  }
+  const th = el('div', 'hero-text-head');
+  th.appendChild(el('span', 'hero-text-badge num', badgeTxt));
+  th.appendChild(el('h2', '', headline));
+  box.replaceWith(th);
+}
+
+async function requestMonthImage(runId, n, badgeTxt, headline, fallbackYear) {
   const key = `${runId}:${n}`;
   imgReqKey = key;
   try {
@@ -783,18 +915,11 @@ async function requestMonthImage(runId, n, badgeTxt, headline) {
         box.insertBefore(im, box.firstChild);
       }
     } else if (box) {
-      const th = el('div', 'hero-text-head');
-      th.appendChild(el('span', 'hero-text-badge num', badgeTxt));
-      th.appendChild(el('h2', '', headline));
-      box.replaceWith(th);
+      fallbackMonthArtBox(box, badgeTxt, headline, fallbackYear);
     }
   } catch (e) {
     if (imgReqKey === key && $('#month-art-box')) {
-      const box = $('#month-art-box');
-      const th = el('div', 'hero-text-head');
-      th.appendChild(el('span', 'hero-text-badge num', badgeTxt));
-      th.appendChild(el('h2', '', headline));
-      box.replaceWith(th);
+      fallbackMonthArtBox($('#month-art-box'), badgeTxt, headline, fallbackYear);
     }
   }
 }
@@ -804,11 +929,28 @@ function beginStream(at, list) {
   const card = $('#play-story');
   card.innerHTML = '';
   const badge = `第 ${at.n} 月 · ${at.year}.${String(at.month).padStart(2, '0')}`;
-  const th = el('div', 'hero-text-head');
-  th.appendChild(el('span', 'hero-text-badge num', badge));
-  const h2 = el('h2', '', '正在推演这个月…');
-  th.appendChild(h2);
-  card.appendChild(th);
+  const art = yearArtUrl(at.year);
+  let h2;
+  if (art) {
+    const wrap = el('div', 'hero-art-wrap streaming');
+    const im = el('img');
+    im.src = art;
+    im.alt = '';
+    wrap.appendChild(im);
+    wrap.appendChild(el('span', 'hero-art-badge num', badge));
+    wrap.appendChild(el('span', 'hero-art-status', '推演中…'));
+    const cap = el('div', 'hero-art-caption');
+    h2 = el('h2', '', '正在推演这个月…');
+    cap.appendChild(h2);
+    wrap.appendChild(cap);
+    card.appendChild(wrap);
+  } else {
+    const th = el('div', 'hero-text-head');
+    th.appendChild(el('span', 'hero-text-badge num', badge));
+    h2 = el('h2', '', '正在推演这个月…');
+    th.appendChild(h2);
+    card.appendChild(th);
+  }
 
   const sc = el('div', 'story-card');
   if (list) {
@@ -1094,8 +1236,21 @@ async function settle() {
   }
 }
 
-function attachFinaleCover(cover, id, url, extra, stampText) {
+function attachFinaleCover(cover, id, url, extra, stampText, fallbackYear) {
   cover.innerHTML = '';
+  const showFallback = () => {
+    cover.classList.remove('pending');
+    cover.innerHTML = '';
+    const art = yearArtUrl(fallbackYear);
+    if (art) {
+      const im = el('img');
+      im.src = art;
+      im.alt = `${fallbackYear} 年风貌`;
+      im.crossOrigin = 'anonymous';
+      cover.appendChild(im);
+    }
+    cover.appendChild(el('span', 'done-stamp', stampText));
+  };
   if (url) {
     cover.classList.remove('pending');
     const im = el('img');
@@ -1119,15 +1274,11 @@ function attachFinaleCover(cover, id, url, extra, stampText) {
           cover.appendChild(im);
           cover.appendChild(el('span', 'done-stamp', stampText));
         } else {
-          cover.classList.remove('pending');
-          cover.innerHTML = '';
-          cover.appendChild(el('span', 'done-stamp', stampText));
+          showFallback();
         }
-      }).catch(() => {
-        cover.classList.remove('pending');
-        cover.innerHTML = '';
-        cover.appendChild(el('span', 'done-stamp', stampText));
-      });
+      }).catch(showFallback);
+    } else {
+      return showFallback();
     }
   }
   cover.appendChild(el('span', 'done-stamp', stampText));
@@ -1250,7 +1401,7 @@ function renderMagazineView(container, cfg) {
   /* 1. 封面英雄卡 */
   const hero = el('div', 'done-hero');
   const cover = el('div', 'done-cover');
-  attachFinaleCover(cover, cfg.id, cfg.finaleImage, extra, stampText);
+  attachFinaleCover(cover, cfg.id, cfg.finaleImage, extra, stampText, r.year);
   hero.appendChild(cover);
 
   const sm = el('div', 'done-summary');
@@ -1595,7 +1746,10 @@ async function openSharePoster(pctx) {
       if (res && res.ok && res.image) { imgUrl = res.image; pctx.finaleImage = imgUrl; }
     } catch (e) {}
   }
-  const art = await loadImgForCanvas(imgUrl);
+  const [art, logoImg] = await Promise.all([
+    loadImgForCanvas(imgUrl || yearArtUrl(r.year)),
+    loadImgForCanvas('/assets/apple-touch-icon.png'),
+  ]);
 
   const W = 900;
   const PAD = 54;
@@ -1639,15 +1793,20 @@ async function openSharePoster(pctx) {
   c.strokeRect(28, 28, W - 56, H - 56);
 
   let y = 84;
+  let titleX = PAD;
+  if (logoImg) {
+    c.drawImage(logoImg, PAD, y - 40, 44, 44);
+    titleX = PAD + 56;
+  }
   c.fillStyle = '#1e2431';
-  c.font = `600 42px ${SERIF}`;
-  c.fillText('这一百年', PAD, y);
+  c.font = `600 40px ${SERIF}`;
+  c.fillText('这一百年', titleX, y - 2);
 
   c.fillStyle = '#b7312a';
-  c.fillRect(PAD + 190, y - 32, 86, 34);
+  c.fillRect(titleX + 184, y - 33, 86, 34);
   c.fillStyle = '#fbf4e6';
   c.font = `500 17px ${SERIF}`;
-  c.fillText(pctx.extra ? '续走档案' : '两年档案', PAD + 200, y - 9);
+  c.fillText(pctx.extra ? '续走档案' : '两年档案', titleX + 194, y - 10);
 
   c.textAlign = 'right';
   c.fillStyle = '#4a5160';
@@ -1850,12 +2009,15 @@ function buildRankCard(opts) {
   btn.type = 'button';
   if (opts.disabled) btn.disabled = true;
 
-  const thumb = el('div', 'rank-thumb' + (opts.pendingArt ? ' pending' : ''));
+  const thumb = el('div', 'rank-thumb' + (opts.pendingArt && !opts.year ? ' pending' : ''));
   if (opts.pendingArt && opts.id) thumb.dataset.boardArt = opts.id;
-  if (opts.image) {
+  const thumbSrc = opts.image || yearThumbUrl(opts.year);
+  if (thumbSrc) {
     const im = el('img');
-    im.src = opts.image;
+    im.src = thumbSrc;
     im.alt = '';
+    im.loading = 'lazy';
+    im.decoding = 'async';
     thumb.appendChild(im);
   } else if (!opts.pendingArt) {
     thumb.appendChild(el('span', 'rank-mono', String(opts.year || '百').slice(-2)));
@@ -1951,10 +2113,15 @@ async function fillBoardArts(items, screen) {
       if (!slot) continue;
       slot.classList.remove('pending');
       if (res && res.ok && res.image) {
-        const im = el('img');
-        im.src = res.image;
-        im.alt = '';
-        slot.insertBefore(im, slot.firstChild);
+        const prevImg = slot.querySelector('img');
+        if (prevImg) {
+          prevImg.src = res.image;
+        } else {
+          const im = el('img');
+          im.src = res.image;
+          im.alt = '';
+          slot.insertBefore(im, slot.firstChild);
+        }
       }
     } catch (e) {
       const slot = document.querySelector(`.rank-thumb[data-board-art="${CSS.escape(id)}"]`);

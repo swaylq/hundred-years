@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 268 64" width="268" height="64" role="img" aria-label="这一百年 1926—2025">
+  <!-- 左侧朱砂方印 -->
+  <g transform="translate(2 2) scale(0.9375)">
+    <rect x="2" y="2" width="60" height="60" rx="10.5" fill="#B53426"/>
+    <path fill="#FBF4E6" fill-opacity="0.42" fill-rule="evenodd" d="
+      M12.5 7.5 H51.5 L56.5 12.5 V51.5 L51.5 56.5 H12.5 L7.5 51.5 V12.5 Z
+      M13.2 9.0 L9.0 13.2 V50.8 L13.2 55.0 H50.8 L55.0 50.8 V13.2 L50.8 9.0 Z
+    "/>
+    <polygon points="8.25,29.8 10.2,32 8.25,34.2 6.3,32" fill="#FBF4E6" fill-opacity="0.72"/>
+    <polygon points="55.75,29.8 57.7,32 55.75,34.2 53.8,32" fill="#FBF4E6" fill-opacity="0.72"/>
+    <path d="M15.8 18.2 H44.2 L46.0 16.5 L48.4 18.8 V21.9 H15.8 Z" fill="#FBF4E6"/>
+    <path d="M30.1 21.5 H34.7 L31.3 28.4 H27.2 Z" fill="#FBF4E6"/>
+    <path fill="#FBF4E6" fill-rule="evenodd" d="
+      M19.8 27.6 H44.2 V51.2 H39.8 V49.2 H24.2 V51.2 H19.8 Z
+      M24.2 31.2 V37.2 H39.8 V31.2 Z
+      M24.2 40.2 V45.8 H39.8 V40.2 Z
+    "/>
+  </g>
+
+  <!-- 右侧宋体字标 + 世纪刻度 -->
+  <text x="74" y="34" fill="#1F2430"
+        font-family="'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', 'STSong', Georgia, serif"
+        font-size="26" font-weight="600" letter-spacing="4">这一百年</text>
+  <line x1="75" y1="43" x2="220" y2="43" stroke="#1F2430" stroke-opacity="0.16" stroke-width="1"/>
+  <text x="75" y="56" fill="#6D6961"
+        font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', sans-serif"
+        font-size="11" font-weight="500" letter-spacing="2.2">1926 — 2025 · 百年画卷</text>
+</svg>

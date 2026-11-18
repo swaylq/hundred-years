@@ -187,7 +187,18 @@ function readBody(req, limit = 64 * 1024) {
   });
 }
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+};
 
 function serveStatic(req, res, pathname) {
   const rel = pathname === '/' ? '/index.html' : pathname;
@@ -195,12 +206,14 @@ function serveStatic(req, res, pathname) {
   if (!file.startsWith(PUBLIC + path.sep) && file !== PUBLIC) return oops(res, 403, '无法访问此页面');
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return oops(res, 404, '没有这个页面');
-    const ext = path.extname(file);
+    const ext = path.extname(file).toLowerCase();
     const noCache = ext === '.html' || ext === '.js' || ext === '.css';
+    const isAsset = rel.startsWith('/assets/') || rel === '/favicon.ico';
+    const cc = noCache ? 'no-store' : (isAsset ? 'public, max-age=604800' : 'max-age=60, must-revalidate');
     res.writeHead(200, {
       'content-type': MIME[ext] || 'application/octet-stream',
       'content-length': st.size,
-      'cache-control': noCache ? 'no-store' : 'max-age=60, must-revalidate',
+      'cache-control': cc,
     });
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(file).pipe(res);

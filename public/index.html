@@ -4,58 +4,102 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f3eee4">
-<title>这一百年</title>
-<link rel="stylesheet" href="/style.css?v=20261118b">
+<meta name="description" content="挑一年落脚，从 1926 到 2025，在那时候的人间过上两年。">
+<meta property="og:title" content="这一百年">
+<meta property="og:description" content="1926 — 2025 · 挑一年落脚，在那时候的人间过上两年。">
+<meta property="og:image" content="/assets/years/1946.webp">
+<title>这一百年 · 1926—2025</title>
+<link rel="icon" type="image/svg+xml" href="/assets/logo-mark.svg">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css?v=20261118c">
 </head>
 <body data-screen="pick" data-theme="light">
 
 <header class="app-nav" id="top">
   <div class="nav-inner">
-    <button class="brand" type="button" data-go="pick">
-      <span class="brand-seal" aria-hidden="true">百</span>这一百年
+    <button class="brand" type="button" data-go="pick" aria-label="这一百年，返回年份列表">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 64 64" width="28" height="28">
+          <rect x="2" y="2" width="60" height="60" rx="10.5" fill="var(--seal)"/>
+          <path fill="var(--seal-ink)" fill-opacity="0.44" fill-rule="evenodd" d="M12.5 7.5 H51.5 L56.5 12.5 V51.5 L51.5 56.5 H12.5 L7.5 51.5 V12.5 Z M13.2 9.0 L9.0 13.2 V50.8 L13.2 55.0 H50.8 L55.0 50.8 V13.2 L50.8 9.0 Z"/>
+          <polygon points="8.25,29.8 10.2,32 8.25,34.2 6.3,32" fill="var(--seal-ink)" fill-opacity="0.72"/>
+          <polygon points="55.75,29.8 57.7,32 55.75,34.2 53.8,32" fill="var(--seal-ink)" fill-opacity="0.72"/>
+          <path d="M15.8 18.2 H44.2 L46.0 16.5 L48.4 18.8 V21.9 H15.8 Z" fill="var(--seal-ink)"/>
+          <path d="M30.1 21.5 H34.7 L31.3 28.4 H27.2 Z" fill="var(--seal-ink)"/>
+          <path fill="var(--seal-ink)" fill-rule="evenodd" d="M19.8 27.6 H44.2 V51.2 H39.8 V49.2 H24.2 V51.2 H19.8 Z M24.2 31.2 V37.2 H39.8 V31.2 Z M24.2 40.2 V45.8 H39.8 V40.2 Z"/>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-name">这一百年</span>
+        <span class="brand-sub num">1926 — 2025</span>
+      </span>
     </button>
     <nav class="nav-links" aria-label="主导航">
       <button type="button" data-go="pick" class="on">年份</button>
       <button type="button" data-go="play" id="nav-play" hidden>正在玩</button>
       <button type="button" data-go="board">排行</button>
       <button type="button" data-go="mine">记录</button>
-      <button type="button" class="theme-btn" id="btn-theme" aria-label="切换深浅色" title="切换深浅色">☾</button>
+      <button type="button" class="theme-btn" id="btn-theme" aria-label="切换深浅色" title="切换深浅色">
+        <svg class="ic-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="ic-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
     </nav>
   </div>
 </header>
 
 <main class="app-main">
 
-  <!-- 1. 选择年份 -->
+  <!-- 1. 选择年份（百年画卷墙 + 焦点年份舞台） -->
   <section id="s-pick" class="screen on">
-    <div class="pick-head">
-      <h1>挑一年落脚</h1>
-      <p>1926 — 2025 · 过上两年</p>
-    </div>
-    <div class="era-bar" id="era-bar" role="tablist" aria-label="按时代筛选">
-      <button type="button" class="era-btn on" data-era="all">全部百年</button>
-      <button type="button" class="era-btn" data-era="1926">民国 26–49</button>
-      <button type="button" class="era-btn" data-era="1950">建国 50–77</button>
-      <button type="button" class="era-btn" data-era="1978">改开 78–08</button>
-      <button type="button" class="era-btn" data-era="2009">近年 09–25</button>
-    </div>
-    <div id="grid" class="year-grid"><p class="wait">正在加载年份…</p></div>
-    <div class="pick-legend">
-      <span><i class="lg-heat"></i>机缘深浅</span>
-      <span><i class="lg-dot"></i>币制改革</span>
-    </div>
-    <div class="pick-preview" id="pick-preview" hidden>
-      <div class="pick-pv-text">
-        <strong id="pv-title"></strong>
-        <span id="pv-desc"></span>
+    <div id="pick-spotlight" class="spotlight" hidden>
+      <div class="spot-media">
+        <img id="sp-img" alt="">
+        <div class="spot-badges" id="sp-badges"></div>
       </div>
-      <button type="button" class="btn-primary pick-pv-go" id="pv-enter">进入 →</button>
+      <div class="spot-body">
+        <div class="spot-kicker num">1926 — 2025 · 挑一年落脚，过上两年</div>
+        <div class="spot-title-row">
+          <h1 id="sp-year" class="num"></h1>
+          <span id="sp-city" class="spot-city"></span>
+        </div>
+        <p id="sp-era" class="spot-era"></p>
+        <div class="spot-acts">
+          <button type="button" class="btn-primary" id="sp-enter">进入这一年 →</button>
+          <button type="button" class="btn-ghost" id="sp-rand">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
+            随机一年
+          </button>
+        </div>
+      </div>
     </div>
+
+    <div class="pick-toolbar">
+      <div class="era-bar" id="era-bar" role="tablist" aria-label="按时代筛选">
+        <button type="button" class="era-btn on" data-era="all">全部百年</button>
+        <button type="button" class="era-btn" data-era="1926">民国 26–49</button>
+        <button type="button" class="era-btn" data-era="1950">建国 50–77</button>
+        <button type="button" class="era-btn" data-era="1978">改开 78–08</button>
+        <button type="button" class="era-btn" data-era="2009">近年 09–25</button>
+      </div>
+      <div class="pick-legend">
+        <span><i class="lg-heat"></i>机缘高</span>
+        <span><i class="lg-dot"></i>换币年</span>
+      </div>
+    </div>
+
+    <div id="grid" class="year-grid"><p class="wait">正在展开百年画卷…</p></div>
   </section>
 
   <!-- 2. 选月开局 -->
   <section id="s-year" class="screen">
-    <button class="back-link" type="button" data-go="pick">← 换个年份</button>
+    <div class="year-top-nav">
+      <button class="back-link" type="button" data-go="pick">← 全部年份</button>
+      <div class="year-step-nav" id="year-step-nav">
+        <button type="button" class="year-step-btn num" id="btn-prev-year" hidden></button>
+        <button type="button" class="year-step-btn num" id="btn-next-year" hidden></button>
+      </div>
+    </div>
     <div id="year-hero" class="year-hero"></div>
     <div id="months" class="mo-grid" role="group" aria-label="选择开局月份"></div>
     <div id="mo-metrics" class="mo-metrics" hidden></div>
@@ -165,7 +209,7 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="/voice.js?v=20261118b"></script>
-<script src="/app.js?v=20261118b"></script>
+<script src="/voice.js?v=20261118c"></script>
+<script src="/app.js?v=20261118c"></script>
 </body>
 </html>
