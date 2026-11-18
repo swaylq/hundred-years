@@ -53,9 +53,11 @@ db.exec(`
     ['extra_world_usd', 'REAL'],
     ['extra_result', 'TEXT'],
     ['extra_review', 'TEXT'],
+    ['board_pick', 'INTEGER'],       // 总榜自选：1 选入总榜，0 不上总榜，NULL 默认按赚钱最多前两名
   ]) if (!cols.has(c)) db.exec(`ALTER TABLE runs ADD COLUMN ${c} ${t}`);
 }
 const MODE = 'months24';
+const MAX_BOARD_PICKS = 2;
 db.exec(`
   CREATE INDEX IF NOT EXISTS runs_world ON runs(status, world_usd DESC);
   CREATE INDEX IF NOT EXISTS runs_year  ON runs(status, year, year_earned DESC);
@@ -96,31 +98,30 @@ const q = {
    * 后传走完再调 finishRun 也只会影响 0 行——成绩冻在两年那一刻，靠的是这一句，
    * 不是靠调用方记得别调。 */
   fin: db.prepare("UPDATE runs SET state = ?, status = 'done', score = ?, year_earned = ?, world_usd = ?, result = ?, updated = ? WHERE id = ? AND status <> 'done'"),
-  mine: db.prepare(`SELECT id,nick,year,month,status,score,created,mode,
-                           extra_status,extra_months,extra_score,review,extra_review
-                    FROM runs WHERE token = ? ORDER BY created DESC LIMIT 30`),
+  mine: db.prepare(`SELECT id,token,nick,year,month,status,score,year_earned,world_usd,result,created,updated,mode,
+                           extra_status,extra_months,extra_score,extra_year_earned,extra_world_usd,extra_result,
+                           review,extra_review,board_pick
+                    FROM runs WHERE token = ? ORDER BY created DESC LIMIT 100`),
   /* 一局的详情。带 state 是为了取那二十四个月的正文，**token 一列不许选出来**——
    * 选了就等于谁看得到详情谁就能往这局里写。 */
   detail: db.prepare(`SELECT id,nick,year,month,status,score,year_earned,world_usd,result,review,
                              extra_status,extra_months,extra_score,extra_year_earned,extra_world_usd,
-                             extra_result,extra_review,state,created,updated,mode
+                             extra_result,extra_review,state,created,updated,mode,board_pick
                       FROM runs WHERE id = ?`),
   review: db.prepare('UPDATE runs SET review = ? WHERE id = ?'),
   reviewX: db.prepare('UPDATE runs SET extra_review = ? WHERE id = ?'),
   startX: db.prepare("UPDATE runs SET state = ?, extra_status = 'playing', extra_months = ?, updated = ? WHERE id = ?"),
   finX: db.prepare(`UPDATE runs SET state = ?, extra_status = 'done', extra_score = ?, extra_year_earned = ?,
                     extra_world_usd = ?, extra_result = ?, updated = ? WHERE id = ?`),
-  /* 总榜：按「折成今天的美元」排 */
-  boardWorld: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,review,updated FROM runs
+  /* 总榜候选：按「折成今天的美元」排，供每人限选两条过滤 */
+  boardWorldAll: db.prepare(`SELECT id,token,nick,year,month,score,year_earned,world_usd,result,review,updated,board_pick FROM runs
                      WHERE status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}'
-                     ORDER BY world_usd DESC LIMIT ?`),
-  /* 年榜：只跟同一年的人比，按当年那种钱净赚多少排 */
+                     ORDER BY world_usd DESC, updated DESC, id ASC`),
+  /* 年榜：只跟同一年的人比，按当年那种钱净赚多少排（每年内不限制条数） */
   boardYear: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,review,updated FROM runs
                      WHERE status = 'done' AND year = ? AND year_earned IS NOT NULL AND mode = '${MODE}'
                      ORDER BY year_earned DESC LIMIT ?`),
   yearsWithRuns: db.prepare(`SELECT year, COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' GROUP BY year ORDER BY year`),
-  countDone: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}'`),
-  rankWorld: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND world_usd > ?`),
   rankYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND year = ? AND year_earned > ?`),
   countYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND year = ?`),
   /* 后传榜：走完了后传的局，按整局（前两年 + 后传）折成今天的美元排。
@@ -133,7 +134,43 @@ const q = {
   rankExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}' AND extra_world_usd > ?`),
   aliasesOf: db.prepare(`SELECT target_token FROM token_aliases WHERE token = ?`),
   addAlias: db.prepare(`INSERT OR IGNORE INTO token_aliases (token, target_token) VALUES (?, ?)`),
+  updPick: db.prepare(`UPDATE runs SET board_pick = ? WHERE id = ?`),
+  delRun: db.prepare(`DELETE FROM runs WHERE id = ?`),
+  delTraces: db.prepare(`DELETE FROM year_traces WHERE run_id = ?`),
 };
+
+function linkTokens(fromToken, toToken) {
+  const a = String(fromToken || '').trim();
+  const b = String(toToken || '').trim();
+  if (!a || !b || a === b || !VALID_TOK.test(a) || !VALID_TOK.test(b)) return;
+  q.addAlias.run(a, b);
+  q.addAlias.run(b, a);
+}
+
+/* 2026-11-17 之前开新局会每次生成新 token；把早期同名完结局的 token 自动归并，
+ * 保证总榜「每人最多展示两条」对历史多局用户同样生效。 */
+{
+  try {
+    const legacy = db.prepare(`
+      SELECT nick, token FROM runs
+      WHERE mode = '${MODE}' AND created < 1790000000000 AND nick NOT IN ('无名', '试', '1', '2', 'x')
+      ORDER BY created ASC
+    `).all();
+    const byNick = new Map();
+    for (const r of legacy) {
+      const k = String(r.nick || '').trim();
+      if (!k) continue;
+      if (!byNick.has(k)) byNick.set(k, []);
+      byNick.get(k).push(r.token);
+    }
+    for (const toks of byNick.values()) {
+      const uniq = [...new Set(toks)];
+      if (uniq.length > 1) {
+        for (let i = 1; i < uniq.length; i++) linkTokens(uniq[0], uniq[i]);
+      }
+    }
+  } catch (e) {}
+}
 
 function expandTokens(tokenOrList) {
   const parts = Array.isArray(tokenOrList)
@@ -141,18 +178,100 @@ function expandTokens(tokenOrList) {
     : String(tokenOrList || '').split(',');
   const base = [...new Set(parts.map(s => String(s || '').trim()).filter(s => VALID_TOK.test(s)))];
   if (!base.length) return [];
+  if (base.length > 1) {
+    for (let i = 1; i < base.length; i++) linkTokens(base[0], base[i]);
+  }
   const all = new Set(base);
-  for (const t of base) {
+  const queue = [...base];
+  while (queue.length) {
+    const t = queue.pop();
     for (const r of q.aliasesOf.all(t)) {
-      if (r && r.target_token) all.add(r.target_token);
+      if (r && r.target_token && !all.has(r.target_token)) {
+        all.add(r.target_token);
+        queue.push(r.target_token);
+      }
     }
   }
   return [...all];
 }
 
-function linkTokens(fromToken, toToken) {
-  if (!VALID_TOK.test(String(fromToken || '')) || !VALID_TOK.test(String(toToken || ''))) return;
-  q.addAlias.run(fromToken, toToken);
+function buildTokenGroupMap() {
+  const edges = db.prepare('SELECT token, target_token FROM token_aliases').all();
+  const adj = new Map();
+  for (const { token: a, target_token: b } of edges) {
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a).push(b);
+    adj.get(b).push(a);
+  }
+  const canon = new Map();
+  for (const start of adj.keys()) {
+    if (canon.has(start)) continue;
+    const comp = [start];
+    const seen = new Set([start]);
+    for (let i = 0; i < comp.length; i++) {
+      for (const nb of (adj.get(comp[i]) || [])) {
+        if (!seen.has(nb)) { seen.add(nb); comp.push(nb); }
+      }
+    }
+    const rep = comp.slice().sort()[0];
+    for (const t of comp) canon.set(t, rep);
+  }
+  return t => canon.get(t) || t;
+}
+
+/** 计算某位用户已结算记录中哪些上总榜（最多 2 条，默认选赚钱最多的前两名）。
+ *  传入的 list 需已按 world_usd DESC 排好。 */
+function pickUserWorldRuns(list) {
+  if (!list.length) return { picked: [], isDefault: true };
+  const defaultTop = list.slice(0, MAX_BOARD_PICKS);
+  const hasCustom = list.some(r => r.board_pick === 1 || r.board_pick === 0);
+  if (!hasCustom) {
+    return { picked: defaultTop, isDefault: true };
+  }
+  const customPicked = list.filter(r => r.board_pick === 1).slice(0, MAX_BOARD_PICKS);
+  const defaultIds = new Set(defaultTop.map(r => r.id));
+  const isSameAsDefault = customPicked.length === defaultTop.length &&
+    customPicked.every(r => defaultIds.has(r.id));
+  return { picked: customPicked, isDefault: isSameAsDefault };
+}
+
+function syncUserBoardPicks(doneList, pickedSet) {
+  if (!doneList.length) return true;
+  const defaultTop = doneList.slice(0, MAX_BOARD_PICKS);
+  const isDefault = pickedSet.size === defaultTop.length &&
+    defaultTop.every(r => pickedSet.has(r.id));
+  for (const r of doneList) {
+    q.updPick.run(isDefault ? null : (pickedSet.has(r.id) ? 1 : 0), r.id);
+  }
+  return isDefault;
+}
+
+function userDoneWorldRuns(toks) {
+  if (!toks.length) return [];
+  const ph = toks.map(() => '?').join(',');
+  return db.prepare(`
+    SELECT id, token, world_usd, updated, board_pick
+    FROM runs
+    WHERE token IN (${ph}) AND status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}'
+    ORDER BY world_usd DESC, updated DESC, id ASC
+  `).all(...toks);
+}
+
+function worldBoardRows() {
+  const all = q.boardWorldAll.all();
+  const groupOf = buildTokenGroupMap();
+  const byUser = new Map();
+  for (const r of all) {
+    const g = groupOf(r.token);
+    if (!byUser.has(g)) byUser.set(g, []);
+    byUser.get(g).push(r);
+  }
+  const pickedIds = new Set();
+  for (const list of byUser.values()) {
+    for (const r of pickUserWorldRuns(list).picked) pickedIds.add(r.id);
+  }
+  return all.filter(r => pickedIds.has(r.id));
 }
 
 function createRun(state, nick, preferredToken) {
@@ -183,7 +302,21 @@ function saveRun(rid, state) { q.upd.run(JSON.stringify(state), now(), rid); }
 function finishRun(rid, state, result) {
   const r = q.fin.run(JSON.stringify(state), result.score, result.yearEarned, result.worldUsd,
     JSON.stringify(result), now(), rid);
-  return r.changes > 0;
+  if (r.changes > 0) {
+    const row = q.get.get(rid);
+    if (row) {
+      const toks = expandTokens(row.token);
+      const doneList = userDoneWorldRuns(toks);
+      const hasCustom = doneList.some(x => x.board_pick === 1 || x.board_pick === 0);
+      if (hasCustom) {
+        const picked = new Set(doneList.filter(x => x.board_pick === 1).map(x => x.id));
+        if (picked.size > 0 && picked.size < MAX_BOARD_PICKS) picked.add(rid);
+        syncUserBoardPicks(doneList, picked);
+      }
+    }
+    return true;
+  }
+  return false;
 }
 
 /* ── 后传：两年之后接着走的那一段 ───────────────────── */
@@ -197,11 +330,14 @@ const boardExtra = (limit = 50) => q.boardExtra.all(limit).map(r => ({ ...r, ext
 const extraCount = () => q.countExtra.get().n;
 const rankExtra = usd => q.rankExtra.get(usd).n + 1;
 
-/** 榜。给了 year 就是那一年的榜（按当年那种钱净赚多少排），
- *  不给就是总榜（按折成今天的美元排）。 */
+/** 榜。给了 year 就是那一年的榜（按当年那种钱净赚多少排，每年内不限制条数），
+ *  不给就是总榜（按折成今天的美元排，每位用户最多展示自选或默认赚钱最多的两条）。 */
 function board(limit = 50, year = null) {
-  const rows = year ? q.boardYear.all(year, limit) : q.boardWorld.all(limit);
-  return rows.map(r => ({ ...r, result: r.result ? JSON.parse(r.result) : null }));
+  const rows = year ? q.boardYear.all(year, limit) : worldBoardRows().slice(0, limit);
+  return rows.map(r => {
+    const { token: _t, board_pick: _bp, ...rest } = r;
+    return { ...rest, result: r.result ? JSON.parse(r.result) : null };
+  });
 }
 
 const yearsWithRuns = () => q.yearsWithRuns.all();
@@ -209,14 +345,113 @@ const yearsWithRuns = () => q.yearsWithRuns.all();
 function myRuns(tokenOrList) {
   const toks = expandTokens(tokenOrList);
   if (!toks.length) return [];
-  if (toks.length === 1) return q.mine.all(toks[0]);
-  const ph = toks.map(() => '?').join(',');
-  return db.prepare(`SELECT id,nick,year,month,status,score,created,mode,
-                            extra_status,extra_months,extra_score,review,extra_review
-                     FROM runs WHERE token IN (${ph}) ORDER BY created DESC LIMIT 50`).all(...toks);
+  let rows;
+  if (toks.length === 1) {
+    rows = q.mine.all(toks[0]);
+  } else {
+    const ph = toks.map(() => '?').join(',');
+    rows = db.prepare(`SELECT id,token,nick,year,month,status,score,year_earned,world_usd,result,created,updated,mode,
+                              extra_status,extra_months,extra_score,extra_year_earned,extra_world_usd,extra_result,
+                              review,extra_review,board_pick
+                       FROM runs WHERE token IN (${ph}) ORDER BY created DESC LIMIT 100`).all(...toks);
+  }
+  const doneList = rows
+    .filter(r => r.status === 'done' && r.world_usd != null && r.mode === MODE)
+    .slice()
+    .sort((a, b) => (b.world_usd - a.world_usd) || ((b.updated || 0) - (a.updated || 0)) || String(a.id).localeCompare(String(b.id)));
+  const pickInfo = pickUserWorldRuns(doneList);
+  const pickedIds = new Set(pickInfo.picked.map(r => r.id));
+  const rankMap = new Map(doneList.map((r, i) => [r.id, i + 1]));
+  return rows.map(r => {
+    const { token: _t, ...rest } = r;
+    const canPickBoard = r.status === 'done' && r.world_usd != null && r.mode === MODE;
+    return {
+      ...rest,
+      canPickBoard,
+      onBoard: canPickBoard && pickedIds.has(r.id),
+      boardDefault: pickInfo.isDefault,
+      boardRankInMine: rankMap.get(r.id) || null,
+    };
+  });
 }
-const doneCount = () => q.countDone.get().n;
-const rankWorld = usd => q.rankWorld.get(usd).n + 1;
+
+function setBoardPick(rid, tokenOrList, opts = {}) {
+  const toks = expandTokens(tokenOrList);
+  if (!toks.length) return { ok: false, code: 403, error: '无法识别当前浏览器记录' };
+  const doneList = userDoneWorldRuns(toks);
+
+  if (opts.reset) {
+    const ph = toks.map(() => '?').join(',');
+    db.prepare(`UPDATE runs SET board_pick = NULL WHERE token IN (${ph})`).run(...toks);
+    const defaultIds = doneList.slice(0, MAX_BOARD_PICKS).map(r => r.id);
+    return { ok: true, pickedIds: defaultIds, isDefault: true, maxPicks: MAX_BOARD_PICKS };
+  }
+
+  const found = loadRun(rid, toks);
+  if (!found) return { ok: false, code: 404, error: '找不到这条记录，请从原来使用的浏览器操作' };
+  const target = doneList.find(r => r.id === rid);
+  if (!target) return { ok: false, code: 400, error: '只有已结算的记录才能放入总榜' };
+
+  const cur = new Set(pickUserWorldRuns(doneList).picked.map(r => r.id));
+  const wantPick = opts.pick != null ? !!opts.pick : !cur.has(rid);
+
+  if (wantPick) {
+    if (!cur.has(rid)) {
+      if (cur.size >= MAX_BOARD_PICKS) {
+        return {
+          ok: false,
+          code: 400,
+          error: `总榜最多只能选 ${MAX_BOARD_PICKS} 条记录，请先取消一条已上榜记录`,
+        };
+      }
+      cur.add(rid);
+    }
+  } else {
+    cur.delete(rid);
+  }
+
+  const isDefault = syncUserBoardPicks(doneList, cur);
+  return {
+    ok: true,
+    id: rid,
+    onBoard: cur.has(rid),
+    pickedIds: [...cur],
+    isDefault,
+    maxPicks: MAX_BOARD_PICKS,
+  };
+}
+
+function deleteRun(rid, tokenOrList) {
+  const found = loadRun(rid, tokenOrList);
+  if (!found) return false;
+  const toks = expandTokens(tokenOrList);
+  const beforeDone = userDoneWorldRuns(toks);
+  const beforePick = pickUserWorldRuns(beforeDone);
+  const wasOnBoard = beforePick.picked.some(r => r.id === rid);
+  const hadCustom = beforeDone.some(r => r.board_pick === 1 || r.board_pick === 0);
+
+  q.delTraces.run(String(rid));
+  const del = q.delRun.run(String(rid));
+  if (!(del.changes > 0)) return false;
+
+  if (hadCustom) {
+    const afterDone = beforeDone.filter(r => r.id !== rid);
+    const kept = new Set(beforePick.picked.filter(r => r.id !== rid).map(r => r.id));
+    if (wasOnBoard && kept.size < Math.min(MAX_BOARD_PICKS, afterDone.length)) {
+      for (const r of afterDone) {
+        if (!kept.has(r.id)) {
+          kept.add(r.id);
+          if (kept.size >= MAX_BOARD_PICKS) break;
+        }
+      }
+    }
+    syncUserBoardPicks(afterDone, kept);
+  }
+  return true;
+}
+
+const doneCount = () => worldBoardRows().length;
+const rankWorld = usd => worldBoardRows().filter(r => r.world_usd > usd).length + 1;
 const rankInYear = (year, earned) => q.rankYear.get(year, earned).n + 1;
 const doneInYear = year => q.countYear.get(year).n;
 
@@ -353,5 +588,5 @@ module.exports = {
   db, createRun, loadRun, saveRun, finishRun, board, myRuns, linkTokens, doneCount,
   rankWorld, rankInYear, doneInYear, yearsWithRuns, FILE,
   startExtra, finishExtra, saveReview, getRow, boardExtra, extraCount, rankExtra,
-  addTrace, yearEchoes,
+  addTrace, yearEchoes, deleteRun, setBoardPick, MAX_BOARD_PICKS,
 };

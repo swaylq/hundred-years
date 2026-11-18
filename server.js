@@ -762,7 +762,7 @@ const routes = {
 
   'GET /api/mine': async (req, res, q) => {
     const raw = q.tokens || q.token;
-    if (!raw) return json(res, 200, { rows: [] });
+    if (!raw) return json(res, 200, { rows: [], maxBoardPicks: DB.MAX_BOARD_PICKS, pickedCount: 0, eligibleCount: 0, boardDefault: true });
     const rows = DB.myRuns(String(raw)).map(r => {
       const isEx = r.extra_status === 'done';
       let image = finaleImgUrlOf(r.id, isEx) || finaleImgUrlOf(r.id, false);
@@ -781,8 +781,12 @@ const routes = {
           if (rv && rv.title) { title = String(rv.title); break; }
         } catch {}
       }
+      let resObj = null;
+      if (r.result) {
+        try { resObj = JSON.parse(r.result); } catch {}
+      }
       const yInfo = E.yearOf(r.year);
-      let city = (yInfo && yInfo.city) || '';
+      let city = (resObj && resObj.city) || (yInfo && yInfo.city) || '';
       let stepN = null, totalMonths = E.MONTHS;
       if (r.status !== 'done' || r.extra_status === 'playing') {
         try {
@@ -795,9 +799,62 @@ const routes = {
           }
         } catch {}
       }
-      return { ...r, city, stepN, totalMonths, image, title };
+      const worldUsd = r.world_usd != null ? r.world_usd : (resObj && resObj.worldUsd != null ? resObj.worldUsd : null);
+      const worldUsdText = worldUsd != null ? E.fmtUsd(worldUsd) : null;
+      const yearEarnedText = (resObj && resObj.yearEarnedText) || null;
+      const { result: _res, extra_result: _xres, review: _rev, extra_review: _xrev, ...clean } = r;
+      return {
+        ...clean,
+        city,
+        stepN,
+        totalMonths,
+        image,
+        title,
+        worldUsd,
+        worldUsdText,
+        yearEarnedText,
+      };
     });
-    json(res, 200, { rows });
+    const pickedCount = rows.filter(r => r.onBoard).length;
+    const eligibleCount = rows.filter(r => r.canPickBoard).length;
+    const boardDefault = rows.every(r => r.boardDefault !== false);
+    json(res, 200, {
+      rows,
+      maxBoardPicks: DB.MAX_BOARD_PICKS,
+      pickedCount,
+      eligibleCount,
+      boardDefault,
+    });
+  },
+
+  'POST /api/board-pick': async (req, res) => {
+    const b = await readBody(req);
+    const out = DB.setBoardPick(String(b.id || '').trim(), String(b.token || ''), {
+      pick: b.pick,
+      reset: !!b.reset,
+    });
+    if (!out.ok) return oops(res, out.code || 400, out.error || '未能更新总榜展示记录');
+    json(res, 200, out);
+  },
+
+  'POST /api/delete': async (req, res) => {
+    const b = await readBody(req);
+    const id = String(b.id || '').trim();
+    if (!id) return oops(res, 400, '请选择要删除的记录');
+    if (busy.has(id)) return oops(res, 409, '这一局正在生成本月结果，请稍后再删');
+    const ok = DB.deleteRun(id, String(b.token || ''));
+    if (!ok) return oops(res, 404, '找不到这条记录，请从原来使用的浏览器删除');
+    const sid = cleanRunId(id);
+    if (sid) {
+      try {
+        for (const f of fs.readdirSync(IMG_DIR)) {
+          if (f.startsWith(sid + '-')) {
+            try { fs.unlinkSync(path.join(IMG_DIR, f)); } catch (e) {}
+          }
+        }
+      } catch (e) {}
+    }
+    json(res, 200, { ok: true, id });
   },
 
   'GET /api/load': async (req, res, q) => {

@@ -94,7 +94,8 @@ html.theme-switching .dock,
 html.theme-switching .done-hero,
 html.theme-switching .comic-book,
 html.theme-switching .comic-panel,
-html.theme-switching .rank-card {
+html.theme-switching .rank-card,
+html.theme-switching .rank-card-foot {
   transition: background-color .24s var(--ease), color .24s var(--ease), border-color .24s var(--ease);
 }
 
@@ -1249,6 +1250,96 @@ html.theme-switching .rank-card {
 .rank-score b { display: block; font: 600 14.5px/1.25 var(--sans); color: var(--ink); }
 .rank-score span { font-size: 11.5px; color: var(--fg-faint); }
 
+/* 我的记录：总榜自选两条 + 删除记录操作栏 */
+.mine-bar-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--fg-muted);
+}
+.mine-meta-text { line-height: 1.4; }
+.mine-reset-btn {
+  padding: 4px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--ink); font-size: 12px; font-weight: 500;
+  transition: border-color .15s, background .15s;
+}
+.mine-reset-btn:hover:not(:disabled) { border-color: var(--ink); background: var(--surface-2); }
+.mine-reset-btn:disabled { opacity: .45; }
+
+.rank-card.mine-card {
+  display: block; padding: 0; overflow: hidden;
+}
+.rank-card.mine-card.on-board {
+  border-color: var(--seal-line);
+}
+.rank-card.mine-card:hover {
+  border-color: var(--line-strong); transform: none;
+}
+.rank-card.mine-card.on-board:hover {
+  border-color: var(--seal);
+}
+.rank-card-main {
+  display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  padding: 10px; width: 100%; border: 0; background: transparent;
+  text-align: left;
+  transition: background .15s;
+}
+.rank-card-main:hover:not(:disabled) { background: color-mix(in oklch, var(--surface-2) 45%, transparent); }
+.rank-card-main:hover:not(:disabled) .rank-thumb img { transform: scale(1.05); }
+.rank-card-main:disabled { opacity: .55; }
+
+.rank-card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in oklch, var(--canvas) 52%, var(--surface));
+}
+.mine-foot-left, .mine-foot-right {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.mine-foot-note {
+  font-size: 12px; color: var(--fg-faint);
+}
+.board-pick-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 11px; border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--fg-muted); font-size: 12px; font-weight: 500;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.board-pick-btn:hover:not(:disabled) {
+  border-color: var(--ink); color: var(--ink);
+}
+.board-pick-btn.on {
+  border-color: var(--seal-line); background: var(--seal-soft);
+  color: var(--seal); font-weight: 600;
+}
+.board-pick-btn.on:hover:not(:disabled) {
+  border-color: var(--seal);
+}
+.board-pick-btn:disabled { opacity: .45; }
+
+.mine-top-tag {
+  font-size: 11.5px; color: var(--fg-faint);
+  padding: 2px 7px; border-radius: var(--r-pill);
+  background: var(--surface); border: 1px solid var(--line);
+}
+
+.run-del-btn {
+  height: 28px; padding: 0 10px; border-radius: var(--r-sm);
+  border: 1px solid transparent; background: transparent;
+  color: var(--fg-faint); font-size: 12px; font-weight: 500;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.run-del-btn:hover:not(:disabled) {
+  color: var(--seal); background: var(--seal-soft); border-color: var(--seal-line);
+}
+.run-del-btn.confirming,
+.run-del-detail.confirming {
+  background: var(--seal) !important; border-color: var(--seal) !important;
+  color: var(--seal-ink) !important; font-weight: 600;
+}
+.run-del-btn:disabled { opacity: .45; }
+
 /* ── 底部抽屉（家当 / 人脉 / 世道） ──────────────────────── */
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 60;
@@ -1463,6 +1554,8 @@ html.theme-switching .rank-card {
   .stat-grid { grid-template-columns: repeat(4, 1fr); }
   .board-select { min-height: 34px; height: 34px; font-size: 13px; }
   .rank-card { grid-template-columns: 128px minmax(0, 1fr) auto; padding: 12px 14px; }
+  .rank-card-main { grid-template-columns: 128px minmax(0, 1fr) auto; padding: 12px 14px; }
+  .rank-card-foot { padding: 8px 14px; }
   .comic-book { grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px; }
   .comic-finale { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
   .comic-finale-art { aspect-ratio: auto; min-height: 200px; }

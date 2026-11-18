@@ -1864,6 +1864,13 @@ function renderMagazineView(container, cfg) {
   againBtn.type = 'button';
   againBtn.addEventListener('click', () => go('pick'));
   acts.appendChild(againBtn);
+
+  if (cfg.mode === 'detail' && cfg.id) {
+    const delBtn = el('button', 'btn-ghost run-del-detail', '删除记录');
+    delBtn.type = 'button';
+    bindTwoStepDelete(delBtn, cfg.id, () => go('mine'), '删除记录');
+    acts.appendChild(delBtn);
+  }
   sm.appendChild(acts);
   hero.appendChild(sm);
   container.appendChild(hero);
@@ -2802,6 +2809,8 @@ function setBoardMode(mode, opts = {}) {
   $('#rank-world').hidden = isMine;
   $('#rank-mine').hidden = !isMine;
   $('#board-filter').hidden = isMine;
+  const mineMeta = $('#mine-meta');
+  if (mineMeta) mineMeta.hidden = !isMine || !mineMeta.childElementCount;
   if (opts.animate && changed) {
     animatePanel(isMine ? $('#rank-mine') : $('#rank-world'), isMine ? 'panel-in-r' : 'panel-in-l');
   }
@@ -2829,11 +2838,62 @@ $('#board-filter').addEventListener('change', e => {
   loadBoard();
 });
 
-function buildRankCard(opts) {
-  const btn = el('button', 'rank-card');
-  btn.type = 'button';
-  if (opts.disabled) btn.disabled = true;
+function bindTwoStepDelete(btn, id, onDeleted, idleLabel = '删除') {
+  let armed = false;
+  let timer = null;
+  const reset = () => {
+    armed = false;
+    clearTimeout(timer);
+    btn.classList.remove('confirming');
+    btn.textContent = idleLabel;
+  };
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (btn.disabled) return;
+    if (!armed) {
+      armed = true;
+      btn.classList.add('confirming');
+      btn.textContent = '确认删除';
+      clearTimeout(timer);
+      timer = setTimeout(reset, 3200);
+      return;
+    }
+    clearTimeout(timer);
+    btn.disabled = true;
+    btn.textContent = '删除中…';
+    try {
+      await post('/api/delete', { id, token });
+      if (run && run.id === id) {
+        run = null;
+        syncNavPlay();
+      }
+      if (localStorage.getItem(RUN_KEY) === id) {
+        localStorage.removeItem(RUN_KEY);
+      }
+      toast('已删除这条记录');
+      if (onDeleted) onDeleted();
+    } catch (err) {
+      toast(err.message);
+      btn.disabled = false;
+      reset();
+    }
+  });
+}
 
+async function toggleBoardPick(id, wantPick, btn) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    await post('/api/board-pick', { id, token, pick: wantPick });
+    toast(wantPick ? '已放入总榜展示' : '已从总榜移除（年份榜仍保留）');
+    await loadMine();
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+  }
+}
+
+function fillRankMainNodes(host, opts) {
   const thumb = el('div', 'rank-thumb' + (opts.pendingArt && !opts.year ? ' pending' : ''));
   if (opts.pendingArt && opts.id) thumb.dataset.boardArt = opts.id;
   const thumbSrc = opts.image || yearThumbUrl(opts.year);
@@ -2849,7 +2909,7 @@ function buildRankCard(opts) {
   }
   const badge = el('span', 'rank-no' + (opts.badgeCls ? ' ' + opts.badgeCls : ''), opts.badge);
   thumb.appendChild(badge);
-  btn.appendChild(thumb);
+  host.appendChild(thumb);
 
   const info = el('div', 'rank-info');
   const nm = el('div', 'rank-name');
@@ -2857,15 +2917,60 @@ function buildRankCard(opts) {
   if (opts.title) nm.appendChild(el('span', 'rank-title', opts.title));
   info.appendChild(nm);
   info.appendChild(el('div', 'rank-sub num', opts.sub || ''));
-  btn.appendChild(info);
+  host.appendChild(info);
 
   const sc = el('div', 'rank-score');
   sc.appendChild(el('b', 'num', opts.scoreTop || ''));
   if (opts.scoreSub) sc.appendChild(el('span', 'num', opts.scoreSub));
-  btn.appendChild(sc);
+  host.appendChild(sc);
+}
 
+function buildRankCard(opts) {
+  const btn = el('button', 'rank-card');
+  btn.type = 'button';
+  if (opts.disabled) btn.disabled = true;
+  fillRankMainNodes(btn, opts);
   if (opts.onClick && !opts.disabled) btn.addEventListener('click', opts.onClick);
   return btn;
+}
+
+function buildMineCard(opts) {
+  const card = el('div', 'rank-card mine-card' + (opts.onBoard ? ' on-board' : ''));
+  const main = el('button', 'rank-card-main');
+  main.type = 'button';
+  if (opts.disabled) main.disabled = true;
+  fillRankMainNodes(main, opts);
+  if (opts.onClick && !opts.disabled) main.addEventListener('click', opts.onClick);
+  card.appendChild(main);
+
+  const foot = el('div', 'rank-card-foot');
+  const left = el('div', 'mine-foot-left');
+  if (opts.canPickBoard) {
+    const pickBtn = el('button', 'board-pick-btn' + (opts.onBoard ? ' on' : ''), opts.onBoard ? '✓ 已上总榜' : '放入总榜');
+    pickBtn.type = 'button';
+    pickBtn.setAttribute('aria-pressed', String(!!opts.onBoard));
+    pickBtn.title = opts.onBoard ? '点击从总榜移除（年份榜仍保留）' : '点击放入总榜展示（最多选 2 条）';
+    pickBtn.addEventListener('click', () => toggleBoardPick(opts.id, !opts.onBoard, pickBtn));
+    left.appendChild(pickBtn);
+    if (opts.boardRankInMine === 1 || opts.boardRankInMine === 2) {
+      left.appendChild(el('span', 'mine-top-tag num', opts.boardRankInMine === 1 ? '赚钱第 1' : '赚钱第 2'));
+    }
+  } else if (opts.playing) {
+    left.appendChild(el('span', 'mine-foot-note', '进行中 · 结算后可选入总榜'));
+  } else {
+    left.appendChild(el('span', 'mine-foot-note', '旧版记录'));
+  }
+  foot.appendChild(left);
+
+  const right = el('div', 'mine-foot-right');
+  const delBtn = el('button', 'run-del-btn', '删除');
+  delBtn.type = 'button';
+  bindTwoStepDelete(delBtn, opts.id, () => loadMine());
+  right.appendChild(delBtn);
+  foot.appendChild(right);
+
+  card.appendChild(foot);
+  return card;
 }
 
 async function loadBoard() {
@@ -2957,7 +3062,9 @@ async function fillBoardArts(items, screen) {
 
 async function loadMine() {
   const box = $('#rank-mine');
+  const meta = $('#mine-meta');
   box.innerHTML = '';
+  if (meta) { meta.innerHTML = ''; meta.hidden = true; }
   const showEmpty = () => {
     const eb = el('div', 'empty-box');
     eb.appendChild(el('p', '', '还没有玩过的记录，去挑个年份开一局吧。'));
@@ -2977,6 +3084,28 @@ async function loadMine() {
   box.innerHTML = '';
   if (!d.rows.length) return showEmpty();
 
+  if (meta && d.eligibleCount > 0) {
+    const maxPicks = d.maxBoardPicks || 2;
+    meta.appendChild(el('span', 'mine-meta-text num', `总榜已选 ${d.pickedCount} / ${maxPicks} · 默认选赚钱最多前两名（年份榜不限）`));
+    if (!d.boardDefault) {
+      const rst = el('button', 'mine-reset-btn', '恢复默认前两名');
+      rst.type = 'button';
+      rst.addEventListener('click', async () => {
+        rst.disabled = true;
+        try {
+          await post('/api/board-pick', { token, reset: true });
+          toast('已恢复默认选赚钱最多的前两名');
+          await loadMine();
+        } catch (err) {
+          toast(err.message);
+          rst.disabled = false;
+        }
+      });
+      meta.appendChild(rst);
+    }
+    meta.hidden = boardMode !== 'mine';
+  }
+
   const pendingArts = [];
   for (const r of d.rows) {
     const old = r.mode && r.mode !== 'months24';
@@ -2988,17 +3117,18 @@ async function loadMine() {
       : done ? '已结算' : '进行中';
     const badgeCls = playing ? 'live' : (done && !old ? 'top' : '');
     const sc = r.extra_status === 'done' && r.extra_score != null ? r.extra_score : r.score;
+    const scStr = sc == null ? '' : `${Math.abs(sc) < 10 ? sc.toFixed(2) : sc.toFixed(1)} 年`;
     const scoreTop = old ? '旧版记录'
       : playing ? '继续 →'
-      : (sc == null ? '—' : `${Math.abs(sc) < 10 ? sc.toFixed(2) : sc.toFixed(1)} 年`);
-    const scoreSub = old ? '' : (playing ? '接上进度' : '连环画 →');
+      : (r.worldUsdText || scStr || '—');
+    const scoreSub = old ? '' : (playing ? '接上进度' : (r.worldUsdText && scStr ? scStr : '连环画 →'));
     const title = r.title || (playing && r.stepN ? `第 ${r.stepN} / ${r.totalMonths || 24} 月` : '');
     const ym = `${r.year}.${String(r.month).padStart(2, '0')}`;
-    const sub = `${ym}${r.city ? ' · ' + r.city : ''}`;
+    const sub = `${ym}${r.city ? ' · ' + r.city : ''}${!playing && !old && r.yearEarnedText ? ' · 净赚 ' + r.yearEarnedText : ''}`;
     const needArt = !r.image && !old && done && !!r.id;
     if (needArt) pendingArts.push({ id: r.id, extra: r.extra_status === 'done' });
 
-    box.appendChild(buildRankCard({
+    box.appendChild(buildMineCard({
       id: r.id,
       year: r.year,
       image: r.image,
@@ -3011,6 +3141,10 @@ async function loadMine() {
       scoreTop,
       scoreSub,
       disabled: old,
+      playing,
+      canPickBoard: !!r.canPickBoard,
+      onBoard: !!r.onBoard,
+      boardRankInMine: r.boardRankInMine || null,
       onClick: old ? null : (playing ? () => resume(r.id) : () => openDetail(r.id, 'mine')),
     }));
   }
