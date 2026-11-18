@@ -14,6 +14,7 @@ const OR = require('./or.js');
 
 const BASE = process.env.HY_URL || 'http://127.0.0.1:8801';
 const LOG_DIR = path.join(__dirname, '..', 'logs');
+const BOT_TOKEN = process.env.HY_BOT_TOKEN || 'hy-traveler-chronicle-bot';
 
 const TRAVELER_POOL = [
   { nick: '周怀瑾', persona: '算盘极精的旧账房，懂点看相风水，说话留三分余地', style: '商贾与玄门兼修' },
@@ -211,6 +212,7 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
     month: target.month,
     nick: pickedProfile.nick,
     persona: pickedProfile.persona,
+    token: BOT_TOKEN,
   });
 
   const runId = started.id;
@@ -282,7 +284,17 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
     bondsFormed: monthLogs.filter(m => m.bond).map(m => ({ n: m.n, ym: m.ym, ...m.bond })),
     worldTracesLeft: monthLogs.filter(m => m.worldTrace).map(m => ({ n: m.n, ym: m.ym, summary: m.worldTrace.summary })),
     refusedMonths: monthLogs.filter(m => m.refused.length > 0).map(m => ({ n: m.n, refused: m.refused })),
-    travelerOptionMonths: monthLogs.filter(m => m.options.some(o => /穿越者|暗号|同城/.test(o))).length,
+    travelerOptionMonths: (() => {
+      const tNames = [...new Set([
+        ...(yearData.fellows || []).map(f => f.nick),
+        ...(state.fellows || []).map(f => f.nick),
+        ...(state.travelerBonds || []).map(b => b.nick),
+        ...monthLogs.filter(m => m.bond && m.bond.with).map(m => m.bond.with),
+      ].filter(Boolean))];
+      return monthLogs.filter(m => m.options.some(o =>
+        /穿越者|暗号|同城|同道/.test(o) || tNames.some(nm => o.includes(nm))
+      )).length;
+    })(),
     missingHighlightMonths: monthLogs.filter(m => !m.hasHighlight).map(m => m.n),
     storyLenRange: [Math.min(...monthLogs.map(m => m.storyLen)), Math.max(...monthLogs.map(m => m.storyLen))],
     summaryLenRange: [Math.min(...monthLogs.map(m => m.summaryLen)), Math.max(...monthLogs.map(m => m.summaryLen))],

@@ -410,6 +410,21 @@ function fixScale(s, delta) {
  * 记在那个月上，下个月把这句话摆到提示词里让它自己补。 */
 const BUY_WORD = /货款|进货|买入|购入|囤|存货|预付|押金|盘下|置办|采买|定金|批发|收货/;
 const SELL_WORD = /卖|售|出货|所得|货款收|转手/;
+const HARD_BULLION_RE = /(黄金|金条|赤金|美钞|美元|外汇|英镑|港币|银元|大洋|袁大头|白银|银锭)/;
+const CASH_DEPOSIT_RE = /(存款|存单|存折|活期|定期|钱庄存|银行存)/;
+const RECEIVABLE_RE = /(借条|欠条|应收款|应收账款|债权)/;
+
+function normalizeAssetKind(name, kind) {
+  const nm = String(name || '').trim();
+  const kd = String(kind || '').trim();
+  if (RECEIVABLE_RE.test(nm)) return '债权';
+  if (CASH_DEPOSIT_RE.test(nm) && !HARD_BULLION_RE.test(nm)) return '现金类';
+  if (kd === '债权' || kd === '现金类') {
+    if (HARD_BULLION_RE.test(nm)) return '实物';
+    return kd;
+  }
+  return kd || '实物';
+}
 
 /** 这个月有没有「买了东西却没记下东西」。`wage` 是当月一个月的收入，用来滤掉零碎开销。 */
 function unpairedBuys(delta, wage) {
@@ -460,22 +475,34 @@ function applyMonth(s, delta) {
   if (Math.abs(s.cash) < 1e-9) s.cash = 0;
 
   /* 一天最多添 8 样东西，家底里最多留 40 样。
-   * 模型偶尔会把一天里提到的每一件小玩意都记成一笔家当，
-   * 三十天下来存档能撑到几百条，界面上也读不过来。 */
+   * 先划掉卖出的旧货，再添新货；同名家当合并估值与最新备注，免得同一批库存裂成多行、卖时只销掉一半。 */
+  for (const name of (delta.assetsDrop || [])) {
+    const cleanDrop = String(name || '').trim();
+    const i = s.assets.findIndex(x => x.name === cleanDrop);
+    if (i >= 0) s.assets.splice(i, 1);
+  }
   const added = [];
   for (const a of (delta.assetsAdd || []).slice(0, 8)) {
     if (!a || !a.name) continue;
-    const rec = { name: String(a.name).slice(0, 30), kind: a.kind || '实物', worth: Number(a.worth) || 0, note: String(a.note || '').slice(0, 60) };
-    s.assets.push(rec); added.push(rec);
+    const nm = String(a.name).trim().slice(0, 30);
+    const w = Number(a.worth) || 0;
+    if (!nm || !(w > 0)) continue;
+    const kd = normalizeAssetKind(nm, a.kind);
+    const nt = String(a.note || '').trim().slice(0, 60);
+    const rec = { name: nm, kind: kd, worth: w, note: nt };
+    const prev = s.assets.find(x => x.name === nm && x.kind === kd);
+    if (prev) {
+      prev.worth += w;
+      if (nt) prev.note = nt;
+    } else {
+      s.assets.push(rec);
+    }
+    added.push(rec);
   }
   if (s.assets.length > 40) {
     /* 挤出去的是最不值钱的那些，值钱的留着 */
     s.assets.sort((x, y) => y.worth - x.worth);
     s.assets.length = 40;
-  }
-  for (const name of (delta.assetsDrop || [])) {
-    const i = s.assets.findIndex(x => x.name === name);
-    if (i >= 0) s.assets.splice(i, 1);
   }
   /* 欠债封顶。没人肯借给一个刚落地的生面孔五年的收入——
    * 标定里有一局跑出「倒赔 11 年的收入」，就是模型放开了让他借。 */
@@ -1468,28 +1495,53 @@ function activeTravelerBondsOf(s) {
 }
 
 /** 判定本月穿越者互动节奏：
- *  - direct：玩家点名某位穿越者或主动寻找同道对暗号 → 正面重点展开互动并更新 bond
- *  - bond_echo：玩家已有结下关系的穿越者，隔两三个月自然来往、助力、分账或摩擦
- *  - cross：玩家未点名时，第 2 个月或每隔约 3 个月让同城穿越者在相关行当里主动现身交锋/递话 */
+ *  - direct：玩家点名某位穿越者或主动寻找同道对暗号 → 优先聚焦尚未结缘或较久未深交的对象，避免被单一长期合伙人垄断
+ *  - bond_echo：玩家已有结下关系的穿越者，隔两三个月自然来往、助力、分账或起摩擦
+ *  - cross：玩家未点名时，第 2 个月或每隔数月让尚未结缘的同城穿越者在相关行当里狭路相逢/对暗号/抢货递话 */
 function travelerBeat(s, list, echoes) {
   const txt = String(list || '');
   const fellows = (echoes && Array.isArray(echoes.fellows)) ? echoes.fellows : [];
   const bonds = activeTravelerBondsOf(s);
+  const unmetFellows = fellows.filter(f => f && f.nick && !bonds.some(b => whoKey(b.nick) === whoKey(f.nick)));
   const allCandidates = [
-    ...bonds.map(b => ({ nick: b.nick, rel: b.rel, note: b.note, desc: b.note })),
-    ...fellows.filter(f => f && f.nick && !bonds.some(b => whoKey(b.nick) === whoKey(f.nick))),
+    ...unmetFellows.map(f => ({ nick: f.nick, rel: null, note: '', desc: f.desc || f.summary || '', isBonded: false, last: 0, fellow: f, bond: null })),
+    ...bonds.map(b => {
+      const f = fellows.find(x => whoKey(x.nick) === whoKey(b.nick)) || null;
+      return { nick: b.nick, rel: b.rel, note: b.note, desc: (f && f.desc) || b.note, isBonded: true, last: b.last || 0, fellow: f, bond: b };
+    }),
   ];
 
-  for (const c of allCandidates) {
-    if (c.nick && txt.includes(c.nick)) {
-      const f = fellows.find(x => whoKey(x.nick) === whoKey(c.nick)) || null;
-      const b = bonds.find(x => whoKey(x.nick) === whoKey(c.nick)) || null;
-      return { active: true, mode: 'direct', target: c.nick, rel: b ? b.rel : null, fellow: f, bond: b };
-    }
+  const mentioned = allCandidates
+    .filter(c => c.nick && txt.includes(c.nick))
+    .sort((a, b) => {
+      if (a.isBonded !== b.isBonded) return a.isBonded ? 1 : -1;
+      if ((a.last || 0) !== (b.last || 0)) return (a.last || 0) - (b.last || 0);
+      return txt.indexOf(a.nick) - txt.indexOf(b.nick);
+    });
+
+  if (mentioned.length) {
+    const pick = mentioned[0];
+    return {
+      active: true,
+      mode: 'direct',
+      target: pick.nick,
+      rel: pick.rel || null,
+      fellow: pick.fellow || null,
+      bond: pick.bond || null,
+      alsoMentioned: mentioned.slice(1).map(c => c.nick),
+    };
   }
   if (/(穿越者|同道异客|现代老乡|老乡|对暗号|奇变偶不变|宫廷玉液酒|前世同乡)/.test(txt) && allCandidates.length) {
     const pick = allCandidates[0];
-    return { active: true, mode: 'direct', target: pick.nick, rel: pick.rel || null, fellow: fellows[0] || null, bond: bonds[0] || null };
+    return {
+      active: true,
+      mode: 'direct',
+      target: pick.nick,
+      rel: pick.rel || null,
+      fellow: pick.fellow || null,
+      bond: pick.bond || null,
+      alsoMentioned: [],
+    };
   }
 
   /* 若玩家本月正专注跟某个本地熟人谈婚论嫁或点名处理私事，不强塞穿越者抢戏 */
@@ -1514,21 +1566,85 @@ function travelerBeat(s, list, echoes) {
   const n = (s && s.n) || 1;
   const roll = hash32((s && s.seed ? s.seed : 1) * 19937 + n * 104729) / 2 ** 32;
 
-  if (bonds.length > 0 && monthsSince >= 2 && roll < 0.48) {
-    const b0 = bonds[n % bonds.length];
-    return { active: true, mode: 'bond_echo', target: b0.nick, rel: b0.rel, bond: b0 };
+  /* 优先让城里尚未照面的其他穿越者也有登场机会，不让单一老搭档把整局 24 个月全包圆 */
+  if (unmetFellows.length > 0 && ((n === 2 && monthsSince >= 99) || (monthsSince >= 3 && roll < 0.45) || (bonds.length === 1 && n >= 6 && n % 5 === 0 && roll < 0.6))) {
+    const f0 = unmetFellows[hash32(((s && s.seed) || 1) * 8191 + n * 131071) % unmetFellows.length];
+    return { active: true, mode: 'cross', target: f0.nick, fellow: f0 };
   }
 
-  if (fellows.length > 0 && ((n === 2 && monthsSince >= 99) || (monthsSince >= 3 && roll < 0.42))) {
-    const f0 = fellows[hash32(((s && s.seed) || 1) * 8191 + n * 131071) % fellows.length];
-    return { active: true, mode: 'cross', target: f0.nick, fellow: f0 };
+  if (bonds.length > 0 && monthsSince >= 2 && roll < 0.48) {
+    const sortedBonds = [...bonds].sort((a, b) => (a.last || 0) - (b.last || 0));
+    const b0 = sortedBonds[n % sortedBonds.length];
+    return { active: true, mode: 'bond_echo', target: b0.nick, rel: b0.rel, bond: b0 };
   }
 
   return { active: false, mode: 'none' };
 }
 
+const BOND_TRACE_VERB = {
+  '初识': '初识对暗语',
+  '试探': '试探虚实',
+  '合伙': '联手合伙',
+  '同盟': '结成同盟',
+  '师徒': '结为师徒',
+  '知己': '引为知己',
+  '结拜': '义结金兰',
+  '对手': '交手争锋',
+  '宿敌': '结下宿怨',
+  '提亲': '登门提亲',
+  '成婚': '喜结连理',
+  '道侣': '结为道侣',
+};
+
+function toThirdPersonTrace(text) {
+  return String(text || '')
+    .replace(/你们/g, '二人')
+    .replace(/助你/g, '助其')
+    .replace(/与你/g, '与其')
+    .replace(/替你/g, '替其')
+    .replace(/教你/g, '传授')
+    .replace(/指点你/g, '指点其')
+    .replace(/拉你/g, '邀其')
+    .replace(/带你/g, '带其')
+    .replace(/救你/g, '救其')
+    .replace(/对你/g, '对其')
+    .replace(/你的/g, '其')
+    .replace(/你/g, '其');
+}
+
+function trimTrace(text, maxLen = 50) {
+  const s = String(text == null ? '' : text)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[，,、；;：:\s]+$/, '');
+  if (s.length <= maxLen) return s;
+  const slice = s.slice(0, maxLen);
+  const minCut = Math.floor(maxLen * 0.55);
+  let cut = -1;
+  for (let i = slice.length - 1; i >= minCut; i--) {
+    if ('。！？；，、'.includes(slice[i])) {
+      cut = i;
+      break;
+    }
+  }
+  if (cut >= minCut) {
+    const clean = slice.slice(0, cut).replace(/[，,、；;：:\s]+$/, '');
+    return /[。！？]$/.test(slice[cut]) && clean.length + 1 <= maxLen ? clean + slice[cut] : clean;
+  }
+  return slice.slice(0, maxLen - 1).replace(/[，,、；;：:\s]+$/, '') + '…';
+}
+
+function formatBondTrace(nick, partner, city, rel, note) {
+  const act = BOND_TRACE_VERB[rel] || rel || '结交';
+  const cleanNote = toThirdPersonTrace(String(note || '').replace(/^[，,、；;：:\s]+|[。，,、；;：:\s]+$/g, ''));
+  const head = `穿越者「${nick}」与同道「${partner}」在${city}${act}`;
+  return trimTrace(cleanNote ? `${head}：${cleanNote}` : head, 50);
+}
+
+const ROUTINE_BOND_NOTE_RE = /^(深度绑定|继续合作|合作顺畅|例行分账|维持合作|稳步推进|正常分润)/;
+
 /** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
- *  严格克制：普通打工买卖月份返回 null，只有真正的大事或经校验的穿越者结缘才记入该年。 */
+ *  严格克制：普通打工买卖或无新进展的例行合伙返回 null，只有关系转折或真正大事才记入该年。 */
 function extractWorldTrace(s, played, delta, res1, echoes) {
   const year = played ? played.year : s.year;
   const month = played ? played.month : s.month;
@@ -1540,8 +1656,23 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
   if (validBond) {
     const partner = validBond.with;
     const rel = validBond.rel;
-    const bNote = oneLine(validBond.note || '', 26);
-    const summary = oneLine(`穿越者「${nick}」与穿越者「${partner}」在${city}${rel}${bNote ? '：' + bNote : ''}`, 42);
+    const bNote = oneLine(validBond.note || '', 34);
+    const past = (s && Array.isArray(s.months)) ? s.months : [];
+    let prevSameRelGap = 99;
+    for (let i = past.length - 1; i >= 0; i--) {
+      const pm = past[i];
+      if (pm && pm.bond && whoKey(pm.bond.with) === whoKey(partner)) {
+        if (pm.bond.rel === rel && pm.year === year) {
+          prevSameRelGap = ((s && s.n) || (past.length + 1)) - pm.n;
+        }
+        break;
+      }
+    }
+    /* 同一年与同一穿越者关系名分未变且刚留过痕（或仅为「深度绑定」套话），不反复刷屏覆盖最初结缘 */
+    if (prevSameRelGap < 4 && (prevSameRelGap <= 2 || ROUTINE_BOND_NOTE_RE.test(bNote))) {
+      return null;
+    }
+    const summary = formatBondTrace(nick, partner, city, rel, bNote);
     return {
       year, month, city, nick,
       kind: 'bond', partner, bondType: rel,
@@ -1549,14 +1680,14 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
     };
   }
 
-  const rawEv = oneLine(delta && delta.worldEvent, 42);
+  const rawEv = toThirdPersonTrace(oneLine(delta && delta.worldEvent, 48));
   const inc = incomeOf(year, month);
   const bigMoney = res1 && Math.abs(res1.gained || 0) >= inc * 1.2;
   const isMajor = rawEv.length >= 6 || bigMoney || MAJOR_DEED_RE.test(combined);
   if (!isMajor) return null;
 
   const text = rawEv.length >= 6
-    ? (rawEv.includes(nick) ? rawEv : oneLine(`穿越者「${nick}」在${city}：${rawEv}`, 42))
+    ? trimTrace(rawEv.includes(nick) ? rawEv : `穿越者「${nick}」在${city}：${rawEv}`, 50)
     : null;
   if (!text) return null;
   return {
@@ -1714,6 +1845,7 @@ function deriveHeadline(headline, summary, memoLine, story) {
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
+  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, normalizeAssetKind,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,

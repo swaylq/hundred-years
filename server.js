@@ -513,14 +513,17 @@ const routes = {
     r.endWorthText = E.money(r.endWorth, r.currency);
     r.currencyName = E.CN[r.currency];
     s.status = 'done';
-    const traits = ((s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what).slice(0, 2);
+    const traits = ((s.memo && s.memo.traits) || [])
+      .filter(t => !t.lost && !/^与穿越者/.test(t.what))
+      .map(t => t.what)
+      .slice(0, 2);
     if (traits.length || r.score >= 3) {
       const summary = traits.length
         ? `穿越者「${s.nick}」曾在${s.city}闯荡，留下「${traits.join('、')}」的传说`
         : `穿越者「${s.nick}」曾在${s.city}攒下普通人 ${Math.round(r.score)} 年的家业`;
       DB.addTrace(b.id, {
         year: s.startYear || s.year, month: s.startMonth || s.month, city: s.city, nick: s.nick,
-        kind: 'deed', summary: summary.slice(0, 42), importance: r.score >= 8 ? 3 : 2,
+        kind: 'deed', summary: E.trimTrace(summary, 50), importance: r.score >= 8 ? 3 : 2,
       });
     }
     if (extra) {
@@ -977,9 +980,22 @@ async function runOneMonthInner(req, res, b, s) {
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
     const contextText = `${b.list || ''}\n${out.delta.story || ''}`;
-    const validBond = E.normalizeBond(out.delta.bond, s, echoes, contextText);
-    out.delta.bond = validBond;
+    const rawValidBond = E.normalizeBond(out.delta.bond, s, echoes, contextText);
+    const tBeatNow = E.travelerBeat(s, b.list, echoes);
+    const prevMonth = s.months[s.months.length - 1] || null;
+    const isStaleRepeatBond = !!(
+      rawValidBond &&
+      prevMonth &&
+      prevMonth.bond &&
+      prevMonth.bond.with === rawValidBond.with &&
+      prevMonth.bond.rel === rawValidBond.rel &&
+      (!tBeatNow.active || tBeatNow.target !== rawValidBond.with || E.ROUTINE_BOND_NOTE_RE.test(rawValidBond.note || ''))
+    );
+    const validBond = isStaleRepeatBond ? null : rawValidBond;
+    /* applyMemo 仍保留原始结缘备注以免漏记人脉，但月度战报与时空留痕只认真正有新进展的 validBond */
+    out.delta.bond = rawValidBond;
     const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month, tally }, { echoes, contextText });
+    out.delta.bond = validBond;
     const traceCand = E.extractWorldTrace(s, { year: s.year, month: s.month, list: b.list }, out.delta, res1, echoes);
     const traceSaved = traceCand && DB.addTrace(b.id, traceCand) ? traceCand : null;
 

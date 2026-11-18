@@ -501,7 +501,7 @@ function addTrace(runId, tr) {
   const yr = Number(tr.year);
   const mo = Number(tr.month || 1);
   const city = String(tr.city || '');
-  const summary = String(tr.summary).slice(0, 44);
+  const summary = String(tr.summary).replace(/\s+/g, ' ').trim().slice(0, 54);
   const imp = Number(tr.importance || 2);
 
   if (tr.kind === 'bond' && tr.partner) {
@@ -574,7 +574,10 @@ function fallbackFellows(year, city) {
         if (SKIP_NICK.test(r.nick || '')) continue;
         let st; try { st = JSON.parse(r.state); } catch (e) { continue; }
         if (!st || !Array.isArray(st.months) || !st.months.length) continue;
-        const traits = ((st.memo && st.memo.traits) || []).filter(t => !t.lost).map(t => t.what).slice(0, 2);
+        const traits = ((st.memo && st.memo.traits) || [])
+          .filter(t => !t.lost && !/^与穿越者/.test(t.what))
+          .map(t => t.what)
+          .slice(0, 2);
         const city = st.city || '';
         const summary = traits.length
           ? `穿越者「${r.nick}」曾在${city}闯荡，挣下「${traits.join('、')}」的名头`
@@ -582,7 +585,7 @@ function fallbackFellows(year, city) {
         if (summary) {
           addTrace(r.id, {
             year: r.year, month: r.month, city, nick: r.nick,
-            kind: 'deed', summary: summary.slice(0, 42), importance: r.score >= 10 ? 3 : 2,
+            kind: 'deed', summary: summary.slice(0, 50), importance: r.score >= 10 ? 3 : 2,
           });
         }
       }

@@ -2557,6 +2557,20 @@ async function openComicExport(pctx) {
       c.fillText(nt, x + w - bw - 1, y + 26.5);
     }
 
+    /* 左下同行穿越者徽标（与网页连环画角标对齐） */
+    const bondPartner = (d.bond && d.bond.with) || (d.worldTrace && d.worldTrace.kind === 'bond' && d.worldTrace.partner) || '';
+    if (bondPartner) {
+      const bRel = (d.bond && d.bond.rel) || '';
+      const bt = `同行 · ${bondPartner}${bRel ? ' · ' + bRel : ''}`;
+      c.font = `500 12px ${SANS}`;
+      const btw = Math.min(w - 24, c.measureText(bt).width + 18);
+      drawRoundedRectPath(c, x + 10, y + ART_H - 32, btw, 22, 5);
+      c.fillStyle = 'rgba(42, 62, 112, 0.86)';
+      c.fill();
+      c.fillStyle = '#f6f8fd';
+      c.fillText(bt, x + 19, y + ART_H - 16.5);
+    }
+
     /* 下半配文栏 */
     c.strokeStyle = '#ded9ce';
     c.lineWidth = 1;
