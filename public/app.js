@@ -68,16 +68,30 @@ function animatePanel(node, cls = 'panel-in-up') {
   node.addEventListener('animationend', () => node.classList.remove(cls), { once: true });
 }
 
+const MODAL_IDS = new Set(['sheet-bg', 'poster-modal', 'comic-modal']);
+function syncModalScrollLock() {
+  const locked = ['#sheet-bg', '#poster-modal', '#comic-modal'].some(sel => {
+    const n = $(sel);
+    return n && !n.hidden && n.dataset.state !== 'closing';
+  });
+  document.body.classList.toggle('modal-open', locked);
+}
+
 const overlayTimers = new WeakMap();
 function showOverlay(node) {
   if (!node) return;
   const prev = overlayTimers.get(node);
   if (prev) { clearTimeout(prev); overlayTimers.delete(node); }
   node.hidden = false;
-  if (reducedMotion()) { node.dataset.state = 'open'; return; }
+  if (reducedMotion()) {
+    node.dataset.state = 'open';
+    if (MODAL_IDS.has(node.id)) syncModalScrollLock();
+    return;
+  }
   delete node.dataset.state;
   void node.offsetWidth;
   node.dataset.state = 'open';
+  if (MODAL_IDS.has(node.id)) syncModalScrollLock();
 }
 function hideOverlay(node, ms = 180) {
   if (!node || node.hidden) return;
@@ -86,14 +100,17 @@ function hideOverlay(node, ms = 180) {
   if (reducedMotion()) {
     delete node.dataset.state;
     node.hidden = true;
+    if (MODAL_IDS.has(node.id)) syncModalScrollLock();
     return;
   }
   node.dataset.state = 'closing';
+  if (MODAL_IDS.has(node.id)) syncModalScrollLock();
   const t = setTimeout(() => {
     overlayTimers.delete(node);
     if (node.dataset.state === 'closing') {
       delete node.dataset.state;
       node.hidden = true;
+      if (MODAL_IDS.has(node.id)) syncModalScrollLock();
     }
   }, ms);
   overlayTimers.set(node, t);
@@ -1234,12 +1251,15 @@ function sheetSection(title, items) {
   return sec;
 }
 function sheetItem(title, val, sub, opts = {}) {
-  const row = el('div', 'sheet-item');
+  const valStr = val != null ? String(val) : '';
+  const stack = valStr.length > 15;
+  const row = el('div', 'sheet-item' + (stack ? ' is-stack' : ''));
   const left = el('div');
   left.appendChild(el('strong', opts.lost ? 'lost' : '', title));
+  if (stack && valStr) left.appendChild(el('b', 'sheet-val-block num' + (opts.neg ? ' neg' : ''), valStr));
   if (sub) left.appendChild(el('small', '', sub));
   row.appendChild(left);
-  if (val != null && val !== '') row.appendChild(el('b', 'num' + (opts.neg ? ' neg' : ''), val));
+  if (!stack && valStr) row.appendChild(el('b', 'num' + (opts.neg ? ' neg' : ''), valStr));
   return row;
 }
 
@@ -1249,6 +1269,7 @@ async function openSheet(kind, opts = {}) {
   const titleEl = $('#sheet-title');
   const body = $('#sheet-body');
   body.innerHTML = '';
+  body.scrollTop = 0;
   showOverlay(bg);
 
   if (kind === 'assets' && run) {
@@ -1557,7 +1578,11 @@ function renderComicLightbox() {
     if (hasOwnerDetail && (item.list || item.story)) {
       extraBox.hidden = false;
       const more = el('details', 'comic-more');
-      more.appendChild(el('summary', '', '展开本月打算与全文 ▾'));
+      const sumEl = el('summary', '', '展开本月打算与全文 ▾');
+      more.addEventListener('toggle', () => {
+        sumEl.textContent = more.open ? '收起本月打算与全文 ▴' : '展开本月打算与全文 ▾';
+      });
+      more.appendChild(sumEl);
       const mb = el('div', 'comic-more-body');
       if (item.list) {
         const pe = el('div', 'plan-echo');
@@ -1582,6 +1607,8 @@ function renderComicLightbox() {
 
   $('#lb-prev').disabled = idx <= 0;
   $('#lb-next').disabled = idx >= items.length - 1;
+  const capEl = $('.comic-lb-cap');
+  if (capEl) capEl.scrollTop = 0;
 }
 
 function openComicLightbox(items, idx, opts = {}) {
@@ -2162,18 +2189,21 @@ function drawRoundedRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function bindPosterOutput(cvs, fileName, shareTitle, imgAlt) {
+function bindPosterOutput(cvs, fileName, shareTitle, imgAlt, dlLabel = '保存图片') {
   const imgEl = $('#poster-img');
+  const wrapEl = imgEl && imgEl.parentElement;
   const dlEl = $('#poster-dl');
   const shareEl = $('#poster-share');
   const statusEl = $('#poster-status');
   if (statusEl) statusEl.hidden = true;
+  if (wrapEl) { wrapEl.hidden = false; wrapEl.scrollTop = 0; }
   const dataUrl = cvs.toDataURL('image/jpeg', 0.89);
+  imgEl.hidden = false;
   imgEl.src = dataUrl;
   imgEl.alt = imgAlt;
   dlEl.href = dataUrl;
   dlEl.download = fileName;
-  dlEl.textContent = '保存图片';
+  dlEl.textContent = dlLabel;
 
   if (navigator.canShare && window.File) {
     cvs.toBlob(blob => {
@@ -2195,11 +2225,14 @@ async function openComicExport(pctx) {
   }
   const modal = $('#poster-modal');
   const imgEl = $('#poster-img');
+  const wrapEl = imgEl && imgEl.parentElement;
   const shareEl = $('#poster-share');
   const statusEl = $('#poster-status');
   showOverlay(modal);
+  imgEl.hidden = true;
   imgEl.removeAttribute('src');
-  imgEl.alt = '正在拼接连环画…';
+  imgEl.alt = '';
+  if (wrapEl) wrapEl.hidden = true;
   shareEl.hidden = true;
 
   const r = pctx.result;
@@ -2527,14 +2560,16 @@ async function openSharePoster(pctx) {
   if (!pctx || !pctx.result) return toast('请先完成结算');
   const modal = $('#poster-modal');
   const imgEl = $('#poster-img');
+  const wrapEl = imgEl && imgEl.parentElement;
   const dlEl = $('#poster-dl');
   const shareEl = $('#poster-share');
   const statusEl = $('#poster-status');
   showOverlay(modal);
+  imgEl.hidden = true;
   imgEl.removeAttribute('src');
-  imgEl.alt = '正在生成海报…';
+  imgEl.alt = '';
+  if (wrapEl) wrapEl.hidden = true;
   shareEl.hidden = true;
-  if (statusEl) { statusEl.hidden = false; statusEl.textContent = '正在生成分享海报…'; }
   if (statusEl) { statusEl.hidden = false; statusEl.textContent = '正在生成分享海报…'; }
 
   const r = pctx.result;
@@ -2750,27 +2785,8 @@ async function openSharePoster(pctx) {
   c.fillText('100y.swaylab.ai', W - PAD, footY);
   c.textAlign = 'left';
 
-  const dataUrl = cvs.toDataURL('image/jpeg', 0.92);
-  if (statusEl) statusEl.hidden = true;
-  imgEl.src = dataUrl;
-  imgEl.alt = `${r.nick}的${r.year}年分享海报`;
   const fileName = `这一百年-${r.nick}-${r.year}.jpg`;
-  dlEl.href = dataUrl;
-  dlEl.download = fileName;
-  dlEl.textContent = '保存海报';
-
-  if (navigator.canShare && window.File) {
-    cvs.toBlob(blob => {
-      if (!blob) return;
-      const file = new File([blob], fileName, { type: 'image/jpeg' });
-      if (navigator.canShare({ files: [file] })) {
-        shareEl.hidden = false;
-        shareEl.onclick = () => navigator.share({ title: `《这一百年》${r.nick}的${r.year}年`, files: [file] }).catch(() => {});
-      }
-    }, 'image/jpeg', 0.92);
-  } else {
-    shareEl.hidden = true;
-  }
+  bindPosterOutput(cvs, fileName, `《这一百年》${r.nick}的${r.year}年`, `${r.nick}的${r.year}年分享海报`, '保存海报');
 }
 
 $('#poster-close').addEventListener('click', closePosterModal);
