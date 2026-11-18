@@ -269,6 +269,7 @@ function go(name, opts = {}) {
     b.classList.toggle('on', active);
   });
   document.body.dataset.screen = name;
+  if (name === 'pick') requestAnimationFrame(syncEraBarFade);
   if (name === 'board') { setBoardMode('world', { animate: prevScreenId === 'board' && prevName !== 'board' }); loadBoard(); }
   if (name === 'mine') { setBoardMode('mine', { animate: prevScreenId === 'board' && prevName !== 'mine' }); loadMine(); }
 }
@@ -368,6 +369,7 @@ function renderYearGrid(era = 'all') {
     } else {
       if (h >= 2) marks.appendChild(el('i', 'y-dot hot'));
       if (info.switch) marks.appendChild(el('i', 'y-dot sw'));
+      if (marks.children.length) marks.classList.add('is-dots');
     }
     if (marks.children.length) btn.appendChild(marks);
 
@@ -388,12 +390,30 @@ function renderYearGrid(era = 'all') {
   renderSpotlight(spotlightInfo);
 }
 
+function syncEraBarFade() {
+  const bar = $('#era-bar');
+  if (!bar) return;
+  const maxScroll = bar.scrollWidth - bar.clientWidth;
+  bar.classList.toggle('fade-l', maxScroll > 4 && bar.scrollLeft > 4);
+  bar.classList.toggle('fade-r', maxScroll > 4 && bar.scrollLeft < maxScroll - 4);
+}
+if ($('#era-bar')) {
+  $('#era-bar').addEventListener('scroll', syncEraBarFade, { passive: true });
+  window.addEventListener('resize', syncEraBarFade, { passive: true });
+}
+
 $$('#era-bar button').forEach(b => b.addEventListener('click', () => {
   const was = currentEra;
   $$('#era-bar button').forEach(x => x.classList.remove('on'));
   b.classList.add('on');
+  const bar = $('#era-bar');
+  if (bar && bar.scrollWidth > bar.clientWidth + 4) {
+    const left = b.offsetLeft - (bar.clientWidth - b.offsetWidth) / 2;
+    bar.scrollTo({ left: Math.max(0, left), behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }
   renderYearGrid(b.dataset.era);
   if (was !== b.dataset.era) animatePanel($('#grid'), 'panel-in-up');
+  requestAnimationFrame(syncEraBarFade);
 }));
 $('#sp-enter').addEventListener('click', () => {
   if (selectedYear) openYear(selectedYear);
@@ -411,6 +431,7 @@ async function loadYears() {
   const d = await api('/api/years');
   years = d.years || [];
   renderYearGrid(currentEra);
+  requestAnimationFrame(syncEraBarFade);
 }
 
 /* ── 2. 选月开局（年份封面英雄卡 + 零滚动直达启程） ─────────── */
@@ -548,14 +569,15 @@ function pickMonth(m, btn) {
   const sy2 = String(picked).slice(-2);
   const ey2 = String(Math.floor(t / 12)).slice(-2);
   const span = `${sy2}.${String(m.month).padStart(2, '0')} → ${ey2}.${String(t % 12 + 1).padStart(2, '0')}`;
-  const evText = m.events.length ? m.events[0] : '城里平稳';
+  const evList = (m.events || []).map(s => String(s || '').trim().replace(/[；;]+$/, '')).filter(Boolean);
+  const evFull = evList.length ? evList.join('；').replace(/([。！？])；/g, '$1 ') : '城里平稳';
 
   const met = $('#mo-metrics');
   met.hidden = false;
   met.innerHTML =
-    `<div class="mo-m"><span>跨度</span><b class="num">${esc(span)}</b></div>
-     <div class="mo-m"><span>开局本钱</span><b class="num">${esc(m.startCash)}</b></div>
-     <div class="mo-m" title="${esc(m.events.join('；') || '城里平稳')}"><span>当月大事</span><b>${esc(evText)}</b></div>`;
+    `<div class="mo-m mo-span"><span>跨度</span><b class="num">${esc(span)}</b></div>
+     <div class="mo-m mo-cash"><span>开局本钱</span><b class="num">${esc(m.startCash)}</b></div>
+     <div class="mo-m mo-ev${evList.length ? ' has-ev' : ''}"><span>当月大事</span><b>${esc(evFull)}</b></div>`;
 
   const sw = [];
   for (const y of (years || [])) {
