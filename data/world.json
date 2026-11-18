@@ -179,7 +179,7 @@
   "1949": {
    "gdp": 6670810799434.391,
    "gdpIndex": 0.06693666093401979,
-   "usdPerUnit": 0.000002,
+   "usdPerUnit": 0.004,
    "usdPerUnitAfterSwitch": 0.000024,
    "confidence": "构造"
   },
@@ -221,7 +221,7 @@
   "1955": {
    "gdp": 9008133654059.14,
    "gdpIndex": 0.09038997000202956,
-   "usdPerUnit": 0.406,
+   "usdPerUnit": 0.0000406,
    "usdPerUnitAfterSwitch": 0.406,
    "confidence": "构造"
   },

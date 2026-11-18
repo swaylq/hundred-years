@@ -48,11 +48,13 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 · **门槛**：平常月份如果他没主动提这些超现实事物，就**纯粹按当年的真实历史人间写**，绝不许自己塞神仙、道士、鬼怪或密教进来；头一回随口一提只给半真半假的传闻或考验，再三执着追寻后才向他敞开暗面门径。
 · **低魔上限**：哪怕踏入暗面，本事也只守在**人间奇人异士的尺度**——强身健体、内家拳脚、看气辨宝、画符避祸、奇药异物、鬼市淘珍、窥见异象。**世上没有御剑灭国、毁天灭地、打破虚空、殖民星球、一步飞升、凭空变出亿万钱财、或号令全球首脑朝贡的仙神神通**——写到这种地步，灵气稀薄、凡胎有限，绝不会成真。
 
-【其他穿越者与跨局因果】
-同一年的时空里还有其他穿越者（别的穿越者留下的事迹与名字会列在提示里）。
-· 他如果写着去找某位穿越者结交、合伙做买卖、切磋比斗、拜师，乃至**提亲、成婚、结为夫妻或知己、义结金兰**，只要合乎情理就顺着推进，写出两人的互动，并在 JSON 的 bond 字段里记下这段关系。
-· 就算他没主动提，同年其他穿越者做出的大事若正好撞上他的行当或地界，也可以在正文里顺带写一两句余波（点到为止，别抢他自己的戏）。
-· 只有当他这个月自己做出了足以在城里传开的大事、立起体面字号、遇上罕见异象、或与其他穿越者成婚/结拜/决战时，才在 worldEvent 里用 35 字以内记下一句，留给后来穿进这一年的人看；普通月份不要写 worldEvent。
+【其他穿越者与跨局因果 —— 让同城异客有来有往】
+同一年的时空里还活跃着其他穿越者（别的穿越者名录、事迹与你们已有的羁绊会列在提示里）。
+· 他们也带着现代记忆和眼光落脚这座城，有自己的算盘——可能跟你在同一波行情里抢筹码、在隔壁开铺面唱对台戏，也可能在茶馆随口漏出半句只有现代老乡才懂的暗语或算账习惯，试探着想联手做局。
+· 他如果写着去找某位穿越者对暗号、合伙做买卖、抢货源、切磋比斗、拜师，乃至**提亲、成婚、结为夫妻/道侣或知己、义结金兰**，只要合乎情理就顺着推进，写出两人鲜活的交锋或默契，并在 JSON 的 bond 字段里记下这段关系。
+· **bond.with 只许填提示里列出的另一位「穿越者」名字**，绝不许把本地工头、掌柜、师傅等普通土著填进 bond（本地熟人只记进 memo.people）。
+· 当提示里点出【本月同行穿越者动向】时，顺着他本月办的主线事把这次照面、过招或来往自然嵌进正文末段（两三句写活人物动作与原话，留个下月能接的话头），不喧宾夺主。
+· 只有当他这个月自己做出了足以在城里传开的大事、立起体面字号、遇上罕见异象、或与其他穿越者结盟/成婚/决战时，才在 worldEvent 里用 35 字以内记下一句；普通月份 worldEvent 填 null。
 
 【玩家打算的比重与分寸 —— 既不光围着赚钱转，也不许一嘴登天】
 他每个月亲手写下的清单，是这一个月正文的**主线**（占 **70%–80%** 篇幅），但**他写的是“这个月打算去怎么闯”，不是一锤定音的圣旨**：
@@ -257,7 +259,7 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
   "refused": [{"what":"那一年根本没有的现代科技物件","why":"哪一年才有、或者哪一年起就没了，一句话"}],
   "moveTo": "他这个月搬到了哪座城／哪个地方，没搬就不要这个字段",
   "worldEvent": "只有当这个月做出了城中传开的大事、立起体面字号、遇上罕见异象、或与其他穿越者成婚/结拜/决战时才写一句（35字内），普通月份填 null",
-  "bond": {"with":"互动的另一位穿越者名字（没有就填 null）","rel":"成婚/知己/结拜/合伙/师徒/宿敌","note":"一句话经过，25字内"},
+  "bond": {"with":"本月发生实质互动的另一位穿越者名字（仅限穿越者，无则填 null）","rel":"初识/试探/合伙/同盟/师徒/知己/结拜/对手/宿敌/成婚/道侣","note":"一句话写清互动结果或约定，25字内"},
   "options": [{"what":"下个月能做的一件事，10到22个字，精炼好读","why":"一句话说明亮点或风险"}],
   "memo": {
     "line": "把这个月压成六十到九十字的交接记事",
@@ -274,9 +276,9 @@ options 每个月都要给满三条。
 【给他三条下个月能走的路 —— 写进 options】
 三条要各有味道，**别三条全写成枯燥打工赚钱**：
 · 一条是稳当生计：这个月手头的活计或铺面接着做，或者城里稳妥挣钱的门路。
-· 一条是人情、生活或见识：去交际拜师、约见熟人或同年穿越者、学门手艺、逛城里热闹去处，换个活法。
+· 一条是**同行穿越者互动**或人情见识：若城里有活跃穿越者或刚打过照面的同道，优先给一条跟这位穿越者对暗号、合伙做一票、互通情报、切磋或较劲的具体路子（带上对方名字）；否则写拜师交友或城中见闻。
 · 一条是搏一把的新路子：押本钱倒货、探门路，或（仅当他已踏入暗面时）顺着奇闻线索继续追查。
-每条 what 压在 **10 到 22 个字**，干脆具体（「找老周续接码头布匹单」「去城西茶楼拜访同行穿越者」「拿闲钱去旧货市淘一批紧俏货」）。
+每条 what 压在 **10 到 22 个字**，干脆具体（「找老周续接码头布匹单」「约穿越者林青对暗号谈合股」「拿闲钱去旧货市淘一批紧俏货」）。
 这个月正文里出现过的人和事，优先写进去。
 
 【进项的形状与量级对齐 —— 必守】
@@ -592,17 +594,40 @@ function buildUser(s, list, extra = {}) {
       : `\n【初探暗面边缘（${weird.themes[0].name}）—— 暂不给真神通，先摸门径】\n` +
         `这是他头一回试探「${weird.themes[0].name}」。暗面门道深藏市井之下，**这个月不让他立刻练成法术或一步得宝**，只写他摸到一点真假莫辨的蛛丝马迹（如半真半假的相师、旧摊残页或高人闭门考验），在 memo.threads 里留一条下个月可继续追查的钩子。\n`;
 
-  /* 同年时空里的其他穿越者与重要留痕（严格控制字数，不撑爆上下文） */
-  const ec = extra.echoes || { traces: [], myBonds: [] };
+  /* 同年时空里的其他穿越者与重要留痕（严格控制字数，突出同行互动） */
+  const ec = extra.echoes || { traces: [], fellows: [], myBonds: [] };
+  const fellowLines = (ec.fellows || []).slice(0, 3).map(f =>
+    `· 穿越者「${f.nick}」（${f.stance || f.tag || '同行'}）：${f.desc || f.summary}`
+  );
+  const traceLines = (ec.traces || [])
+    .filter(t => t && t.kind !== 'traveler')
+    .slice(0, 3)
+    .map(t => `· ${t.summary}`);
   const echoLines = [
-    ...(ec.myBonds || []).map(b => `· 【与你结下的因果】${b}`),
-    ...(ec.traces || []).slice(0, 4).map(t => `· ${t.summary}`),
+    ...(ec.myBonds || []).map(b => `· 【跨局因果】${b}`),
+    ...fellowLines,
+    ...traceLines,
   ];
   const echoSay = echoLines.length
-    ? `\n【同年时空里的其他穿越者与大事（限最要紧的几条）】\n${echoLines.join('\n')}\n` +
-      `若他在清单里提到了上面的某位穿越者（如找对方合伙、讨教、比斗，或提亲、成婚、结为夫妻/道侣、结拜），` +
-      `必须在正文里写出两人的真实互动，并在 JSON 的 bond 字段里记下关系；若他没提，只需在合适时顺带一笔城中传闻即可。\n`
+    ? `\n【同年在${s.city}活动的其他穿越者与留痕】\n${echoLines.join('\n')}\n`
     : '';
+
+  const tBeat = E.travelerBeat(s, list, ec);
+  const travelerSay = !tBeat.active
+    ? ''
+    : tBeat.mode === 'direct'
+      ? `\n【本月正面交集：穿越者「${tBeat.target}」】\n` +
+        `他在打算里主动找上了穿越者「${tBeat.target}」${tBeat.rel ? `（当前关系：${tBeat.rel}）` : ''}。` +
+        `请在 summary 与 story 里重点写出两人面对面的交锋、试探（可带一点只有现代人才懂的默契或算盘）、合作条件、比斗或情感进展，` +
+        `并在 JSON 的 bond 字段填好 {"with":"${tBeat.target}","rel":"...","note":"..."}。\n`
+      : tBeat.mode === 'bond_echo'
+        ? `\n【本月同行穿越者来往：老相识「${tBeat.target}」（${tBeat.rel}）】\n` +
+          `在写完他本月主线打算（占七八成篇幅）之余，在后半段用两三句带出与他已有「${tBeat.rel}」关系的穿越者「${tBeat.target}」本月的实际动静——` +
+          `或是递来紧俏风声、搭手分润、登门商议，或是因利益分歧起了一点小摩擦。若关系有新进展可更新 bond 字段，并在下月 options 里留一条后续互动选项。\n`
+        : `\n【本月同行穿越者动向：偶遇「${tBeat.target}」】\n` +
+          `在写好他本月主线打算（占七八成篇幅）之余，在月底收尾处用两三句写他在办事途中撞见同城穿越者「${tBeat.target}」（${(tBeat.fellow && tBeat.fellow.desc) || '也在城中谋局'}）——` +
+          `比如两人在同一处货源或铺面上狭路相逢、对方一句现代口癖露出老乡马脚、或托人递话试探合作。` +
+          `若两人当场搭上了话，就在 bond 里记 {"with":"${tBeat.target}","rel":"初识","note":"..."}，并在下月 options 里给一条找「${tBeat.target}」接洽或较劲的路子。\n`;
 
   return `${compactCard(c, sy, s.month, s.city)}
 
@@ -636,7 +661,7 @@ ${String(list).trim()}
 1. **双层输出**：headline 用 10–20 字一句话概括本月；summary **必须是精简概要（2–3 句白话，共 50–90 字）**，干脆说清办了什么、成没成、最关键的结果；story 为完整详情（**180–300 字**），展开场面、原话与细节。
 2. **直奔他写的事（占 70%–80% 篇幅）**：围绕他写下的「${String(list).trim()}」展开，不许自作主张替他新开没写的买卖；已有摊子日常进出在文末一两句带过。
 3. **有分寸的自由**：合乎底子的事放手办成；跨一级的事写成扎实迈出头一步并留钩子；明显离谱的“一嘴登天”许愿（如号令全球、收各国税、凭空变亿万、殖民星球、一步成仙）绝不写成真，用人间阻力拉回地面。
-4. **高亮标记**：在 summary 里挑最核心的 1 句、在 story 里挑 1–2 处最直接回应他打算的句段用 **...** 括起。${ownSay}${betSay}${luckSay}${weirdSay}
+4. **高亮标记**：在 summary 里挑最核心的 1 句、在 story 里挑 1–2 处最直接回应他打算的句段用 **...** 括起。${ownSay}${betSay}${luckSay}${weirdSay}${travelerSay}
 ${rulings}${extra.retry ? `\n\n【上一版写得不合格，改掉这几条再给我一遍完整的 JSON】\n${extra.retry.map(x => '- ' + x).join('\n')}` : ''}`;
 }
 
@@ -719,17 +744,38 @@ async function runMonth(s, list, opts = {}) {
   const model = opts.model || MODEL;
 
   if (opts.onField || opts.onStory) {
-    const pick = fieldPicker(opts.onField ? ['headline', 'summary', 'story'] : ['story']);
-    const text = await OR.callStream(model, SYS, user, {
-      json: true, maxTokens: 2400, temperature: 0.85, timeout: Math.max(20000, left()),
-    }, piece => {
-      for (const ev of pick(piece)) {
-        if (opts.onField) opts.onField(ev.field, ev.text);
-        if (opts.onStory && ev.field === 'story') opts.onStory(ev.text);
+    try {
+      const pick = fieldPicker(opts.onField ? ['headline', 'summary', 'story'] : ['story']);
+      const text = await OR.callStream(model, SYS, user, {
+        json: true, maxTokens: 2400, temperature: 0.85, timeout: Math.max(20000, left()),
+      }, piece => {
+        for (const ev of pick(piece)) {
+          if (opts.onField) opts.onField(ev.field, ev.text);
+          if (opts.onStory && ev.field === 'story') opts.onStory(ev.text);
+        }
+      });
+      const delta = finalizeDelta(s, list, OR.parseJson(text));
+      return { delta, ms: Date.now() - t0, problems: [], streamed: true };
+    } catch (streamErr) {
+      if (left() < 15000) throw streamErr;
+      if (opts.onRedo) { try { opts.onRedo(); } catch (e) {} }
+      const retryUser = buildUser(s, list, {
+        echoes: opts.echoes,
+        retry: ['确保输出合法完整的单个 JSON 对象，字符串内部引用词语请一律用「」而不要裸写英文双引号'],
+      });
+      const text2 = await OR.call(model, SYS, retryUser, {
+        json: true, maxTokens: 2400, temperature: 0.8,
+        timeout: Math.max(12000, Math.min(45000, left())), tries: 1,
+      });
+      const delta = finalizeDelta(s, list, OR.parseJson(text2));
+      if (opts.onField) {
+        if (delta.headline) opts.onField('headline', delta.headline);
+        if (delta.summary) opts.onField('summary', delta.summary);
+      } else if (opts.onStory && delta.story) {
+        opts.onStory(delta.story);
       }
-    });
-    const delta = finalizeDelta(s, list, OR.parseJson(text));
-    return { delta, ms: Date.now() - t0, problems: [], streamed: true };
+      return { delta, ms: Date.now() - t0, problems: [], streamed: true, retried: true };
+    }
   }
 
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -826,7 +872,7 @@ function runMonthLocal(s, list, opts = {}) {
  * 断网、没密钥、模型没给，都退回 optionsLocal——照年卡里的路子拼，
  * 一分钱不花，也永远有三条。 */
 
-/** 照年卡里的挣钱路子拼三条：一条稳当、一条生活/人情或暗面、一条险路 */
+/** 照年卡里的挣钱路子与同城穿越者拼三条：一条稳当、一条同行穿越者互动（或生活人情）、一条险路 */
 function optionsLocal(s, salt, echoes) {
   const c = card(s.year);
   const r = rng((s.seed || 1) * 31 + s.n * 7919 + (salt || 0));
@@ -842,18 +888,43 @@ function optionsLocal(s, salt, echoes) {
   const traitsTxt = ((s && s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what).join(' ');
   const alreadyWeird = E.WEIRD_THEMES.some(w => w.re.test(traitsTxt));
   const wPick = E.WEIRD_THEMES[Math.floor(r() * E.WEIRD_THEMES.length)];
-  const lifeOpts = [
-    { what: `去${s.city}茶馆听风声结交熟人`, why: '打听城里消息，多认几位街面熟人' },
-    { what: `找老手艺人拜师学一门实在本事`, why: '攒点傍身手艺，往后路子更宽' },
-    { what: `去旧货摊和市集闲逛淘点好东西`, why: '换换脑子，顺手看看有没有漏可捡' },
-  ];
+
+  const bonds = E.activeTravelerBondsOf(s);
+  const fellows = (echoes && Array.isArray(echoes.fellows)) ? echoes.fellows : [];
+  let socialOpt = null;
+  if (bonds.length && r() < 0.65) {
+    const b = bonds[Math.floor(r() * bonds.length)];
+    socialOpt = {
+      what: `约穿越者${b.nick}商议合伙与消息互通`.slice(0, 22),
+      why: `你们已是${b.rel}，联手更容易在${s.city}成事`,
+    };
+  } else if (fellows.length) {
+    const f = fellows[Math.floor(r() * fellows.length)];
+    const actions = [
+      `去会会同城穿越者${f.nick}对个暗号`,
+      `找穿越者${f.nick}探探口风谈笔合作`,
+      `打听穿越者${f.nick}近期的买卖动向`,
+    ];
+    socialOpt = {
+      what: actions[Math.floor(r() * actions.length)].slice(0, 22),
+      why: String(f.desc || f.summary || '同在城里的穿越者，或敌或友').slice(0, 42),
+    };
+  }
+  if (!socialOpt) {
+    const lifeOpts = [
+      { what: `去${s.city}茶馆听风声结交熟人`, why: '打听城里消息，多认几位街面熟人' },
+      { what: `找老手艺人拜师学一门实在本事`, why: '攒点傍身手艺，往后路子更宽' },
+      { what: `去旧货摊和市集闲逛淘点好东西`, why: '换换脑子，顺手看看有没有漏可捡' },
+    ];
+    socialOpt = lifeOpts[Math.floor(r() * lifeOpts.length)];
+  }
+
   const third = alreadyWeird
     ? { what: wPick.way.slice(0, 24), why: `${wPick.name} · ${wPick.hook.slice(0, 28)}` }
     : (one(rich, '来钱快，风险也大') || one(other, '换个方向试试'));
-  const life = lifeOpts[Math.floor(r() * lifeOpts.length)];
   return [
     one(steady, '稳当营生'),
-    life,
+    socialOpt,
     third,
   ].filter(Boolean);
 }
@@ -863,7 +934,7 @@ const OPT_SYS = `你是《这一百年》的记事人。一位穿越者落在中
 
 三条要各有味道，别三条全是枯燥打工赚钱：
 1. 一条是稳当生计（接着做手头的活计、铺面，或城里稳妥的买卖）。
-2. 一条是人情、生活或见识（约见熟人或同年穿越者、拜师学艺、逛城里热闹去处，换个活法）。
+2. 一条是**同行穿越者互动**（若提示里有同年穿越者，优先点名一位穿越者，写去对暗号试探、合伙做一单、交换情报、切磋或抢先卡位；若没有再写本地人情见识）。
 3. 一条是搏一把的新路子（押本钱、倒紧俏货、走远路；仅当他已经踏入暗面且身上有相关本事时，才可给低魔奇闻支线）。
 
 每条 what 压在 10 到 22 个字，精炼好读、具体到人或地方，不出现游戏用语，不写当年不存在的现代物件。
@@ -876,8 +947,9 @@ async function runOptions(s, opts = {}) {
   const c = card(s.year);
   const cur = E.currencyOf(s.year, s.month);
   const last = s.months[s.months.length - 1];
-  const ec = opts.echoes || { traces: [] };
-  const ecLine = (ec.traces || []).slice(0, 2).map(t => t.summary).join('；');
+  const ec = opts.echoes || { traces: [], fellows: [] };
+  const fellowSay = (ec.fellows || []).slice(0, 3).map(f => `穿越者「${f.nick}」（${f.desc || f.summary}）`).join('；');
+  const ecLine = fellowSay || (ec.traces || []).slice(0, 2).map(t => t.summary).join('；');
   const user = `【${s.year} 年 ${s.month} 月 · ${s.city}】${c.era}
 物价：${(c.prices || []).slice(0, 6).map(p => `${p.item} ${p.price}`).join('，')}
 挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头一个月约 ${m.ceiling}）`).join('；')}

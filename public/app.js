@@ -462,6 +462,7 @@ async function openYear(y, opts = {}) {
   $('#months').innerHTML = '';
   $('#mo-metrics').hidden = true;
   $('#mo-warn').hidden = true;
+  if ($('#year-fellows')) $('#year-fellows').hidden = true;
   $('#start-box').hidden = true;
 
   let d;
@@ -482,7 +483,9 @@ async function openYear(y, opts = {}) {
 
   const pills = [`<span class="pill">${esc(d.city)}</span>`];
   if (d.switch) pills.push(`<span class="pill pill-seal">${d.switch.month} 月换币</span>`);
-  if (d.echoes && d.echoes.length) pills.push(`<span class="pill pill-indigo">同年留痕 ${d.echoes.length}</span>`);
+  const fellowList = Array.isArray(d.fellows) ? d.fellows : [];
+  if (fellowList.length) pills.push(`<span class="pill pill-indigo">同行穿越者 ${fellowList.length}</span>`);
+  else if (d.echoes && d.echoes.length) pills.push(`<span class="pill pill-indigo">同年留痕 ${d.echoes.length}</span>`);
 
   hero.innerHTML =
     `${art ? `<div class="year-hero-media"><img src="${art}" alt="${y} 年 ${esc(d.city)}"></div>` : ''}
@@ -496,6 +499,24 @@ async function openYear(y, opts = {}) {
        <button class="year-ref-link" id="btn-year-ref" type="button">查阅 ${y} 年物价与世道 ›</button>
      </div>`;
   $('#btn-year-ref').addEventListener('click', () => openSheet('ref', { year: y }));
+
+  const fBox = $('#year-fellows');
+  if (fBox) {
+    if (fellowList.length) {
+      fBox.hidden = false;
+      fBox.innerHTML =
+        `<div class="fellow-box-head"><span>这一年在${esc(d.city)}活跃的穿越者</span></div>` +
+        `<div class="fellow-box-list">` +
+        fellowList.slice(0, 3).map(f =>
+          `<div class="fellow-row"><strong>${esc(f.nick)}</strong>` +
+          `<span class="fellow-tag">${esc(f.stance || f.tag || '同行')}</span>` +
+          `<span>${esc(f.desc || f.summary || '')}</span></div>`
+        ).join('') +
+        `</div>`;
+    } else {
+      fBox.hidden = true;
+    }
+  }
 
   const mo = $('#months');
   mo.innerHTML = '';
@@ -823,10 +844,13 @@ function renderPlay(last) {
   /* 3 秒战报胶囊条 + 点击盈亏展开的逐笔账单 */
   const hasEntries = Array.isArray(entries) && entries.length > 0;
   const assetsAdded = last.assetsAdded || (recentLast && recentLast.assetsAdded) || [];
+  const bondInfo = last.bond || (recentLast && recentLast.bond) || null;
   const pills = [];
-  if (last.worldTrace && last.worldTrace.summary) {
+  if (bondInfo && bondInfo.with) {
+    pills.push(el('span', 'pill pill-indigo', `同行 · ${bondInfo.with}（${bondInfo.rel || '交集'}）`));
+  } else if (last.worldTrace && last.worldTrace.summary) {
     const label = last.worldTrace.kind === 'bond'
-      ? `结缘 · ${last.worldTrace.partner || '同行穿越者'}`
+      ? `同行 · ${last.worldTrace.partner || '穿越者'}`
       : '时空留痕';
     pills.push(el('span', 'pill pill-indigo', label));
   }
@@ -917,8 +941,11 @@ function renderPlay(last) {
       notices.push({ warn: true, html: `<b>本月换币</b>：${esc(sw.say)} 手里的 ${esc(sw.before)} 折成了 ${esc(sw.after)}。` });
     }
   }
-  if (last.worldTrace && last.worldTrace.summary) {
-    const label = last.worldTrace.kind === 'bond' ? '穿越者结缘' : '时空留痕';
+  if (bondInfo && bondInfo.with) {
+    const detail = `与穿越者「${esc(bondInfo.with)}」${esc(bondInfo.rel || '交集')}${bondInfo.note ? ' —— ' + esc(bondInfo.note) : ''}`;
+    notices.push({ warn: false, html: `<b>同行互动</b>：${detail}` });
+  } else if (last.worldTrace && last.worldTrace.summary) {
+    const label = last.worldTrace.kind === 'bond' ? '同行互动' : '时空留痕';
     notices.push({ warn: false, html: `<b>${label}</b>：${esc(last.worldTrace.summary)}` });
   }
   if (last.refused && last.refused.length) {
@@ -959,8 +986,58 @@ function renderPlay(last) {
     send.onclick = sendMonth;
   }
   updateDepthBar(countHan(ta.value));
+  renderFellowBar(s, done);
   renderPicks(done ? [] : (last.options || s.options || []));
   if (voice) voice.sync();
+}
+
+/* ── 同城穿越者快选交互条 ────────────────────────────────── */
+function renderFellowBar(s, done) {
+  const bar = $('#fellow-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  if (done || !s) { bar.hidden = true; return; }
+  const bonds = Array.isArray(s.travelerBonds) ? s.travelerBonds : [];
+  const fellows = Array.isArray(s.fellows) ? s.fellows : [];
+  const items = [];
+  const seen = new Set();
+  for (const b of bonds) {
+    if (!b || !b.nick || seen.has(b.nick)) continue;
+    seen.add(b.nick);
+    items.push({
+      nick: b.nick,
+      sub: b.rel || '结交',
+      bonded: true,
+      tip: b.note || `已与穿越者${b.nick}结为${b.rel}`,
+      draft: `去找穿越者${b.nick}商议本月合作与互通消息`,
+    });
+  }
+  for (const f of fellows) {
+    if (!f || !f.nick || seen.has(f.nick)) continue;
+    seen.add(f.nick);
+    items.push({
+      nick: f.nick,
+      sub: f.stance || f.tag || '同城',
+      bonded: false,
+      tip: f.desc || f.summary || '',
+      draft: `去寻访同城穿越者${f.nick}，对个暗号探探虚实`,
+    });
+    if (items.length >= 4) break;
+  }
+  if (!items.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.appendChild(el('span', 'fellow-kicker', '同城穿越者'));
+  for (const it of items) {
+    const btn = el('button', 'fellow-chip' + (it.bonded ? ' bonded' : ''));
+    btn.type = 'button';
+    if (it.tip) btn.title = it.tip;
+    btn.innerHTML = `${esc(it.nick)} <em>· ${esc(it.sub)}</em>`;
+    btn.addEventListener('click', () => {
+      writeIn(it.draft);
+      btn.classList.add('used');
+    });
+    bar.appendChild(btn);
+  }
 }
 
 /* ── 单行参考路子药丸 ────────────────────────────────────── */
@@ -1299,6 +1376,23 @@ async function openSheet(kind, opts = {}) {
     if (s.persona) {
       body.appendChild(sheetSection('人物底子', [sheetItem(s.persona, '', '')]));
     }
+    const tBonds = Array.isArray(s.travelerBonds) ? s.travelerBonds : [];
+    const fellows = Array.isArray(s.fellows) ? s.fellows : [];
+    const fellowRows = [];
+    const seenF = new Set();
+    for (const b of tBonds) {
+      if (!b || !b.nick || seenF.has(b.nick)) continue;
+      seenF.add(b.nick);
+      fellowRows.push(sheetItem(`穿越者 · ${b.nick}`, b.rel || '结交', b.note || '已有来往'));
+    }
+    for (const f of fellows) {
+      if (!f || !f.nick || seenF.has(f.nick)) continue;
+      seenF.add(f.nick);
+      fellowRows.push(sheetItem(`穿越者 · ${f.nick}`, f.stance || f.tag || '同城', f.desc || f.summary || ''));
+    }
+    if (fellowRows.length) {
+      body.appendChild(sheetSection('同年穿越者', fellowRows));
+    }
     const traits = m.traits || [];
     if (traits.length) {
       body.appendChild(sheetSection('本事与家业', traits.map(t => {
@@ -1569,7 +1663,8 @@ function renderComicLightbox() {
   const metaParts = [];
   if (item.worth) metaParts.push(`家底 ${item.worth}`);
   if (item.moved && item.moved.to) metaParts.push(`搬至${item.moved.to}`);
-  if (item.worldTrace && item.worldTrace.summary) metaParts.push(item.worldTrace.summary);
+  if (item.bond && item.bond.with) metaParts.push(`同行 · ${item.bond.with}（${item.bond.rel || '交集'}）`);
+  else if (item.worldTrace && item.worldTrace.summary) metaParts.push(item.worldTrace.summary);
   $('#lb-meta').textContent = metaParts.join(' · ');
 
   const extraBox = $('#lb-extra');
@@ -1721,6 +1816,11 @@ function renderComicStrip(host, cfg) {
     art.appendChild(el('span', 'comic-no num', `第 ${String(idx + 1).padStart(2, '0')} 帧 · ${ym}`));
     if (net) {
       art.appendChild(el('span', 'comic-net num' + (net.neg ? ' neg' : ''), net.short));
+    }
+    const bondPartner = (d.bond && d.bond.with) || (d.worldTrace && d.worldTrace.kind === 'bond' && d.worldTrace.partner) || '';
+    if (bondPartner) {
+      const bRel = (d.bond && d.bond.rel) || '';
+      art.appendChild(el('span', 'comic-bond', `同行 · ${bondPartner}${bRel ? ' · ' + bRel : ''}`));
     }
     panel.appendChild(art);
 
@@ -3166,6 +3266,7 @@ function lastOf(state) {
         refused: last.refused,
         entries: last.entries,
         moved: last.moved,
+        bond: last.bond || null,
         worldTrace: last.worldTrace,
         at: { n: last.n, year: last.year, month: last.month },
       }

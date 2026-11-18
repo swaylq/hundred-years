@@ -521,6 +521,30 @@ html.theme-switching .rank-card-foot {
 }
 .warn-strip b { color: var(--seal); }
 
+/* 选月页：同年活跃穿越者名录 */
+.fellow-box {
+  margin-bottom: 10px; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid color-mix(in oklch, var(--indigo) 28%, var(--line));
+  display: grid; gap: 7px;
+}
+.fellow-box-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 12px; font-weight: 600; color: var(--indigo);
+}
+.fellow-box-list { display: grid; gap: 6px; }
+.fellow-row {
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+  font-size: 12.5px; line-height: 1.45; color: var(--fg-muted);
+}
+.fellow-row strong {
+  font: 600 13px/1.3 var(--serif); color: var(--ink);
+}
+.fellow-tag {
+  padding: 1px 7px; border-radius: var(--r-pill);
+  background: var(--indigo-soft); color: var(--indigo);
+  font-size: 11px; font-weight: 500;
+}
+
 .start-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
   padding: 14px; display: grid; gap: 10px;
@@ -774,6 +798,40 @@ html.theme-switching .rank-card-foot {
   -webkit-touch-callout: none;
 }
 
+/* 游玩主屏：同城穿越者快选交互条 */
+.fellow-strip {
+  display: flex; align-items: center; gap: 6px; overflow-x: auto;
+  padding-bottom: 1px; scrollbar-width: none;
+}
+.fellow-strip::-webkit-scrollbar { display: none; }
+.fellow-kicker {
+  flex: 0 0 auto; font-size: 11.5px; font-weight: 600; color: var(--indigo);
+  padding-right: 2px;
+}
+.fellow-chip {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid color-mix(in oklch, var(--indigo) 30%, var(--line));
+  background: var(--indigo-soft); color: var(--indigo);
+  padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.fellow-chip:hover {
+  border-color: var(--indigo);
+  background: color-mix(in oklch, var(--indigo) 18%, var(--surface));
+}
+.fellow-chip.bonded {
+  border-color: color-mix(in oklch, var(--seal) 38%, transparent);
+  background: var(--seal-soft); color: var(--seal);
+}
+.fellow-chip.used {
+  border-color: color-mix(in oklch, var(--gain) 38%, transparent);
+  background: var(--gain-soft); color: var(--gain);
+}
+.fellow-chip em {
+  font-style: normal; opacity: .82; font-size: 11px;
+}
+
 .quick-picks {
   display: flex; align-items: center; gap: 6px; overflow-x: auto;
   padding-bottom: 2px; scrollbar-width: none;
@@ -1019,6 +1077,14 @@ html.theme-switching .rank-card-foot {
 .comic-net.neg {
   background: oklch(0.30 0.12 28 / 86%);
   color: oklch(0.98 0.01 28);
+}
+.comic-bond {
+  position: absolute; left: 7px; bottom: 7px; z-index: 2;
+  padding: 2px 7px; border-radius: var(--r-pill);
+  background: oklch(0.24 0.08 245 / 86%);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: oklch(0.97 0.01 245);
+  font-size: 10.5px; font-weight: 500;
 }
 .comic-paint-btn {
   position: absolute; right: 9px; bottom: 9px; z-index: 3;

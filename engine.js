@@ -946,7 +946,7 @@ function whoKey(who) {
 }
 
 /** 把模型这个月给的记忆增量并进存档。返回这次添了些什么，好让界面和日志看得见。 */
-function applyMemo(s, delta, at) {
+function applyMemo(s, delta, at, opts = {}) {
   if (!s.memo || !Array.isArray(s.memo.trail)) s.memo = newMemo();      // 老档没有这一块，补上
   const m = s.memo;
   if (!Array.isArray(m.traits)) m.traits = [];                          // 09-03 晚之前的档没有这一摊
@@ -1040,26 +1040,27 @@ function applyMemo(s, delta, at) {
     if (hit) { hit.lost = n; added.lost++; }
   }
 
-  /* 三点八、与其他穿越者结下的关系（成婚、结拜、合伙、宿敌等），一并记进人脉和身上状态 */
-  if (delta && delta.bond && typeof delta.bond === 'object') {
-    const partner = oneLine(delta.bond.with || delta.bond.partner || '', 14).replace(/^[「『"']|[」』"']$/g, '');
-    const rel = oneLine(delta.bond.rel || delta.bond.type || '结缘', 10);
-    const bNote = oneLine(delta.bond.note || '', 50);
-    if (partner && partner !== s.nick) {
-      const who = `穿越者${partner}`;
-      const key = whoKey(who);
-      let prec = m.people.find(x => (x.key || whoKey(x.who)) === key);
-      if (!prec) { prec = { who, key, notes: [], first: n, last: n }; m.people.push(prec); added.people++; }
-      prec.last = n;
-      const pText = `${rel}${bNote ? '：' + bNote : ''}`;
-      if (!prec.notes.some(x => x.note === pText)) { prec.notes.push({ n, note: pText }); added.notes++; }
+  /* 三点八、与其他穿越者结下的关系（成婚、结拜、合伙、对手、宿敌等），经校验只认真实穿越者，不把本地伙计当穿越者 */
+  const validBond = normalizeBond(delta && delta.bond, s, opts.echoes, opts.contextText || '');
+  if (validBond) {
+    const partner = validBond.with;
+    const rel = validBond.rel;
+    const bNote = validBond.note;
+    const who = `穿越者${partner}`;
+    const key = whoKey(who);
+    let prec = m.people.find(x => (x.key || whoKey(x.who)) === key);
+    if (!prec) { prec = { who, key, notes: [], first: n, last: n }; m.people.push(prec); added.people++; }
+    else if (!prec.who.startsWith('穿越者')) prec.who = who;
+    prec.last = n;
+    const pText = `${rel}${bNote ? '：' + bNote : ''}`;
+    if (!prec.notes.some(x => x.note === pText)) { prec.notes.push({ n, note: pText }); added.notes++; }
 
-      const tWhat = `与穿越者${partner}${rel}`;
-      let trec = m.traits.find(x => x.what.includes(`穿越者${partner}`));
-      if (!trec) { trec = { what: tWhat, notes: [], first: n, last: n, lost: null }; m.traits.push(trec); added.traits++; }
-      trec.what = tWhat; trec.last = n; trec.lost = null;
-      if (bNote && !trec.notes.some(x => x.note === bNote)) { trec.notes.push({ n, note: bNote }); added.traitNotes++; }
-    }
+    const tWhat = `与穿越者${partner}${rel}`;
+    let trec = m.traits.find(x => x.what.includes(`穿越者${partner}`));
+    if (!trec) { trec = { what: tWhat, notes: [], first: n, last: n, lost: null }; m.traits.push(trec); added.traits++; }
+    trec.what = tWhat; trec.last = n; trec.lost = null;
+    if (bNote && !trec.notes.some(x => x.note === bNote)) { trec.notes.push({ n, note: bNote }); added.traitNotes++; }
+    added.bond = validBond;
   }
 
   /* 四、装不下就折：**只折细节，名字留着**。折掉的是最久没再提起的那几个，
@@ -1389,19 +1390,157 @@ function planEffort(s, list) {
   };
 }
 
+const LOCAL_NPC_RE = /^(null|none|nil|无|没有|暂无|无名|老[王张李刘陈杨赵黄周吴徐孙马朱胡郭何高林郑谢罗梁宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤]|小[王张李刘陈杨赵黄周吴]|阿[强明华勇财福贵]|.*(师傅|掌柜|工头|买办|老板|大夫|先生|老道|道长|行脚僧|和尚|相师|巡捕|干事|主任|厂长|经理|古修者|散修|执事|船主|保长|牙人|掮客))$/i;
+
+function escReg(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function knownTravelersOf(s, echoes) {
+  const byKey = new Map();
+  const add = raw => {
+    const clean = oneLine(String(raw || '').replace(/^穿越者/, '').replace(/^[「『"']|[」』"']$/g, ''), 14);
+    if (!clean || clean === (s && s.nick)) return;
+    const k = whoKey(clean);
+    if (k && !byKey.has(k)) byKey.set(k, clean);
+  };
+  const ec = echoes || {};
+  for (const f of (ec.fellows || [])) if (f && f.nick) add(f.nick);
+  for (const t of (ec.traces || [])) {
+    if (t && t.nick) add(t.nick);
+    if (t && t.partner) add(t.partner);
+  }
+  for (const b of (ec.myBonds || [])) {
+    for (const m of String(b || '').matchAll(/穿越者「([^」]+)」/g)) add(m[1]);
+  }
+  const memo = (s && s.memo) || {};
+  for (const p of (memo.people || [])) {
+    if (p && /^穿越者/.test(String(p.who || ''))) add(p.who);
+  }
+  for (const t of (memo.traits || [])) {
+    const m = String((t && t.what) || '').match(/^与穿越者(.{1,12}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|同行)$/);
+    if (m) add(m[1]);
+  }
+  return byKey;
+}
+
+function normalizeBond(rawBond, s, echoes, contextText = '') {
+  if (!rawBond || typeof rawBond !== 'object') return null;
+  let partner = oneLine(rawBond.with || rawBond.partner || '', 16)
+    .replace(/^[「『"']|[」』"']$/g, '')
+    .replace(/^穿越者/, '')
+    .trim();
+  if (!partner || /^(null|none|nil|无|没有|暂无)$/i.test(partner)) return null;
+  if (s && partner === s.nick) return null;
+
+  const known = knownTravelersOf(s, echoes);
+  const key = whoKey(partner);
+  if (known.has(key)) {
+    partner = known.get(key);
+  } else {
+    if (LOCAL_NPC_RE.test(partner)) return null;
+    const ctx = String(contextText || '');
+    const explicitRe = new RegExp(`穿越者[「『"\\s]*${escReg(partner)}|${escReg(partner)}[^。！？\\n]{0,14}(同为穿越|也是穿来|穿越者|现代老乡)`);
+    if (!explicitRe.test(ctx)) return null;
+  }
+
+  const rel = oneLine(rawBond.rel || rawBond.type || '结交', 8) || '结交';
+  const note = oneLine(rawBond.note || '', 42);
+  return { with: partner, rel, note };
+}
+
+function activeTravelerBondsOf(s) {
+  const memo = (s && s.memo) || {};
+  const out = [];
+  const seen = new Set();
+  for (const t of (memo.traits || [])) {
+    if (!t || t.lost) continue;
+    const m = String(t.what || '').match(/^与穿越者(.{1,14}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$/);
+    if (!m) continue;
+    const nick = m[1].trim();
+    if (!nick || seen.has(nick)) continue;
+    seen.add(nick);
+    const notes = t.notes || [];
+    const lastNote = notes.length ? notes[notes.length - 1].note : '';
+    out.push({ nick, rel: m[2], note: lastNote, last: t.last || 0 });
+  }
+  return out;
+}
+
+/** 判定本月穿越者互动节奏：
+ *  - direct：玩家点名某位穿越者或主动寻找同道对暗号 → 正面重点展开互动并更新 bond
+ *  - bond_echo：玩家已有结下关系的穿越者，隔两三个月自然来往、助力、分账或摩擦
+ *  - cross：玩家未点名时，第 2 个月或每隔约 3 个月让同城穿越者在相关行当里主动现身交锋/递话 */
+function travelerBeat(s, list, echoes) {
+  const txt = String(list || '');
+  const fellows = (echoes && Array.isArray(echoes.fellows)) ? echoes.fellows : [];
+  const bonds = activeTravelerBondsOf(s);
+  const allCandidates = [
+    ...bonds.map(b => ({ nick: b.nick, rel: b.rel, note: b.note, desc: b.note })),
+    ...fellows.filter(f => f && f.nick && !bonds.some(b => whoKey(b.nick) === whoKey(f.nick))),
+  ];
+
+  for (const c of allCandidates) {
+    if (c.nick && txt.includes(c.nick)) {
+      const f = fellows.find(x => whoKey(x.nick) === whoKey(c.nick)) || null;
+      const b = bonds.find(x => whoKey(x.nick) === whoKey(c.nick)) || null;
+      return { active: true, mode: 'direct', target: c.nick, rel: b ? b.rel : null, fellow: f, bond: b };
+    }
+  }
+  if (/(穿越者|同道异客|现代老乡|老乡|对暗号|奇变偶不变|宫廷玉液酒|前世同乡)/.test(txt) && allCandidates.length) {
+    const pick = allCandidates[0];
+    return { active: true, mode: 'direct', target: pick.nick, rel: pick.rel || null, fellow: fellows[0] || null, bond: bonds[0] || null };
+  }
+
+  /* 若玩家本月正专注跟某个本地熟人谈婚论嫁或点名处理私事，不强塞穿越者抢戏 */
+  const localPeople = (((s && s.memo && s.memo.people) || []))
+    .filter(p => p && p.who && !/^穿越者/.test(p.who))
+    .map(p => whoKey(p.who))
+    .filter(k => k.length >= 2);
+  if (BOND_RE.test(txt) || localPeople.some(k => txt.includes(k))) {
+    return { active: false, mode: 'none' };
+  }
+
+  const past = (s && Array.isArray(s.months)) ? s.months : [];
+  let monthsSince = 99;
+  for (let i = past.length - 1; i >= 0; i--) {
+    const pm = past[i];
+    if (pm && (pm.bond || (pm.worldTrace && pm.worldTrace.kind === 'bond'))) {
+      monthsSince = past.length - i;
+      break;
+    }
+  }
+
+  const n = (s && s.n) || 1;
+  const roll = hash32((s && s.seed ? s.seed : 1) * 19937 + n * 104729) / 2 ** 32;
+
+  if (bonds.length > 0 && monthsSince >= 2 && roll < 0.48) {
+    const b0 = bonds[n % bonds.length];
+    return { active: true, mode: 'bond_echo', target: b0.nick, rel: b0.rel, bond: b0 };
+  }
+
+  if (fellows.length > 0 && ((n === 2 && monthsSince >= 99) || (monthsSince >= 3 && roll < 0.42))) {
+    const f0 = fellows[hash32(((s && s.seed) || 1) * 8191 + n * 131071) % fellows.length];
+    return { active: true, mode: 'cross', target: f0.nick, fellow: f0 };
+  }
+
+  return { active: false, mode: 'none' };
+}
+
 /** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
- *  严格克制：普通打工买卖月份返回 null，只有真正的大事或穿越者结缘才记入该年。 */
-function extractWorldTrace(s, played, delta, res1) {
+ *  严格克制：普通打工买卖月份返回 null，只有真正的大事或经校验的穿越者结缘才记入该年。 */
+function extractWorldTrace(s, played, delta, res1, echoes) {
   const year = played ? played.year : s.year;
   const month = played ? played.month : s.month;
   const city = s.city || '';
   const nick = oneLine(s.nick || '无名', 14);
-  const b = delta && delta.bond && typeof delta.bond === 'object' ? delta.bond : null;
-  const partner = b ? oneLine(b.with || b.partner || '', 14).replace(/^[「『"']|[」』"']$/g, '') : '';
-  const rel = b ? oneLine(b.rel || b.type || '结缘', 10) : '';
-  const bNote = b ? oneLine(b.note || '', 28) : '';
+  const combined = `${played ? played.list : ''} ${delta ? delta.story : ''}`;
+  const validBond = normalizeBond(delta && delta.bond, s, echoes, combined);
 
-  if (partner && partner !== nick) {
+  if (validBond) {
+    const partner = validBond.with;
+    const rel = validBond.rel;
+    const bNote = oneLine(validBond.note || '', 26);
     const summary = oneLine(`穿越者「${nick}」与穿越者「${partner}」在${city}${rel}${bNote ? '：' + bNote : ''}`, 42);
     return {
       year, month, city, nick,
@@ -1413,7 +1552,6 @@ function extractWorldTrace(s, played, delta, res1) {
   const rawEv = oneLine(delta && delta.worldEvent, 42);
   const inc = incomeOf(year, month);
   const bigMoney = res1 && Math.abs(res1.gained || 0) >= inc * 1.2;
-  const combined = `${played ? played.list : ''} ${delta ? delta.story : ''}`;
   const isMajor = rawEv.length >= 6 || bigMoney || MAJOR_DEED_RE.test(combined);
   if (!isMajor) return null;
 
@@ -1575,6 +1713,7 @@ function deriveHeadline(headline, summary, memoLine, story) {
 
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
+  knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,

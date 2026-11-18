@@ -54,10 +54,12 @@ db.exec(`
     ['extra_result', 'TEXT'],
     ['extra_review', 'TEXT'],
     ['board_pick', 'INTEGER'],       // 总榜自选：1 选入总榜，0 不上总榜，NULL 默认按赚钱最多前两名
+    ['on_board', 'INTEGER NOT NULL DEFAULT 1'],
   ]) if (!cols.has(c)) db.exec(`ALTER TABLE runs ADD COLUMN ${c} ${t}`);
 }
 const MODE = 'months24';
 const MAX_BOARD_PICKS = 2;
+const ON_BOARD = 'COALESCE(on_board, 1) = 1';
 db.exec(`
   CREATE INDEX IF NOT EXISTS runs_world ON runs(status, world_usd DESC);
   CREATE INDEX IF NOT EXISTS runs_year  ON runs(status, year, year_earned DESC);
@@ -100,14 +102,15 @@ const q = {
   fin: db.prepare("UPDATE runs SET state = ?, status = 'done', score = ?, year_earned = ?, world_usd = ?, result = ?, updated = ? WHERE id = ? AND status <> 'done'"),
   mine: db.prepare(`SELECT id,token,nick,year,month,status,score,year_earned,world_usd,result,created,updated,mode,
                            extra_status,extra_months,extra_score,extra_year_earned,extra_world_usd,extra_result,
-                           review,extra_review,board_pick
+                           review,extra_review,board_pick,COALESCE(on_board,1) AS on_board
                     FROM runs WHERE token = ? ORDER BY created DESC LIMIT 100`),
   /* 一局的详情。带 state 是为了取那二十四个月的正文，**token 一列不许选出来**——
    * 选了就等于谁看得到详情谁就能往这局里写。 */
   detail: db.prepare(`SELECT id,nick,year,month,status,score,year_earned,world_usd,result,review,
                              extra_status,extra_months,extra_score,extra_year_earned,extra_world_usd,
-                             extra_result,extra_review,state,created,updated,mode,board_pick
+                             extra_result,extra_review,state,created,updated,mode,board_pick,COALESCE(on_board,1) AS on_board
                       FROM runs WHERE id = ?`),
+  setOnBoard: db.prepare('UPDATE runs SET on_board = ? WHERE id = ?'),
   review: db.prepare('UPDATE runs SET review = ? WHERE id = ?'),
   reviewX: db.prepare('UPDATE runs SET extra_review = ? WHERE id = ?'),
   startX: db.prepare("UPDATE runs SET state = ?, extra_status = 'playing', extra_months = ?, updated = ? WHERE id = ?"),
@@ -115,23 +118,23 @@ const q = {
                     extra_world_usd = ?, extra_result = ?, updated = ? WHERE id = ?`),
   /* 总榜候选：按「折成今天的美元」排，供每人限选两条过滤 */
   boardWorldAll: db.prepare(`SELECT id,token,nick,year,month,score,year_earned,world_usd,result,review,updated,board_pick FROM runs
-                     WHERE status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}'
+                     WHERE status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}' AND ${ON_BOARD}
                      ORDER BY world_usd DESC, updated DESC, id ASC`),
   /* 年榜：只跟同一年的人比，按当年那种钱净赚多少排（每年内不限制条数） */
   boardYear: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,review,updated FROM runs
-                     WHERE status = 'done' AND year = ? AND year_earned IS NOT NULL AND mode = '${MODE}'
+                     WHERE status = 'done' AND year = ? AND year_earned IS NOT NULL AND mode = '${MODE}' AND ${ON_BOARD}
                      ORDER BY year_earned DESC LIMIT ?`),
-  yearsWithRuns: db.prepare(`SELECT year, COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' GROUP BY year ORDER BY year`),
-  rankYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND year = ? AND year_earned > ?`),
-  countYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND year = ?`),
+  yearsWithRuns: db.prepare(`SELECT year, COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND ${ON_BOARD} GROUP BY year ORDER BY year`),
+  rankYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND ${ON_BOARD} AND year = ? AND year_earned > ?`),
+  countYear: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE}' AND ${ON_BOARD} AND year = ?`),
   /* 后传榜：走完了后传的局，按整局（前两年 + 后传）折成今天的美元排。
    * 跟总榜是两张榜，互不相干——接着走下去的人不该跟只走两年的人比。 */
   boardExtra: db.prepare(`SELECT id,nick,year,month,extra_score,extra_year_earned,extra_world_usd,
                                  extra_months,extra_result,extra_review,updated FROM runs
-                          WHERE extra_status = 'done' AND extra_world_usd IS NOT NULL AND mode = '${MODE}'
+                          WHERE extra_status = 'done' AND extra_world_usd IS NOT NULL AND mode = '${MODE}' AND ${ON_BOARD}
                           ORDER BY extra_world_usd DESC LIMIT ?`),
-  countExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}'`),
-  rankExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}' AND extra_world_usd > ?`),
+  countExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}' AND ${ON_BOARD}`),
+  rankExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}' AND ${ON_BOARD} AND extra_world_usd > ?`),
   aliasesOf: db.prepare(`SELECT target_token FROM token_aliases WHERE token = ?`),
   addAlias: db.prepare(`INSERT OR IGNORE INTO token_aliases (token, target_token) VALUES (?, ?)`),
   updPick: db.prepare(`UPDATE runs SET board_pick = ? WHERE id = ?`),
@@ -253,7 +256,7 @@ function userDoneWorldRuns(toks) {
   return db.prepare(`
     SELECT id, token, world_usd, updated, board_pick
     FROM runs
-    WHERE token IN (${ph}) AND status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}'
+    WHERE token IN (${ph}) AND status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE}' AND ${ON_BOARD}
     ORDER BY world_usd DESC, updated DESC, id ASC
   `).all(...toks);
 }
@@ -352,11 +355,11 @@ function myRuns(tokenOrList) {
     const ph = toks.map(() => '?').join(',');
     rows = db.prepare(`SELECT id,token,nick,year,month,status,score,year_earned,world_usd,result,created,updated,mode,
                               extra_status,extra_months,extra_score,extra_year_earned,extra_world_usd,extra_result,
-                              review,extra_review,board_pick
+                              review,extra_review,board_pick,COALESCE(on_board,1) AS on_board
                        FROM runs WHERE token IN (${ph}) ORDER BY created DESC LIMIT 100`).all(...toks);
   }
   const doneList = rows
-    .filter(r => r.status === 'done' && r.world_usd != null && r.mode === MODE)
+    .filter(r => r.status === 'done' && r.world_usd != null && r.mode === MODE && Number(r.on_board ?? 1) === 1)
     .slice()
     .sort((a, b) => (b.world_usd - a.world_usd) || ((b.updated || 0) - (a.updated || 0)) || String(a.id).localeCompare(String(b.id)));
   const pickInfo = pickUserWorldRuns(doneList);
@@ -364,7 +367,7 @@ function myRuns(tokenOrList) {
   const rankMap = new Map(doneList.map((r, i) => [r.id, i + 1]));
   return rows.map(r => {
     const { token: _t, ...rest } = r;
-    const canPickBoard = r.status === 'done' && r.world_usd != null && r.mode === MODE;
+    const canPickBoard = r.status === 'done' && r.world_usd != null && r.mode === MODE && Number(r.on_board ?? 1) === 1;
     return {
       ...rest,
       canPickBoard,
@@ -455,22 +458,38 @@ const rankWorld = usd => worldBoardRows().filter(r => r.world_usd > usd).length 
 const rankInYear = (year, earned) => q.rankYear.get(year, earned).n + 1;
 const doneInYear = year => q.countYear.get(year).n;
 
+const setOnBoard = (rid, flag) => q.setOnBoard.run(flag ? 1 : 0, String(rid || ''));
+
 /* ── 穿越者时空留痕与跨局因果 ─────────────────────────
  * 每个穿越者在某年某月做出的重大事迹、超凡异闻或与其他穿越者结下的关系（成婚、结拜、合股、宿敌），
  * 会留在这一年的时空里，影响后来进入同一年的穿越者。
- * 严格控制上下文长度：只记真正重要的大事，每条不超过 42 字，每次最多取 4 条注入上下文。 */
-const SKIP_NICK = /^(无名|截图|上线试跑|测试|test|bot|1|2|x)$/i;
+ * 严格控制上下文长度：只记真正重要的大事，每条不超过 44 字，同局同年同一对象关系就地更新不刷屏。 */
+const SKIP_NICK = /^(无名|截图|上线试跑|探一下|测试|机器人|test|bot|1|2|x)$/i;
 const qTrace = {
   ins: db.prepare(`INSERT INTO year_traces (run_id,nick,year,month,city,kind,partner,bond_type,summary,importance,created)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?)`),
+  findBond: db.prepare(`SELECT id FROM year_traces WHERE run_id = ? AND year = ? AND kind = 'bond' AND partner = ? LIMIT 1`),
+  updBond: db.prepare(`UPDATE year_traces SET month = ?, city = ?, bond_type = ?, summary = ?, importance = ?, created = ? WHERE id = ?`),
   countRunYear: db.prepare(`SELECT COUNT(*) n FROM year_traces WHERE run_id = ? AND year = ? AND kind <> 'bond'`),
   dupCheck: db.prepare(`SELECT 1 FROM year_traces WHERE run_id = ? AND year = ? AND summary = ? LIMIT 1`),
-  byYear: db.prepare(`SELECT id,run_id,nick,year,month,city,kind,partner,bond_type,summary,importance,created
-                      FROM year_traces WHERE year = ? AND run_id <> ?
-                      ORDER BY importance DESC, created DESC LIMIT 12`),
-  bondsForNick: db.prepare(`SELECT year,month,city,nick,partner,bond_type,summary
-                            FROM year_traces WHERE kind = 'bond' AND (nick = ? OR partner = ?)
-                            ORDER BY created DESC LIMIT 3`),
+  byYear: db.prepare(`SELECT yt.id,yt.run_id,yt.nick,yt.year,yt.month,yt.city,yt.kind,yt.partner,yt.bond_type,yt.summary,yt.importance,yt.created
+                      FROM year_traces yt
+                      LEFT JOIN runs r ON r.id = yt.run_id
+                      WHERE yt.year = ? AND yt.run_id <> ?
+                        AND (r.id IS NULL OR COALESCE(r.on_board, 1) = 1)
+                      ORDER BY yt.importance DESC, yt.created DESC LIMIT 20`),
+  bondsForNick: db.prepare(`SELECT yt.year,yt.month,yt.city,yt.nick,yt.partner,yt.bond_type,yt.summary
+                            FROM year_traces yt
+                            LEFT JOIN runs r ON r.id = yt.run_id
+                            WHERE yt.kind = 'bond' AND (yt.nick = ? OR yt.partner = ?)
+                              AND (r.id IS NULL OR COALESCE(r.on_board, 1) = 1)
+                            ORDER BY yt.created DESC LIMIT 6`),
+  playersInYear: db.prepare(`SELECT id,nick,year,month,state,score,status
+                             FROM runs
+                             WHERE mode = '${MODE}' AND COALESCE(on_board, 1) = 1
+                               AND year BETWEEN ? AND ?
+                               AND id <> ?
+                             ORDER BY CASE WHEN status = 'done' THEN 0 ELSE 1 END, updated DESC LIMIT 12`),
   totalCount: db.prepare(`SELECT COUNT(*) n FROM year_traces`),
 };
 
@@ -478,37 +497,49 @@ function addTrace(runId, tr) {
   if (!tr || !tr.summary || !tr.year) return false;
   const nick = String(tr.nick || '').trim();
   if (SKIP_NICK.test(nick)) return false;
-  if (qTrace.dupCheck.get(String(runId), Number(tr.year), String(tr.summary))) return false;
-  if (tr.kind !== 'bond') {
-    const cnt = qTrace.countRunYear.get(String(runId), Number(tr.year)).n;
+  const rid = String(runId);
+  const yr = Number(tr.year);
+  const mo = Number(tr.month || 1);
+  const city = String(tr.city || '');
+  const summary = String(tr.summary).slice(0, 44);
+  const imp = Number(tr.importance || 2);
+
+  if (tr.kind === 'bond' && tr.partner) {
+    const partner = String(tr.partner).trim();
+    if (!partner || partner === nick || SKIP_NICK.test(partner)) return false;
+    const hit = qTrace.findBond.get(rid, yr, partner);
+    if (hit && hit.id) {
+      qTrace.updBond.run(mo, city, tr.bondType ? String(tr.bondType) : null, summary, imp, now(), hit.id);
+      return true;
+    }
+  } else {
+    if (qTrace.dupCheck.get(rid, yr, summary)) return false;
+    const cnt = qTrace.countRunYear.get(rid, yr).n;
     if (cnt >= 3) return false; // 同一局在同一年最多留 3 条事迹，防刷屏撑爆上下文
   }
   qTrace.ins.run(
-    String(runId), nick || '异客', Number(tr.year), Number(tr.month || 1),
-    String(tr.city || ''), String(tr.kind || 'deed'),
+    rid, nick || '异客', yr, mo, city, String(tr.kind || 'deed'),
     tr.partner ? String(tr.partner) : null,
     tr.bondType ? String(tr.bondType) : null,
-    String(tr.summary).slice(0, 44),
-    Number(tr.importance || 2),
-    now()
+    summary, imp, now()
   );
   return true;
 }
 
 /* 那些还没多少真人踩过的年份，按年代哈希给两位在当年活动的先遣穿越者，
- * 这样玩家随便挑哪一年进去，都有同道穿越者可以偶遇、合谋、比武乃至成婚。
- * 一旦真人穿越者在该年留下了足够多的痕迹，就优先展示真人的。 */
+ * 这样玩家随便挑哪一年进去，都有鲜活的同道穿越者可以偶遇、对暗号、抢货、合谋、比武乃至成婚。
+ * 一旦真人穿越者在该年留下了痕迹，就优先展示真人的名号与事迹。 */
 const FELLOW_SURNAMES = ['沈', '林', '顾', '苏', '陆', '谢', '裴', '叶', '江', '白', '秦', '温'];
 const FELLOW_GIVENS = ['青', '晚', '知微', '无咎', '听澜', '玄度', '见山', '栖梧', '渡川', '星河', '长庚', '霜降'];
 const FELLOW_ROLES = [
-  { tag: '玄学', desc: '在城角支摊批八字看风水，暗里收罗带灵气的古物，待人随和' },
-  { tag: '修仙', desc: '自称云游散修，在旧书肆和药铺寻觅丹方与吐纳残篇，性子清冷' },
-  { tag: '武侠', desc: '身怀内家拳脚，在码头与镖行之间接护送险活，重义气' },
-  { tag: '鬼怪', desc: '常在子夜半步鬼市提灯出没，专做阴阳两界奇货与凶宅平事的买卖' },
-  { tag: '魔法', desc: '在钟表行后院熬制西洋炼金魔药、刻印符文器物，见多识广' },
-  { tag: '克苏鲁', desc: '暗中调查海港深海黑石雕与异域密教手札，手里有不少稀罕情报' },
-  { tag: '神魔', desc: '重修城郊一座荒废古祠，借落魄神明香火替人消灾祈福' },
-  { tag: '行商', desc: '靠前世眼光倒腾紧俏百货与房产，手头宽裕，正寻同道合伙或结缘' },
+  { tag: '玄学', stance: '同道引路', desc: '在城角支摊批八字看风水，暗里收罗带灵气的古物，爱拿半句现代俗语试探同乡' },
+  { tag: '修仙', stance: '奇门互市', desc: '自称云游散修，在旧书肆和药铺寻觅丹方与吐纳残篇，手头有秘传方子但缺世俗银钱' },
+  { tag: '武侠', stance: '义气结交', desc: '身怀内家拳脚，在码头与镖行之间接护送险活，肯替谈得来的同道撑腰压阵' },
+  { tag: '鬼怪', stance: '暗市合股', desc: '常在子夜半步鬼市提灯出没，专做阴阳两界奇货与凶宅平事的买卖，消息最灵通' },
+  { tag: '魔法', stance: '巧匠合作', desc: '在钟表行后院熬制西洋炼金魔药、刻印符文器物，常找懂现代门路的人合伙改良工艺' },
+  { tag: '克苏鲁', stance: '秘闻交换', desc: '暗中调查海港深海黑石雕与异域密教手札，手里攥着不少外洋走私与黑市紧俏情报' },
+  { tag: '神魔', stance: '香火共济', desc: '重修城郊荒废古祠，借落魄神明香火替人消灾祈福，在三教九流里人面颇广' },
+  { tag: '行商', stance: '商路竞合', desc: '靠前世眼光提前卡位紧俏百货与房产，既是抢筹劲敌，谈拢了也能联手做大局' },
 ];
 
 function fallbackFellows(year, city) {
@@ -521,16 +552,24 @@ function fallbackFellows(year, city) {
   const r2 = FELLOW_ROLES[(h1 + 3 + (h2 % 4)) % FELLOW_ROLES.length];
   const c = city || '城里';
   return [
-    { nick: name1, year, month: (h1 % 6) + 1, city: c, kind: 'traveler', summary: `穿越者「${name1}」落脚${c}：${r1.desc}` },
-    { nick: name2, year, month: (h2 % 6) + 4, city: c, kind: 'traveler', summary: `穿越者「${name2}」也在${c}：${r2.desc}` },
+    {
+      nick: name1, year, month: (h1 % 6) + 1, city: c, kind: 'traveler', origin: 'fellow',
+      tag: r1.tag, stance: r1.stance, desc: r1.desc,
+      summary: `穿越者「${name1}」落脚${c}：${r1.desc}`,
+    },
+    {
+      nick: name2, year, month: (h2 % 6) + 4, city: c, kind: 'traveler', origin: 'fellow',
+      tag: r2.tag, stance: r2.stance, desc: r2.desc,
+      summary: `穿越者「${name2}」也在${c}：${r2.desc}`,
+    },
   ];
 }
 
-/* 启动时若 year_traces 为空，从已有真实对局里提取头几条重要事迹入库 */
+/* 启动时若 year_traces 为空，从已有合乎当前规则的对局里提取头几条重要事迹入库 */
 {
   try {
     if (qTrace.totalCount.get().n === 0) {
-      const existing = db.prepare(`SELECT id,nick,year,month,state,score,status FROM runs WHERE mode = 'months24' ORDER BY updated DESC LIMIT 30`).all();
+      const existing = db.prepare(`SELECT id,nick,year,month,state,score,status FROM runs WHERE mode = 'months24' AND COALESCE(on_board, 1) = 1 ORDER BY updated DESC LIMIT 30`).all();
       for (const r of existing) {
         if (SKIP_NICK.test(r.nick || '')) continue;
         let st; try { st = JSON.parse(r.state); } catch (e) { continue; }
@@ -551,18 +590,30 @@ function fallbackFellows(year, city) {
   } catch (e) { /* 忽略初始化回填异常 */ }
 }
 
-/** 读取某一年（及当前穿越者名下）的跨局时空留痕。
- *  严格限制条数与字数：最多返回 4 条当年大事/同行穿越者 + 2 条与本人相关的因果羁绊。 */
+/** 读取某一年（及当前穿越者名下）的跨局时空留痕与同年活跃穿越者。
+ *  严格限制条数与字数：最多 4 条多元化的当年大事 + 3 位同年穿越者名录 + 2 条本人跨局因果。 */
 function yearEchoes(year, month = 12, opts = {}) {
+  const yr = Number(year);
   const ex = String(opts.excludeRunId || '');
   const nick = String(opts.nick || '').trim();
   const city = String(opts.city || '');
-  const rows = qTrace.byYear.all(Number(year), ex);
-  const seen = new Set();
+  const rows = qTrace.byYear.all(yr, ex);
+
+  const seenSummary = new Set();
+  const runCounts = new Map();
+  const bondPairSeen = new Set();
   const picked = [];
   for (const r of rows) {
-    if (seen.has(r.summary)) continue;
-    seen.add(r.summary);
+    if (!r || seenSummary.has(r.summary)) continue;
+    const rCount = runCounts.get(r.run_id) || 0;
+    if (rCount >= 2) continue; // 同一局在同年最多展示 2 条，留位置给其他穿越者
+    if (r.kind === 'bond' && r.partner) {
+      const pk = `${r.nick}::${r.partner}`;
+      if (bondPairSeen.has(pk)) continue;
+      bondPairSeen.add(pk);
+    }
+    seenSummary.add(r.summary);
+    runCounts.set(r.run_id, rCount + 1);
     picked.push({
       nick: r.nick, year: r.year, month: r.month, city: r.city,
       kind: r.kind, partner: r.partner, bondType: r.bond_type,
@@ -570,23 +621,74 @@ function yearEchoes(year, month = 12, opts = {}) {
     });
     if (picked.length >= 4) break;
   }
+
+  /* 组装同年活跃穿越者名录（优先展示真人穿越者，不足 3 位时由先遣穿越者补齐） */
+  const fellows = [];
+  const seenNick = new Set(nick ? [nick] : []);
+  try {
+    const pRows = qTrace.playersInYear.all(yr - 1, yr, ex);
+    for (const pr of pRows) {
+      const pNick = String(pr.nick || '').trim();
+      if (!pNick || SKIP_NICK.test(pNick) || seenNick.has(pNick)) continue;
+      let st; try { st = JSON.parse(pr.state); } catch (e) { continue; }
+      if (!st || !Array.isArray(st.months) || st.months.length < 2) continue;
+      const touchedYear = Number(pr.year) === yr || st.months.some(m => Number(m.year) === yr);
+      if (!touchedYear) continue;
+      const traits = ((st.memo && st.memo.traits) || [])
+        .filter(t => !t.lost && !/^与穿越者/.test(t.what))
+        .map(t => t.what)
+        .slice(0, 2);
+      const pCity = st.city || city || '城里';
+      const desc = traits.length
+        ? `在${pCity}经营「${traits.join('、')}」，风头正盛`
+        : (st.persona ? `落脚${pCity}（${String(st.persona).slice(0, 18)}）` : `正在${pCity}闯荡谋局`);
+      seenNick.add(pNick);
+      fellows.push({
+        nick: pNick, year: yr, city: pCity, origin: 'player',
+        tag: '历届穿越者', stance: '真人留痕', desc,
+        summary: `穿越者「${pNick}」在${pCity}：${desc}`,
+      });
+      if (fellows.length >= 2) break;
+    }
+  } catch (e) {}
+
+  for (const fb of fallbackFellows(yr, city)) {
+    if (seenNick.has(fb.nick)) continue;
+    seenNick.add(fb.nick);
+    fellows.push(fb);
+    if (fellows.length >= 3) break;
+  }
+
   if (picked.length < 2) {
-    for (const fb of fallbackFellows(Number(year), city)) {
-      if (fb.nick !== nick && !picked.some(p => p.nick === fb.nick)) {
-        picked.push(fb);
+    for (const f of fellows) {
+      if (!picked.some(p => p.nick === f.nick)) {
+        picked.push({
+          nick: f.nick, year: yr, month: f.month || 1, city: f.city || city,
+          kind: 'traveler', partner: null, bondType: null,
+          summary: f.summary,
+        });
         if (picked.length >= 3) break;
       }
     }
   }
-  const myBonds = (nick && !SKIP_NICK.test(nick))
-    ? qTrace.bondsForNick.all(nick, nick).map(b => b.summary).slice(0, 2)
-    : [];
-  return { traces: picked, myBonds };
+
+  const myBonds = [];
+  if (nick && !SKIP_NICK.test(nick)) {
+    const seenB = new Set();
+    for (const b of qTrace.bondsForNick.all(nick, nick)) {
+      const k = `${b.nick}::${b.partner}::${b.year}`;
+      if (seenB.has(k)) continue;
+      seenB.add(k);
+      myBonds.push(b.summary);
+      if (myBonds.length >= 2) break;
+    }
+  }
+  return { traces: picked, fellows, myBonds };
 }
 
 module.exports = {
-  db, createRun, loadRun, saveRun, finishRun, board, myRuns, linkTokens, doneCount,
+  db, createRun, loadRun, saveRun, finishRun, setOnBoard, board, myRuns, linkTokens, doneCount,
   rankWorld, rankInYear, doneInYear, yearsWithRuns, FILE,
   startExtra, finishExtra, saveReview, getRow, boardExtra, extraCount, rankExtra,
-  addTrace, yearEchoes, deleteRun, setBoardPick, MAX_BOARD_PICKS,
+  addTrace, yearEchoes, fallbackFellows, SKIP_NICK, deleteRun, setBoardPick, MAX_BOARD_PICKS,
 };

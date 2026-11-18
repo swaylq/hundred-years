@@ -118,12 +118,13 @@ function ensureFinaleImage(runId, s, r, rev, extra = false) {
   return job;
 }
 
-/* ── 限流：每调一次模型都是真金白银 ─────────────────── */
+/* ── 限流：游戏推演与语音转写分开记，免得开麦快玩把当月演算挤回本地模板 ── */
 const WINDOW = Number(process.env.HY_RATE_WINDOW || 10 * 60 * 1000);
-const PER_IP = Number(process.env.HY_RATE_IP || 60);
-const TOTAL = Number(process.env.HY_RATE_ALL || 600);
+const PER_IP = Number(process.env.HY_RATE_IP || 120);
+const TOTAL = Number(process.env.HY_RATE_ALL || 800);
 const hits = new Map();
 let allHits = [];
+const voiceHits = new Map();
 
 function rateOk(ip) {
   const t = Date.now(), cut = t - WINDOW;
@@ -133,6 +134,15 @@ function rateOk(ip) {
   if (allHits.length >= TOTAL) return { ok: false, why: 'all' };
   mine.push(t); hits.set(ip, mine); allHits.push(t);
   if (hits.size > 5000) for (const [k, v] of hits) if (!v.some(x => x > cut)) hits.delete(k);
+  return { ok: true };
+}
+
+function voiceRateOk(ip) {
+  const t = Date.now(), cut = t - WINDOW;
+  const mine = (voiceHits.get(ip) || []).filter(x => x > cut);
+  if (mine.length >= 180) return { ok: false, why: 'ip' };
+  mine.push(t); voiceHits.set(ip, mine);
+  if (voiceHits.size > 5000) for (const [k, v] of voiceHits) if (!v.some(x => x > cut)) voiceHits.delete(k);
   return { ok: true };
 }
 
@@ -224,6 +234,8 @@ function serveStatic(req, res, pathname) {
 function view(s, runId) {
   const cur = E.currencyOf(s.year, s.month);
   const rid = runId || s.id || '';
+  const ec = DB.yearEchoes(s.year, s.month, { excludeRunId: rid, nick: s.nick, city: s.city });
+  const travelerBonds = E.activeTravelerBondsOf(s);
   return {
     /* year/month 是**走到哪个月**，startYear/startMonth 才是开局那个月 */
     year: s.year, month: s.month,
@@ -241,6 +253,9 @@ function view(s, runId) {
     persona: s.persona || '',
     /* 这一局记着的事，整份发给界面——「不要丢失任何记忆」是要看得见的 */
     memo: s.memo || E.newMemo(),
+    fellows: ec.fellows || [],
+    echoes: ec.traces || [],
+    travelerBonds,
     netWorth: E.netWorth(s), netWorthText: E.money(E.netWorth(s), cur),
     income: E.incomeOf(s.year, s.month),
     incomeText: E.money(E.incomeOf(s.year, s.month), cur),
@@ -254,6 +269,7 @@ function view(s, runId) {
         headline,
         summary,
         assetsAdded: d.assetsAdded || [],
+        bond: d.bond || null,
         image: (rid && imgUrlOf(rid, d.n)) || d.image || null,
       };
     }),
@@ -278,6 +294,7 @@ function monthList(s, runId) {
       say, worth: t ? t.worth : '',
       refused: d.refused || [], overTop: !!d.overTop,
       moved: d.moved || null,
+      bond: d.bond || null,
       worldTrace: d.worldTrace || null,
       image: (rid && imgUrlOf(rid, d.n)) || d.image || null,
     };
@@ -304,6 +321,7 @@ function comicList(s, runId) {
       worth: t ? t.worth : '',
       tally: d.tally || '',
       moved: d.moved || null,
+      bond: d.bond ? { with: d.bond.with, rel: d.bond.rel } : null,
       worldTrace: d.worldTrace
         ? { kind: d.worldTrace.kind, partner: d.worldTrace.partner, summary: d.worldTrace.summary }
         : null,
@@ -363,10 +381,10 @@ const routes = {
   }),
 
   'POST /api/transcribe': async (req, res) =>
-    VOICE.handleTranscribe(req, res, { DB, rateOk, clientIp, json, oops }),
+    VOICE.handleTranscribe(req, res, { DB, rateOk: voiceRateOk, clientIp, json, oops }),
 
   'POST /api/transcribe/refine': async (req, res) =>
-    VOICE.handleRefine(req, res, { DB, rateOk, clientIp, readBody, json, oops }),
+    VOICE.handleRefine(req, res, { DB, rateOk: voiceRateOk, clientIp, readBody, json, oops }),
 
   'GET /api/years': async (req, res) => json(res, 200, { years: CATALOG }),
 
@@ -388,8 +406,8 @@ const routes = {
         events: (card.events || []).filter(e => e.month === m).map(e => e.text),
       });
     }
-    const echoes = DB.yearEchoes(y, 12, { city: row.city }).traces;
-    json(res, 200, { card, months, ceiling: row.ceiling, city: row.city, switch: row.switch, echoes });
+    const ec = DB.yearEchoes(y, 12, { city: row.city });
+    json(res, 200, { card, months, ceiling: row.ceiling, city: row.city, switch: row.switch, echoes: ec.traces, fellows: ec.fellows || [] });
   },
 
   'POST /api/run': async (req, res) => {
@@ -536,10 +554,11 @@ const routes = {
     if (s.phase === 'extra') return oops(res, 400, '这一局已经接着往下走过了');
     const r = E.reopen(s);
     if (!r.ok) return oops(res, 400, r.say);
-    s.options = SIM.optionsLocal(s);        // 头一个月的三条路走本地那份，不额外花钱
+    const extEchoes = DB.yearEchoes(s.year, s.month, { excludeRunId: b.id, nick: s.nick, city: s.city });
+    s.options = SIM.optionsLocal(s, 0, extEchoes);        // 头一个月的三条路走本地那份，不额外花钱
     DB.startExtra(b.id, s, r.room);
     json(res, 200, {
-      state: view(s), room: r.room, to: r.to,
+      state: view(s, b.id), room: r.room, to: r.to,
       switched: (r.events || []).filter(Boolean).map(x => ({ say: x.say, before: E.money(x.before, x.from), after: E.money(x.after, x.cur) })),
     });
   },
@@ -577,6 +596,7 @@ const routes = {
     const result = JSON.parse(row.result);
     /* 自己的局：面板上多一颗「看每个月写了什么」，点过去走 /api/detail */
     const mine = !!(q.token && DB.loadRun(id, String(q.token)));
+    if (Number(row.on_board) === 0 && !mine) return oops(res, 404, '这条旧记录已下架');
     const swallow = err => console.error('榜上要的收梢没写成：', String(err && err.message).slice(0, 200));
     const review = row.review ? JSON.parse(row.review) : null;
     if (!review) writeReview(id, row, st, false, req).catch(swallow);
@@ -924,6 +944,7 @@ async function runOneMonthInner(req, res, b, s) {
             onField: (field, t) => {
               if (field === 'headline' || field === 'summary') sse.send(field, { t });
             },
+            onRedo: () => sse.send('redo', {}),
             echoes,
           } : { echoes });
         } catch (err) {
@@ -955,8 +976,11 @@ async function runOneMonthInner(req, res, b, s) {
     /* 把这个月压成的那几行并进记忆。**要在 advanceTo 之前**——
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
-    const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month, tally });
-    const traceCand = E.extractWorldTrace(s, { year: s.year, month: s.month, list: b.list }, out.delta, res1);
+    const contextText = `${b.list || ''}\n${out.delta.story || ''}`;
+    const validBond = E.normalizeBond(out.delta.bond, s, echoes, contextText);
+    out.delta.bond = validBond;
+    const memoAdd = E.applyMemo(s, out.delta, { n: s.n, year: s.year, month: s.month, tally }, { echoes, contextText });
+    const traceCand = E.extractWorldTrace(s, { year: s.year, month: s.month, list: b.list }, out.delta, res1, echoes);
     const traceSaved = traceCand && DB.addTrace(b.id, traceCand) ? traceCand : null;
 
     const assetsAdded = (out.delta.assetsAdd || [])
@@ -978,6 +1002,7 @@ async function runOneMonthInner(req, res, b, s) {
        * 2026-09-03 不削了，留着它只为在界面上给这个月一句话。 */
       overTop: res1.gained > E.monthTop(s.year, s.month),
       moved: moved || null,
+      bond: validBond || null,
       worldTrace: traceSaved || null,
       luck: sd.luck, fresh: Math.round(sd.fresh * 100) / 100,
       /* 押了本钱的月份：赢没赢、几倍、押的是哪一段行情——回头查「投机是不是又一直亏」用 */
@@ -999,8 +1024,8 @@ async function runOneMonthInner(req, res, b, s) {
     DB.saveRun(b.id, s);
 
     const played = s.months[s.months.length - 1];
-    /* 当月结算后立刻在后台启动插画生成（约 5 秒），不阻塞文字返回 */
-    if (HAS_KEY) ensureMonthImage(b.id, s, played).catch(() => {});
+    /* 当月结算后立刻在后台启动插画生成（约 5 秒），不阻塞文字返回；自动化巡检可传 skipAutoImage 省下逐月生图开销 */
+    if (HAS_KEY && !b.skipAutoImage) ensureMonthImage(b.id, s, played).catch(() => {});
 
     const payload = {
       /* 刚过完的是哪一个月——前端拿它写正文的小标题，别自己去猜 */
@@ -1022,6 +1047,7 @@ async function runOneMonthInner(req, res, b, s) {
       })(),
       refused: out.delta.refused || [],
       moved: moved || null,
+      bond: validBond || null,
       worldTrace: traceSaved || null,
       overTop: played.overTop,
       overspent: res1.overspent > 0 ? E.money(res1.overspent, curNow) : null,
@@ -1058,7 +1084,7 @@ const server = http.createServer(async (req, res) => {
 
 server.on('upgrade', (req, socket, head) => {
   if (VOICE.matchesAsrUpgrade(req.url)) {
-    VOICE.handleAsrUpgrade(req, socket, head, { DB, rateOk, clientIp });
+    VOICE.handleAsrUpgrade(req, socket, head, { DB, rateOk: voiceRateOk, clientIp });
     return;
   }
   socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
