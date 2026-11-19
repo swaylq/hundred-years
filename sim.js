@@ -476,7 +476,7 @@ function buildUser(s, list, extra = {}) {
   const assetMoveSay = (Array.isArray(s.lastAssetMoves) && s.lastAssetMoves.length)
     ? `\n【手里资产随历史行情变动】` + s.lastAssetMoves.map(m =>
         `「${m.name}」本月随市${m.pct >= 0 ? '涨了' : '跌了'}约 ${Math.abs(m.pct).toFixed(1)}%`
-      ).join('；') + '。'
+      ).join('；') + '。（注：上述资产账面估值已由系统自动更新，切勿把这些原有家当再次写进 assetsAdd！）'
     : '';
   const pulse = extra.pulse || null;
   const pulseSay = (pulse && (pulse.kind === 'urgent' || pulse.kind === 'legacy' || pulse.kind === 'countdown'))
@@ -695,7 +695,7 @@ function buildUser(s, list, extra = {}) {
           : (swornCount >= 1
             ? '本局已有结拜兄弟，不必人人结拜——可升格为「知己 / 提亲 / 成婚 / 道侣」，或因路线分歧反目转为「对手 / 宿敌」'
             : '或因共渡风浪、推心置腹升格为「知己 / 结拜 / 提亲 / 成婚 / 道侣」，或因分润失衡、路线分歧反目转为「对手 / 宿敌」');
-        return `两人做「同盟」已有 ${staleM} 个月（第 ${s.n} 月），情分与利益纠葛都已到火候：本月顺着这次当面互动推进一次实质质变——${allyTurn}，**务必先在 story 正文里真写出对应一幕，再将新名分填进 bond**（绝不重复填「同盟」或降格回「结交/合伙」）；若只是顺手公事毫无波澜则 bond 填 null。\n`;
+        return `两人做「同盟」已有 ${staleM} 个月（第 ${s.n} 月），情分与利益纠葛都已到火候：本月顺着这次当面互动推进一次实质质变——${allyTurn}，**务必先在 story 正文里真写出对应一幕，再将新名分填进 bond**（绝不重复填「同盟」或降格回「结交/合伙」）；若只是顺手公事毫无波澜则 bond 填 null，并在下月 options 里给一条约「${tBeat.target}」吃酒摊牌、结拜或提亲的破局路子。\n`;
       }
       return `两人已是「同盟」，**不要再重复填「同盟」，更绝不许降格写回「结交/初识/合伙」**！只有当本月 story 正文里真写出质变——比如患难见真情升为「知己 / 结拜 / 提亲 / 成婚 / 道侣」，或因抢筹分利反目转为「对手 / 宿敌」——才填新名分进 bond；若是老同盟日常配合推进生意，正文自然写活对话与分润即可，JSON 的 bond 填 null。\n`;
     }
@@ -710,7 +710,7 @@ function buildUser(s, list, extra = {}) {
         if (swornCount >= 1) {
           return `两人做「知己」已有 ${staleM} 个月（第 ${s.n} 月），**本局已有结拜兄弟，不要把所有知己都拉去结拜**：顺着本月情势走不同归宿——若情意渐深有儿女私情或共修之缘，可在 story 里真写出「提亲 / 成婚 / 道侣」；若因大笔利益或理念分岔，可在 story 里真写出反目决裂转为「对手 / 宿敌」；若只是肝胆相照、平常照应，则稳守知己之交，JSON 的 bond 填 null（正文没写绝不许凭空填结拜）。\n`;
         }
-        return `两人做「知己」已有 ${staleM} 个月（第 ${s.n} 月），情谊已深到足以定下名分或迎来大考：本月若打算里带出吃酒深谈、危难相救或理念冲突，可在 story 里**真写出对应一幕**后升格为「结拜 / 提亲 / 成婚 / 道侣」或决裂转为「对手 / 宿敌」并填进 bond；若本月只是顺带办事、并无定盟或翻脸一幕，则正文照常写活互动，JSON 的 bond 填 null（绝不重复填「知己」，也不许正文没写却在 bond 凭空编造）。\n`;
+        return `两人做「知己」已有 ${staleM} 个月（第 ${s.n} 月），情谊已深到足以定下名分或迎来大考：本月若打算里带出吃酒深谈、危难相救或理念冲突，可在 story 里**真写出对应一幕**后升格为「结拜 / 提亲 / 成婚 / 道侣」或决裂转为「对手 / 宿敌」并填进 bond；若本月只是顺带办事、并无定盟或翻脸一幕，则正文照常写活互动，JSON 的 bond 填 null（绝不重复填「知己」，也不许正文没写却在 bond 凭空编造），并在下月 options 里留一条约「${tBeat.target}」吃酒定盟、提亲或当面摊牌的具体路子。\n`;
       }
       return `两人已是「知己」，写出走心的日常照应、危机搭救、切磋或家事冷暖；只有当本月 story 正文里真写出再进一步（升格为「结拜 / 提亲 / 成婚 / 道侣」）或因变故生隙决裂（转为「对手 / 宿敌」）时才填 bond（绝不重复填「知己」或降格回「合伙/同盟」），日常照旧则 bond 填 null。\n`;
     }
@@ -1056,7 +1056,9 @@ function optionsLocal(s, salt, echoes) {
     socialOpt = lifeOpts[Math.floor(r() * lifeOpts.length)];
   }
 
-  const legacies = (echoes && Array.isArray(echoes.legacies)) ? echoes.legacies : [];
+  const claimedSet = new Set(Array.isArray(s && s.claimedLegacies) ? s.claimedLegacies.map(String) : []);
+  const legacies = ((echoes && Array.isArray(echoes.legacies)) ? echoes.legacies : [])
+    .filter(lg => lg && lg.item && !lg.claimedBy && !claimedSet.has(String(lg.id || lg.item)));
   const legacyPick = legacies.length && s.n >= 2 && r() < 0.25 ? legacies[0] : null;
   const third = legacyPick
     ? {

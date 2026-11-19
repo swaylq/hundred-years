@@ -266,7 +266,11 @@ function view(s, runId) {
     memo: s.memo || E.newMemo(),
     fellows: ec.fellows || [],
     echoes: ec.traces || [],
-    legacies: ec.legacies || [],
+    legacies: (ec.legacies || []).filter(lg => {
+      if (!lg || !lg.item) return false;
+      const claimed = Array.isArray(s.claimedLegacies) ? s.claimedLegacies.map(String) : [];
+      return !claimed.includes(String(lg.id || lg.item));
+    }),
     travelerBonds,
     netWorth: E.netWorth(s), netWorthText: E.money(E.netWorth(s), cur),
     income: E.incomeOf(s.year, s.month),
@@ -1035,7 +1039,7 @@ async function runOneMonthInner(req, res, b, s) {
     /* 顶回去的理由只能是「那一年没有这东西」。模型偶尔会替玩家把事否掉
      * （「属于犯罪活动」「风险大于收益」），那种拒绝在这儿扔掉——
      * 留着它，下个月的提示词还会拿它当「上个月顶回去过」接着顶。 */
-    out.delta.refused = E.cleanRefused(out.delta.refused, E.scanAnachronism(b.list, s.year));
+    out.delta.refused = E.cleanRefused(out.delta.refused, E.scanAnachronism(b.list, s.year), b.list);
     const res1 = E.applyMonth(s, out.delta);
     /* 他这个月要是走了（换城、出海），人跟着搬——年卡照旧用原来那座城的。 */
     const moved = E.applyMove(s, out.delta.moveTo);

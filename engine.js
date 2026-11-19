@@ -403,8 +403,8 @@ function applySwitch(s, sw) {
  *  一个月零开销的月份不存在。156 个有账的月份里符合这条的只有 2 个，两个都是真错。
  *  真到了一笔出账都没有的月份，翻的也只是名字里明说了在花钱的那几笔。 */
 const SPEND = /伙食|房租|房钱|租金|路费|车钱|打点|门包|茶钱|保护费|开销|购置|采买|买|支出|费用|水电|煤球|工本|手续/;
-const STRICT_SPEND = /生活开销|日常开销|基本开销|应酬开销|基本餐饮|餐饮消费|伙食|吃住|房租支出|支出|开销|打点费?|门包|茶钱|保护费|手续费|工本费|水电煤|水电费|采购成本|进货成本|补货成本|药补|礼金|礼品支出|宴请|招待费|暂住证|路费|车钱|车费|预付定金|预付金/;
-const EARN = /卖出|售出|所得|收回|讨回|退还|退回|退款|返还|报销|补贴|补助|赔付|赔偿|回款|收入|进项|报酬|工钱|工资|薪酬|薪资|奖励|提成|抽成|酬劳|利润|差价|收益|溢价|赚|分成|分红|结账|分租|出租|收租|包租|转租|招租|租金收入|房租收入|租金进项|租金回款|房租回款|残值|结余/;
+const STRICT_SPEND = /生活开销|日常开销|基本开销|应酬开销|基本餐饮|餐饮消费|伙食|吃住|房租支出|支出|开销|打点费?|门包|茶钱|保护费|手续费|工本费|水电煤|水电费|采购成本|进货成本|补货成本|药补|礼金|礼品支出|宴请|招待费|暂住证|路费|车钱|打车费|坐车费|乘车费|包车费|租车费|行车费|停车费|交通车费|公车费|车马费|预付定金|预付金/;
+const EARN = /卖出|售出|所得|收回|讨回|退还|退回|退款|返还|报销|补贴|补助|赔付|赔偿|回款|收入|进项|报酬|工钱|工资|薪酬|薪资|奖励|提成|抽成|酬劳|佣金|辛苦费|跑腿|看车|验车|修车|介绍费|中介费|居间费|诊费|润笔|讲课费|咨询费|鉴定费|修复费|代办费|劳务费|服务费|手工费|加工费|代购费|利润|差价|收益|溢价|赚|分成|分红|结账|分租|出租|收租|包租|转租|招租|租金收入|房租收入|租金进项|租金回款|房租回款|残值|结余/;
 function fixSigns(delta) {
   const ents = (delta.entries || []).filter(e => e && e.what != null && isFinite(Number(e.amount)));
   if (!ents.length) return null;
@@ -519,14 +519,26 @@ const MARKET_ASSET_LOSS_RE = /(黄金|金条|现货|古玩|字画|文玩|股票|
 const CONFISCATED_LOSS_RE = /(亏损本钱|本金亏损|本金损失|赔光本钱|本钱赔光|货被没收|被没收.{0,4}亏|倒卖亏损|货款损失)/;
 const BOOK_RESIDUAL_ENTRY_RE = /(账面残值|资产残值|存货残值|折后残值|账面估值|估值残值|账面现值|残值折算)/;
 const ASSET_KIND_SUFFIX_RE = /[（(](实物|票证|权益|债权|现金类)[）)]$/g;
-const FIXED_ASSET_NAME_RE = /(铺面|铺子|修表铺|茶楼|茶馆|酒楼|酒馆|商铺|商号|门店|店面|店铺|老铺|工坊|作坊|机床|摊位|厂房|工厂|武馆|堂口|宅院|房产|楼房|商房|房子|地皮|栈房|库房|货仓|铺|店|宅|院)$/;
-const FIXED_ASSET_BUY_RE = /(盘下|购入|买下|买入|购买|扩建|加租|续租|添置|置办|改造|升级|盘店|租金与押金|押金|首付)/;
+const FIXED_ASSET_NAME_RE = /(铺面|铺子|修表铺|茶楼|茶馆|酒楼|酒馆|商铺|商号|门店|店面|店铺|老铺|工坊|作坊|机床|摊位|厂房|工厂|武馆|堂口|宅院|房产|楼房|商房|房子|地皮|栈房|库房|货仓|陈列资产|装修资产|经营资产|固定资产|冷链仓储|仓储设施|仓储空间|店铺设施|铺|店|宅|院)$/;
+const FIXED_ASSET_BUY_RE = /(盘下|购入|买下|买入|购买|扩建|加租|续租|添置|置办|改造|升级|盘店|租金与押金|押金|首付|装修|购置)/;
+const REPRICE_ECHO_NOTE_RE = /(随市涨幅|随市跌幅|随市涨|随市跌|随市上浮|随市下调|市价涨幅|市价涨|行情涨|估值涨幅|估值上调|已持有|原有资产)/;
 function cleanAssetName(name) {
   return String(name || '').trim().replace(ASSET_KIND_SUFFIX_RE, '').trim().slice(0, 30);
 }
+function fixedAssetCore(name) {
+  return cleanAssetName(name).replace(/(临街|原有|现有|新购|新建|新盘|自有|老|一间|一处|一套|这间|该|的)/g, '');
+}
+function sameFixedAsset(a, b) {
+  const ca = cleanAssetName(a), cb = cleanAssetName(b);
+  if (!ca || !cb) return false;
+  if (ca === cb) return true;
+  const ka = fixedAssetCore(ca), kb = fixedAssetCore(cb);
+  if (ka.length < 4 || kb.length < 4) return false;
+  return ka === kb || (Math.min(ka.length, kb.length) >= 4 && (ka.includes(kb) || kb.includes(ka)));
+}
 const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
 const REVENUE_REFUND_ASSET_RE = /(回笼|回款|变现|获利|盈利|利润|经营所得|销售所得|出货所得|卖货所得|营收|进账|分红现金|货款现金)/;
-const BARTER_REVENUE_ENTRY_RE = /(置换|换得|换回|折现|差价|增值|回款|变现|所得|分润|收益|获利|转手|出清|囤货)/;
+const BARTER_REVENUE_ENTRY_RE = /(置换|换得|换回|折现|差价|增值|回款|变现|所得|分润|收益|获利|转手|出清|囤货|质押|抵押|换取现金|换现)/;
 const BARTER_DOUBLE_ASSET_RE = /(置换|换得|换回|换取|囤积|避险|储备|所得|折现|分润|改良)/;
 const FREE_FIND_ASSET_RE = /(挖出|寻访|遗踪|铁盒|暗盒|获赠|赠与|捡到|捡漏|赏赐|奖励)/;
 const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|变现款|现款|收款|营收|所得|款项|余款|进账)$/;
@@ -617,9 +629,12 @@ function stripBogusCashAndExchange(s, delta) {
         .filter(a => a && a.name && drops.some(d => d === a.name || a.name.includes(d) || d.includes(a.name)))
         .reduce((t, a) => t + (Number(a.worth) || 0), 0)
       : 0;
+    const debtsAddSum = (Array.isArray(delta.debtsAdd) ? delta.debtsAdd : [])
+      .reduce((t, d) => t + (Number(d && d.amount) || 0), 0);
+    const curInc = (s && s.year && s.month) ? (incomeOf(s.year, s.month) || 0) : 0;
     delta.assetsAdd = delta.assetsAdd.filter(a => {
       if (!a || !a.name) return false;
-      const nm = String(a.name).trim();
+      const nm = cleanAssetName(a.name);
       const nt = String(a.note || '').trim();
       const w = Number(a.worth) || 0;
       if (PHANTOM_CASH_ASSET_RE.test(nm) && !hasDepositOut) {
@@ -636,6 +651,21 @@ function stripBogusCashAndExchange(s, delta) {
       if (normKind === '现金类' && !isDeposit && !hasDepositOut) {
         removedAssets.push(nm);
         return false;
+      }
+      /* 拦截随市行情复述：引擎已在 advanceTo 自动重算手头资产市价，模型在 note 里写「随市涨幅 X%」并重复填进 assetsAdd 会凭空翻倍家当 */
+      if (w > 0 && REPRICE_ECHO_NOTE_RE.test(nt) && buyOut < w * 0.25) {
+        removedAssets.push(nm);
+        return false;
+      }
+      /* 拦截无出账凭空新增高额商铺/房产/固定资产（或对已有商铺改短名复述，如「北五环临街商铺」→「北五环商铺」） */
+      const isRealOrFixed = FIXED_ASSET_NAME_RE.test(nm) || assetVenueOf(nm, normKind, nt) === '房';
+      const dupExistingFixed = isRealOrFixed && s && Array.isArray(s.assets)
+        && s.assets.some(x => x && x.name && sameFixedAsset(x.name, nm));
+      if (w > 0 && isRealOrFixed && buyOut < w * 0.15 && droppedWorth < w * 0.15 && debtsAddSum < w * 0.3 && !FREE_FIND_ASSET_RE.test(`${nm} ${nt}`)) {
+        if (dupExistingFixed || (curInc > 0 && w >= curInc * 0.5)) {
+          removedAssets.push(nm);
+          return false;
+        }
       }
       const matchesPosEntry = ents.some(e => e && Number(e.amount) > 0 && Math.abs(Number(e.amount) - w) <= Math.max(w * 0.08, 1));
       if (w > 0 && revNamed && !isDeposit && posRev >= w * 0.3 && (normKind === '现金类' || CASH_LIKE_ASSET_NAME_RE.test(nm) || matchesPosEntry || buyOut < w * 0.3)) {
@@ -716,17 +746,18 @@ function applyMonth(s, delta) {
     const nt = String(a.note || '').trim().slice(0, 60);
     const vn = assetVenueOf(nm, kd, nt);
     const rec = { name: nm, kind: kd, worth: w, note: nt, ...(vn ? { venue: vn } : {}) };
-    const prev = s.assets.find(x => cleanAssetName(x.name) === nm && x.kind === kd);
+    const isFixedNonStack = kd === '权益' || FIXED_ASSET_NAME_RE.test(nm) || vn === '房';
+    const prev = s.assets.find(x => cleanAssetName(x.name) === nm && x.kind === kd)
+      || (isFixedNonStack ? s.assets.find(x => x && x.name && (x.kind === kd || x.venue === '房') && sameFixedAsset(x.name, nm)) : null);
     if (prev) {
-      prev.name = nm;
-      const isFixedNonStack = kd === '权益' || FIXED_ASSET_NAME_RE.test(nm);
+      if (cleanAssetName(prev.name) === nm) prev.name = nm;
       if (isFixedNonStack && !hasFixedBuyOut) {
-        if (nt) prev.note = nt;
+        if (nt && !REPRICE_ECHO_NOTE_RE.test(nt)) prev.note = nt;
         if (vn && !prev.venue) prev.venue = vn;
         continue;
       }
       prev.worth += w;
-      if (nt) prev.note = nt;
+      if (nt && !REPRICE_ECHO_NOTE_RE.test(nt)) prev.note = nt;
       if (vn && !prev.venue) prev.venue = vn;
     } else {
       s.assets.push(rec);
@@ -787,8 +818,29 @@ const LECTURE = /(犯罪|违法|非法|不合法|违反|道德|伦理|风险|危
 
 /** 把这个月的 refused 洗一遍：只留「那一年没有这东西」那种，别的扔掉。
  *  留下来的要么带年份（1976 年才有 / 1958 年以后就没了），
- *  要么是关键词表真扫出来的那几样（hits，banned 的不算——那是犯法不是没有）。 */
-function cleanRefused(list, hits) {
+ *  要么是关键词表真扫出来的那几样（hits，banned 的不算——那是犯法不是没有）。
+ *  若传入了玩家清单原文 planText，非关键词表命中的拒绝还必须确认玩家确实提过该物件，防止模型凭空把年卡「这一年没有的」塞进 refused。 */
+const REFUSED_STOP_RE = /(使用|采用|进行|开展|通过|利用|尝试|办理|结账|支付|付款|购买|买|做|搞|开|去|找|用|的|了|与|和|在|到)/g;
+function refusedMentionedInPlan(what, planText) {
+  const p = String(planText || '').trim();
+  if (!p) return true;
+  const w = String(what || '').trim();
+  if (!w) return false;
+  if (p.includes(w)) return true;
+  const stripped = w.replace(REFUSED_STOP_RE, ' ').replace(/[^\u4e00-\u9fffa-zA-Z0-9]+/g, ' ').trim();
+  const tokens = stripped.split(/\s+/).filter(Boolean);
+  for (const tk of tokens) {
+    if (tk.length >= 2 && p.includes(tk)) return true;
+    if (/^[\u4e00-\u9fff]{3,}$/.test(tk)) {
+      for (let i = 0; i <= tk.length - 2; i++) {
+        if (p.includes(tk.slice(i, i + 2))) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function cleanRefused(list, hits, planText = '') {
   const words = (hits || []).filter(h => h.kind !== 'banned').map(h => h.word);
   return (Array.isArray(list) ? list : [])
     .filter(r => r && (r.what || r.why))
@@ -798,7 +850,8 @@ function cleanRefused(list, hits) {
       const both = r.what + ' ' + r.why;
       if (words.some(w => both.includes(w))) return true;   // 关键词表点过名的，留
       if (LECTURE.test(both)) return false;                 // 讲道理、掂量划不划算的，扔
-      return /\d{3,4}\s*年/.test(r.why);                    // 说得出哪一年的，留
+      if (!/\d{3,4}\s*年/.test(r.why)) return false;        // 说不出哪一年的，扔
+      return refusedMentionedInPlan(r.what, planText);      // 玩家清单里压根没提过的，扔
     })
     .slice(0, 3);
 }
@@ -1774,6 +1827,21 @@ function knownTravelersOf(s, echoes) {
   return byKey;
 }
 
+function cleanBondNote(note) {
+  return oneLine(
+    String(note || '')
+      .replace(/利益深度绑定/g, '分利共担')
+      .replace(/深度利益共享同盟/g, '共担盈亏的同盟')
+      .replace(/深度利益共享/g, '共担盈亏')
+      .replace(/深度绑定/g, '联手共进')
+      .replace(/利益绑定/g, '分利共担')
+      .replace(/深度合作/g, '联手合作')
+      .replace(/赋能/g, '助力')
+      .replace(/闭环/g, '一条龙'),
+    42
+  );
+}
+
 function normalizeBond(rawBond, s, echoes, contextText = '') {
   if (!rawBond || typeof rawBond !== 'object') return null;
   let partner = cleanTravelerNick(rawBond.with || rawBond.partner || '');
@@ -1793,7 +1861,7 @@ function normalizeBond(rawBond, s, echoes, contextText = '') {
 
   const rel = oneLine(rawBond.rel || rawBond.type || '', 8);
   if (!rel || /^(null|none|nil|无|没有|暂无)$/i.test(rel)) return null;
-  const note = oneLine(rawBond.note || '', 42);
+  const note = cleanBondNote(rawBond.note || '');
   return { with: partner, rel, note };
 }
 
@@ -2041,7 +2109,7 @@ function trimTrace(text, maxLen = 50) {
 
 function formatBondTrace(nick, partner, city, rel, note) {
   const act = BOND_TRACE_VERB[rel] || rel || '结交';
-  const cleanNote = toThirdPersonTrace(String(note || '').replace(/^[，,、；;：:\s]+|[。，,、；;：:\s]+$/g, ''));
+  const cleanNote = toThirdPersonTrace(cleanBondNote(note).replace(/^[，,、；;：:\s]+|[。，,、；;：:\s]+$/g, ''));
   const head = `穿越者「${nick}」与同道「${partner}」在${city}${act}`;
   return trimTrace(cleanNote ? `${head}：${cleanNote}` : head, 50);
 }
