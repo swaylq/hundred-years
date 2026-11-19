@@ -1036,6 +1036,14 @@ function renderFellowBar(s, done) {
   const fellows = Array.isArray(s.fellows) ? s.fellows : [];
   const items = [];
   const seen = new Set();
+  const bondDraftOf = (nick, rel) => {
+    if (rel === '对手' || rel === '宿敌') return `找穿越者${nick}正面交锋，抢下这波货源或切磋分个高下`;
+    if (rel === '同盟') return `约穿越者${nick}吃酒交心，商量结拜或合办大事`;
+    if (rel === '知己' || rel === '结拜') return `约穿越者${nick}叙旧深谈，共议往后长远打算`;
+    if (rel === '提亲' || rel === '成婚' || rel === '道侣') return `与穿越者${nick}共商持家大事与本月生计`;
+    if (rel === '初识' || rel === '试探') return `去找穿越者${nick}再探虚实，聊聊买卖或切磋几手`;
+    return `找穿越者${nick}对账分润，顺便看能结盟还是得防一手`;
+  };
   for (const b of bonds) {
     if (!b || !b.nick || seen.has(b.nick)) continue;
     seen.add(b.nick);
@@ -1044,18 +1052,21 @@ function renderFellowBar(s, done) {
       sub: b.rel || '结交',
       bonded: true,
       tip: b.note || `已与穿越者${b.nick}结为${b.rel}`,
-      draft: `去找穿越者${b.nick}商议本月合作与互通消息`,
+      draft: bondDraftOf(b.nick, b.rel || '结交'),
     });
   }
   for (const f of fellows) {
     if (!f || !f.nick || seen.has(f.nick)) continue;
     seen.add(f.nick);
+    const rivalLean = /竞合|抢筹|暗市/.test(`${f.stance || ''} ${f.desc || ''}`);
     items.push({
       nick: f.nick,
       sub: f.stance || f.tag || '同城',
       bonded: false,
       tip: f.desc || f.summary || '',
-      draft: `去寻访同城穿越者${f.nick}，对个暗号探探虚实`,
+      draft: rivalLean
+        ? `去探探同城穿越者${f.nick}的底细，看是联手还是抢筹`
+        : `去寻访同城穿越者${f.nick}，对个暗号探探虚实`,
     });
     if (items.length >= 4) break;
   }

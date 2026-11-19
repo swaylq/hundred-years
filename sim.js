@@ -97,6 +97,7 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 东西卖出去的时候，再用 assetsDrop 把它划掉，同时把卖的钱记成进账。
 若买进的实物/存货当月市价下跌，进货款记出账、assetsAdd 按跌后的现值记即可，**绝不许在 entries 里再额外扣一笔「库存贬值/跌价损耗」现金出账**，否则同一笔亏空会被扣两遍。
 手头原有本钱、换币结余和本月挣剩下的现金，系统会自动计入现金余额：**绝不许把「兑换新币结余」「原有积蓄」记成正数进账，也不许把「现金结余」「本月经营所得」再塞进 assetsAdd**，否则同一笔钱会被算两遍。
+换购金银外币或囤货时，entries 必须把花出去的**本金**记为负数（如「换购银元 -5000」），同时 assetsAdd 记入对应实物，绝不能只扣手续费又把本金塞进 assetsAdd；卖货收到的回款既已记进 entries 正数，也不许再把同一笔「回笼银元/回款资金」重复塞进 assetsAdd。感悟、线索、口碑只记进 memo.traits 或 memo.threads，不进 assetsAdd。
 
 **当月买当月就卖光了的，不用记 assetsAdd**——进账出账两笔已经把它说清楚了。
 要记的是**月底还压在他手里**的那些：没卖完的货、交出去还没退的押金、
@@ -163,7 +164,7 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 · **不许整月一无所获。** 就算这个月走不成，也要让他摸到一条具体的线：
   谁带路、开价多少、什么时候动身、还缺哪一样证件。差钱就写还差多少，
   别写成「他没找到门路」——那等于这个月白过。
-· 他这个月真搬到了别处，就把地名写进 moveTo（还在原地就别写这个字段）。
+· 他这个月真搬到了另一座城市或地区（如香港、天津、苏北、南洋），才把城名写进 moveTo；在城郊道观、码头或山里短住办事不算搬城，不要填 moveTo。
 
 【他在变成一个什么人 —— 这一段决定了这个游戏好不好玩】
 两年里他做的每一件事，都该在他身上留下点什么，往后一直算数。
@@ -922,17 +923,40 @@ function optionsLocal(s, salt, echoes) {
   let socialOpt = null;
   if (bonds.length && r() < 0.65) {
     const b = bonds[Math.floor(r() * bonds.length)];
-    socialOpt = {
-      what: `约穿越者${b.nick}商议合伙与消息互通`.slice(0, 22),
-      why: `你们已是${b.rel}，联手更容易在${s.city}成事`,
-    };
+    const rel = b.rel || '结交';
+    let what = `约穿越者${b.nick}商议本月合作与消息互通`;
+    let why = `你们已是${rel}，联手更容易在${s.city}成事`;
+    if (rel === '对手' || rel === '宿敌') {
+      what = `找穿越者${b.nick}正面交锋抢筹过招`;
+      why = `你们本是${rel}，抢先卡位或较量一场方见高下`;
+    } else if (rel === '同盟') {
+      what = `约穿越者${b.nick}吃酒深谈结拜或合办大业`;
+      why = `老同盟患难与共，可趁机更进一步或防暗中生隙`;
+    } else if (rel === '知己' || rel === '结拜') {
+      what = `与穿越者${b.nick}叙旧交心商议长远门路`;
+      why = `同道${rel}相托，互通底牌更能稳住大局`;
+    } else if (rel === '提亲' || rel === '成婚' || rel === '道侣') {
+      what = `与穿越者${b.nick}共商持家大事与本月生计`;
+      why = `二人已结${rel}，携手统筹家业与去路`;
+    } else if (rel === '初识' || rel === '试探') {
+      what = `再探穿越者${b.nick}虚实并切磋试手`;
+      why = `刚打过照面的同道，摸清底细再定合谋或争锋`;
+    }
+    socialOpt = { what: what.slice(0, 22), why: why.slice(0, 46) };
   } else if (fellows.length) {
     const f = fellows[Math.floor(r() * fellows.length)];
-    const actions = [
-      `去会会同城穿越者${f.nick}对个暗号`,
-      `找穿越者${f.nick}探探口风谈笔合作`,
-      `打听穿越者${f.nick}近期的买卖动向`,
-    ];
+    const isRivalLean = /竞合|抢筹|暗市/.test(`${f.stance || ''} ${f.desc || ''}`);
+    const actions = isRivalLean
+      ? [
+          `抢在穿越者${f.nick}前头卡位紧俏货源`,
+          `去探穿越者${f.nick}口风，看是联手还是争锋`,
+          `去会会同城穿越者${f.nick}对个暗号`,
+        ]
+      : [
+          `去会会同城穿越者${f.nick}对个暗号`,
+          `找穿越者${f.nick}探探口风谈笔合作`,
+          `约穿越者${f.nick}切磋手艺并交换情报`,
+        ];
     socialOpt = {
       what: actions[Math.floor(r() * actions.length)].slice(0, 22),
       why: String(f.desc || f.summary || '同在城里的穿越者，或敌或友').slice(0, 42),

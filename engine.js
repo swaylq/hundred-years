@@ -409,6 +409,7 @@ function fixScale(s, delta) {
  * 引擎不替它补货（补了会跟「当月买当月卖」重复记一遍），只认出来、
  * 记在那个月上，下个月把这句话摆到提示词里让它自己补。 */
 const BUY_WORD = /货款|进货|买入|购入|囤|存货|预付|押金|盘下|置办|采买|定金|批发|收货/;
+const BUY_LOSS_RE = /(亏损|折损|损失|被扣|没收|罚款|赔光|亏空|浮亏|贬值|跌价|损耗|抽头|门包|手续费)/;
 const SELL_WORD = /卖|售|出货|所得|货款收|转手/;
 const HARD_BULLION_RE = /(黄金|金条|赤金|美钞|美元|外汇|英镑|港币|银元|大洋|袁大头|白银|银锭)/;
 const CASH_DEPOSIT_RE = /(存款|存单|存折|活期|定期|钱庄存|银行存)/;
@@ -430,7 +431,7 @@ function normalizeAssetKind(name, kind) {
 function unpairedBuys(delta, wage) {
   const ents = (delta.entries || []).filter(e => e && e.what != null && isFinite(Number(e.amount)));
   const floor = Math.max(0, (Number(wage) || 0) / 4);          // 小于四分之一个月工钱的不算进货
-  const buys = ents.filter(e => Number(e.amount) < 0 && BUY_WORD.test(e.what) && -Number(e.amount) >= floor);
+  const buys = ents.filter(e => Number(e.amount) < 0 && BUY_WORD.test(e.what) && !BUY_LOSS_RE.test(e.what) && -Number(e.amount) >= floor);
   if (!buys.length) return null;
   const spent = buys.reduce((t, e) => t - Number(e.amount), 0);
   /* 当月买当月卖：卖出去的进账够大，就说明货已经出手了，本来就不该留在家当里 */
@@ -443,6 +444,9 @@ function unpairedBuys(delta, wage) {
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
 const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
+const REVENUE_REFUND_ASSET_RE = /(回笼|回款|经营所得|销售所得|营收|进账)/;
+const ASSET_BUY_OUTFLOW_RE = /(购入|买入|购买|换购|换取|兑换|置换|囤|存货|采购|收购|进货|预付|定金|盘下|置办)/;
+const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口碑|名声)$/;
 const EXCHANGE_BALANCE_ENTRY_RE = /(兑换|换币|换钞|折算).{0,8}(结余|本金|积蓄|余额|现金|新币|旧币)/;
 const DEPOSIT_OUTFLOW_RE = /(存入|存单|定期|活期|转入|开户)/;
 
@@ -466,9 +470,10 @@ function stripPaperLossEntries(delta) {
   return removed.length ? { removed } : null;
 }
 
-/** 防止把原本就有的积蓄/换币结余或本月现金结余重复算两遍：
+/** 防止把原本就有的积蓄/换币结余、已入账的回笼资金或虚无感悟重复算进家当：
  *  1) entries 里把现有积蓄记成正数「兑换新币结余 +534000」，等于凭空把本钱翻倍；
- *  2) assetsAdd 里塞「现金结余 / 本月经营所得」，而这笔钱已通过 entries 进过 s.cash。 */
+ *  2) assetsAdd 里塞「现金结余 / 回笼银元储备（本月经营回笼资金）」且无对应购入出账，而这笔钱已通过 entries 进过 s.cash；
+ *  3) 把「炼金感悟」「密教线索」等抽象无形物估高价塞进 assetsAdd。 */
 function stripBogusCashAndExchange(s, delta) {
   if (!delta) return null;
   const removedEntries = [];
@@ -489,10 +494,24 @@ function stripBogusCashAndExchange(s, delta) {
   if (Array.isArray(delta.assetsAdd) && delta.assetsAdd.length) {
     const ents = Array.isArray(delta.entries) ? delta.entries : [];
     const hasDepositOut = ents.some(e => e && Number(e.amount) < 0 && DEPOSIT_OUTFLOW_RE.test(String(e.what || '')));
+    const posRev = ents.filter(e => e && Number(e.amount) > 0).reduce((t, e) => t + Number(e.amount), 0);
+    const buyOut = ents
+      .filter(e => e && Number(e.amount) < 0 && ASSET_BUY_OUTFLOW_RE.test(String(e.what || '')) && !BUY_LOSS_RE.test(String(e.what || '')))
+      .reduce((t, e) => t - Number(e.amount), 0);
     delta.assetsAdd = delta.assetsAdd.filter(a => {
       if (!a || !a.name) return false;
       const nm = String(a.name).trim();
+      const nt = String(a.note || '').trim();
+      const w = Number(a.worth) || 0;
       if (PHANTOM_CASH_ASSET_RE.test(nm) && !hasDepositOut) {
+        removedAssets.push(nm);
+        return false;
+      }
+      if (ABSTRACT_ASSET_RE.test(nm)) {
+        removedAssets.push(nm);
+        return false;
+      }
+      if (w > 0 && REVENUE_REFUND_ASSET_RE.test(`${nm} ${nt}`) && posRev >= w * 0.3 && buyOut < w * 0.3) {
         removedAssets.push(nm);
         return false;
       }
@@ -766,12 +785,15 @@ function speculation(s, list) {
   };
 }
 
-/** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话就不动。
+/** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话或同城具体场所（如道观/码头/深山）就不动。
  *  年卡还是原来那座城的（物价、政策、时局照用），提示词里会说明人不在那儿。 */
+const NON_CITY_SPOT_RE = /(道观|古观|寺庙|古庙|破庙|茶馆|酒馆|码头|纱厂|工坊|铺子|老宅|深山|后巷|弄堂|栈房|货仓|客栈|据点|村口)$/;
 function applyMove(s, to) {
   const name = String(to || '').replace(/\s+/g, '').replace(/[。，,.、；;：:！!？?"'「」『』（）()]/g, '').slice(0, 8);
   if (!name || name === s.city) return null;
   if (/[a-zA-Z0-9]/.test(name)) return null;
+  if (NON_CITY_SPOT_RE.test(name)) return null;
+  if (s.city && name.startsWith(s.city) && name.length > s.city.length) return null;
   const from = s.city;
   s.city = name;
   return { from, to: name };
@@ -1760,8 +1782,8 @@ function isRedundantBond(s, bond, tBeat) {
   return false;
 }
 
-const PURE_NEWS_EVENT_RE = /(国务院|暂行办法|办法出台|命令发行|正式发行|颁布|施行|停兑|停止流通|停止使用|大会召开|宣布成立|全国推行|市委|市政府|部委|法令出台)/;
-const PERSONAL_DEED_RE = /(开|立|办|建|成|获|签|盘|拿下|打通|创|拜|结|娶|嫁|斗|败|赢|赚|发|破|修|炼|寻|淘|独|称|字号|铺|厂|堂|行|会|盟|单|资质|手艺|名号|奇物|异象)/;
+const PURE_NEWS_EVENT_RE = /(国务院|暂行办法|办法出台|命令发行|正式发行|颁布|施行|停兑|停止流通|停止使用|大会召开|宣布成立|全国推行|市委|市政府|部委|法令出台|法币贬值|金圆券.{0,8}(发行|崩塌|作废|限价|贬值|前奏)|物价.{0,6}(飞涨|暴涨|狂飙|一日|动荡)|投机客.{0,6}破产|王春哲|证券大楼|抢购成风|黑市转入地下|人心惶惶|解放军进城|军管会|物价闯关|熔断|股灾|金融危机)/;
+const PERSONAL_DEED_RE = /(其|此人|他|她|主角|立下|创办|盘下|开起|建成|拿下|打通|创立|拜师|成婚|结拜|立宗|夺得|斩获|练成|破境|淘得|炼出|入股|独揽|获批|立起|开办|商号|字号|分销|秘方|奇物|根基|手艺|资质|名号)/;
 
 /** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
  *  严格克制：普通打工买卖、纯抄历史新闻或名分未变/倒退的例行合作返回 null，只有初次结缘、关系跃迁或真正个人大事才记入该年。 */
