@@ -207,9 +207,23 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
     httpJson('GET', `/api/year?y=${target.year}`),
     httpJson('GET', '/api/board?limit=30').catch(() => ({ rows: [] })),
   ]);
+  const recentBotNames = (() => {
+    try {
+      return fs.readdirSync(LOG_DIR)
+        .filter(f => /^play-traveler-[^.]+\.json$/.test(f) && f !== 'play-traveler-latest.json')
+        .map(f => ({ f, mt: fs.statSync(path.join(LOG_DIR, f)).mtimeMs }))
+        .sort((a, b) => b.mt - a.mt)
+        .slice(0, 4)
+        .map(x => {
+          try { return JSON.parse(fs.readFileSync(path.join(LOG_DIR, x.f), 'utf8')).diagnostics?.nick; } catch { return null; }
+        })
+        .filter(Boolean);
+    } catch { return []; }
+  })();
   const existingNames = new Set([
     ...(yearData.fellows || []).map(f => f.nick),
     ...((curBoard && curBoard.rows) || []).map(r => r.nick),
+    ...recentBotNames,
   ]);
   const candidates = TRAVELER_POOL.filter(p => !existingNames.has(p.nick));
   const pickedProfile = candidates[Math.floor(Math.random() * candidates.length)] || TRAVELER_POOL[0];

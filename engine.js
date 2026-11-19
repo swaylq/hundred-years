@@ -507,6 +507,7 @@ function unpairedBuys(delta, wage) {
 }
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
+const MARKET_ASSET_LOSS_RE = /(黄金|金条|现货|古玩|字画|文玩|股票|基金|期货|理财|比特币|银元|美钞|铺位|商铺|库存|存货|货物|资产).{0,12}(波动损失|波动亏损|亏损清算|市价损失|市场波动损|贬值损失|跌价损失)/;
 const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
 const REVENUE_REFUND_ASSET_RE = /(回笼|回款|变现|获利|盈利|利润|经营所得|销售所得|出货所得|卖货所得|营收|进账|分红现金|货款现金)/;
 const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|变现款|现款|收款|营收|所得|款项|余款|进账)$/;
@@ -516,20 +517,34 @@ const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口
 const EXCHANGE_BALANCE_ENTRY_RE = /(兑换|换币|换钞|折算).{0,8}(结余|本金|积蓄|余额|现金|新币|旧币)/;
 const DEPOSIT_OUTFLOW_RE = /(存入|存单|定期|活期|转入|开户)/;
 
-/** 防止同一笔存货跌价被扣两遍：
- *  模型在「买了 8000 钢材、行情大跌后只剩 1500 残值」时，常既记「购入钢材 -8000」、
- *  assetsAdd 记残值 1500，又在 entries 里额外扣一笔「钢材库存贬值损耗 -6500」，
- *  导致现金和净值被重复扣掉双倍。未卖出的账面跌价已在 assetsAdd.worth 体现，不应再扣现金。 */
+/** 防止同一笔存货/实物资产跌价被扣两遍：
+ *  模型在「买了 45 万黄金、行情大跌后只剩 13.5 万残值」时，常既记「购入黄金本金 -450000」、
+ *  assetsAdd 记折后残值 135000，又在 entries 里额外扣一笔「黄金市场短期波动亏损清算 -315000」，
+ *  导致现金和净值被重复扣掉双倍（亏掉 140%）。未卖出的账面跌价已在 assetsAdd.worth 体现，不应再扣现金。 */
 function stripPaperLossEntries(delta) {
   if (!delta || !Array.isArray(delta.entries) || !delta.entries.length) return null;
-  const hasBuyOrAsset = delta.entries.some(e => e && Number(e.amount) < 0 && BUY_WORD.test(String(e.what || '')))
-    || (Array.isArray(delta.assetsAdd) && delta.assetsAdd.length > 0);
+  const buyOut = delta.entries
+    .filter(e => e && Number(e.amount) < 0 && (BUY_WORD.test(String(e.what || '')) || ASSET_BUY_OUTFLOW_RE.test(String(e.what || ''))) && !BUY_LOSS_RE.test(String(e.what || '')))
+    .reduce((t, e) => t - Number(e.amount), 0);
+  const addedWorth = (Array.isArray(delta.assetsAdd) ? delta.assetsAdd : [])
+    .reduce((t, a) => t + (Number(a && a.worth) || 0), 0);
+  const hasBuyOrAsset = buyOut > 0 || addedWorth > 0;
   if (!hasBuyOrAsset) return null;
+  const hasDiscountedAssetBuy = buyOut > 0 && addedWorth > 0 && buyOut > addedWorth;
   const removed = [];
   delta.entries = delta.entries.filter(e => {
-    if (e && Number(e.amount) < 0 && PAPER_LOSS_RE.test(String(e.what || ''))) {
-      removed.push(String(e.what));
+    if (!e || !(Number(e.amount) < 0)) return true;
+    const what = String(e.what || '');
+    if (PAPER_LOSS_RE.test(what)) {
+      removed.push(what);
       return false;
+    }
+    if (hasDiscountedAssetBuy && MARKET_ASSET_LOSS_RE.test(what)) {
+      const lossAmt = -Number(e.amount);
+      if (lossAmt <= buyOut * 1.05) {
+        removed.push(what);
+        return false;
+      }
     }
     return true;
   });
@@ -815,27 +830,49 @@ function venueOf(text) {
 }
 
 /* 押本钱的说法。囤货也算——1948 年 8 月囤货砸手里、1946 年囤货发财，
- * 都该由行情表说了算，而不是由模型的胆子说了算。 */
-const BET = /(炒股|股票|证券|交易所|大盘|基金|建仓|加仓|满仓|抄底|追高|期货|标金|公债|国债|外汇|美钞|黄金|金条|银元|比特币|虚拟货币|炒房|炒币|认购证|倒卖|倒腾|投机|囤|押|下注|赌|梭哈|杠杆|配资|借钱买|抵押)/;
+ * 都该由行情表说了算，而不是由模型的胆子说了算。
+ * 注意：裸「抵押」（如抵押铺位换流动资金）属于融资周转，不再单独触发投机掷骰，
+ * 仍保留在 BET_DEBT 与「场子+动词」组合里。 */
+const BET = /(炒股|股票|证券|交易所|大盘|基金|建仓|加仓|满仓|抄底|追高|期货|标金|公债|国债|外汇|美钞|黄金|金条|银元|比特币|虚拟货币|炒房|炒币|认购证|倒卖|倒腾|投机|囤|押|下注|赌|梭哈|杠杆|配资|借钱买)/;
 /* 反着做：这几个词出现就算他在往下押（清仓、换现钱、撤出、做空） */
 const BET_SHORT = /(做空|卖空|清仓|空仓|离场|割肉|抛掉|全卖|换成现钱|换成现金|落袋|撤出|套现|出清|脱手)/;
 /* 借来的钱押进去，输光了还欠着 */
 const BET_DEBT = /(杠杆|配资|借钱|借的钱|抵押|当掉|高利贷|印子钱)/;
+/* 否定或观望分句（如「断不可再碰高杠杆投机」「绝不轻易入局高杠杆」「避开股市波动」「避险黄金暂不动」），
+ * 命中这类表态说明玩家明确拒绝投机，绝不能当成下注硬掷亏损骰子。 */
+const NEGATED_BET_CLAUSE_RE = /(绝不|断不可|决不|不再|不可再|切忌|切勿|莫要|千万别|绝不能|不要再|暂不动|按兵不动|观望不动|绝不轻易)/;
+const INLINE_AVOID_BET_RE = /(?:避开|躲开|远离|不碰|别碰|不沾|不炒|不押|不赌|不做|戒掉)[^，,。；;！？!?\n]{0,16}/g;
+const DEFENSIVE_GOLD_RE = /(避险|保值|抗通胀|防通胀|锁死|压箱底|稳妥)/;
+const AGGRESSIVE_BET_RE = /(炒|杠杆|配资|期货|做空|押注|下注|赌|投机|抄底|追高|满仓|全仓|梭哈|短线|博一把)/;
+
+function stripNegatedBetClauses(text) {
+  return String(text || '')
+    .split(/[，,。；;！？!?\n]+/)
+    .map(seg => seg.trim())
+    .filter(seg => seg && !NEGATED_BET_CLAUSE_RE.test(seg))
+    .map(seg => seg.replace(INLINE_AVOID_BET_RE, ''))
+    .join('，');
+}
 
 /** 这个月他押了没有、押的方向对不对得上行情、这一把成不成、几倍。
  *  骰子只认存档种子和第几个月，同一局重算结果不变。 */
 function speculation(s, list) {
-  const text = String(list || '');
-  const venue = venueOf(text);
+  const activeText = stripNegatedBetClauses(list);
+  const venue = venueOf(activeText);
   /* 两条路认「他在押本钱」：说法本身就是押（炒股、加杠杆、梭哈），
    * 或者认得出场子又带着一个下手的动词（「凑首付买一套房子」——
    * BET 里没有「买房」，但场子是房、动词是买，那就是押）。 */
-  if (!BET.test(text) && !(venue && /(买|押|囤|屯|炒|赌|全仓|满仓|杠杆|配资|抵押|倒|收|吃下|投|下注|梭哈|盘下)/.test(text))) {
+  if (!BET.test(activeText) && !(venue && /(买|押|囤|屯|炒|赌|全仓|满仓|杠杆|配资|抵押|倒|收|吃下|投|下注|梭哈|盘下)/.test(activeText))) {
     return { bet: false };
   }
   /* 赌场没有行情可循，永远对半开；别的场子查表 */
   const market = venue && venue !== '赌' ? marketAt(s.year, s.month, venue) : null;
-  const mine = BET_SHORT.test(text) ? -1 : 1;              // 默认是买进、囤着
+  const mine = BET_SHORT.test(activeText) ? -1 : 1;              // 默认是买进、囤着
+  /* 非历史金银大行情窗口下，单纯买实物黄金/金条做避险保值（无杠杆/投机/全仓博弈）属于稳健资产配置，
+   * 买进后按家当正常随物价重标价，不硬掷三成半到八成的投机亏损骰子；1948 等真实金银窗口照常走市场表。 */
+  if (venue === '金' && !market && mine > 0 && DEFENSIVE_GOLD_RE.test(activeText) && !AGGRESSIVE_BET_RE.test(activeText)) {
+    return { bet: false };
+  }
   const align = market ? market.dir * mine : 0;
   const winP = align > 0 ? 0.68 : align < 0 ? 0.22 : 0.45;
   const seed = (s.seed || 1) * 31337 + (s.n || 1) * 2654435761;
@@ -853,7 +890,7 @@ function speculation(s, list) {
     mult = win ? 0.5 + 2.5 * r2 * r2 : -(0.35 + 0.65 * Math.pow(r2, 1.5));
     if (win && r3 < 0.12) mult *= 2;
   }
-  const debt = mine > 0 && !win && mult <= -0.9 && BET_DEBT.test(text);
+  const debt = mine > 0 && !win && mult <= -0.9 && BET_DEBT.test(activeText);
   return {
     bet: true, market, venue, mine, align, win,
     mult: Math.round(mult * 100) / 100,
@@ -1673,7 +1710,7 @@ function activeTravelerBondsOf(s) {
   return out;
 }
 
-const DEEP_TRAVELER_INTENT_RE = /(吃酒|痛饮|深谈|交心|结拜|拜把|义结金兰|提亲|成婚|拜堂|道侣|切磋|比武|争锋|翻脸|拆台|决战|密谈)/;
+const DEEP_TRAVELER_INTENT_RE = /(吃酒|痛饮|深谈|交心|对弈|品茗|叙旧|知交|托付|结拜|拜把|义结金兰|提亲|成婚|拜堂|道侣|切磋|比武|争锋|翻脸|拆台|摊牌|围堵|决战|密谈)/;
 
 function hasDeepIntentFor(txt, nick) {
   const idx = txt.indexOf(nick);
@@ -1944,16 +1981,20 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
     const bNote = oneLine(validBond.note || '', 34);
     const past = (s && Array.isArray(s.months)) ? s.months : [];
     const pKey = whoKey(partner);
+    let prevRel = null;
     let alreadySameOrHigher = false;
     for (let i = past.length - 1; i >= 0; i--) {
       const pm = past[i];
       if (pm && pm.bond && whoKey(pm.bond.with) === pKey) {
+        prevRel = pm.bond.rel;
         if (pm.bond.rel === rel || isBondDowngrade(pm.bond.rel, rel)) alreadySameOrHigher = true;
         break;
       }
     }
-    /* 本局对该穿越者已留过同一或更高友好名分的印记（哪怕跨了日历年）或备注是空洞套话，不再反复刷屏或降格覆盖 */
-    if (alreadySameOrHigher || ROUTINE_BOND_NOTE_RE.test(bNote)) {
+    /* 本局对该穿越者已留过同一或更高友好名分的印记（哪怕跨了日历年），不再反复刷屏或降格覆盖；
+     * 若属于实质跃迁或正反反转（如 试探→同盟、对手→同盟、同盟→知己/对手），即便备注带套话也正常留痕更新。 */
+    const isRealStep = !!(prevRel && prevRel !== rel && !isBondDowngrade(prevRel, rel));
+    if (alreadySameOrHigher || (!isRealStep && ROUTINE_BOND_NOTE_RE.test(bNote))) {
       return null;
     }
     const summary = formatBondTrace(nick, partner, city, rel, bNote);
