@@ -577,40 +577,61 @@ function addTrace(runId, tr) {
 /* 那些还没多少真人踩过的年份，按年代哈希给两位在当年活动的先遣穿越者，
  * 这样玩家随便挑哪一年进去，都有鲜活的同道穿越者可以偶遇、对暗号、抢货、合谋、比武乃至成婚。
  * 一旦真人穿越者在该年留下了痕迹，就优先展示真人的名号与事迹。 */
-const FELLOW_SURNAMES = ['沈', '林', '顾', '苏', '陆', '谢', '裴', '叶', '江', '白', '秦', '温'];
-const FELLOW_GIVENS = ['青', '晚', '知微', '无咎', '听澜', '玄度', '见山', '栖梧', '渡川', '星河', '长庚', '霜降'];
-const FELLOW_ROLES = [
+const FELLOW_SURNAMES = ['沈', '林', '顾', '苏', '陆', '谢', '裴', '叶', '江', '白', '秦', '温', '程', '宋', '许', '唐', '周', '韩', '孟', '梁'];
+const FELLOW_GIVENS = [
+  '青', '晚', '知微', '无咎', '听澜', '玄度', '见山', '栖梧', '渡川', '星河', '长庚', '霜降',
+  '望舒', '怀瑾', '惊蛰', '南枝', '折柳', '观潮', '枕河', '临风', '清晏', '明远', '辞镜', '砚舟',
+];
+const FELLOW_ROLES_MUNDANE = [
+  { tag: '行商', stance: '商路竞合', desc: '靠前世眼光提前卡位紧俏百货与行情，既是抢筹劲敌，谈拢了也能联手做大局' },
+  { tag: '掮客', stance: '抢筹劲敌', desc: '专在城中行市与牙行之间倒腾紧俏货源，下手极快，动辄与同行压价争抢' },
+  { tag: '消息通', stance: '情报博弈', desc: '常驻茶馆与街头耳目网，手里攥着政策与行情风声，肯拿情报换实在筹码' },
+  { tag: '巧匠', stance: '手艺切磋', desc: '借现代见识改良老行当工艺与铺面打法，爱找懂行同乡切磋或合伙分润' },
+  { tag: '武侠', stance: '义气结交', desc: '身怀内家拳脚，在码头与行会间立稳脚跟，敬重有胆有识的同道，不服便要比划' },
+];
+const FELLOW_ROLES_DARK = [
   { tag: '玄学', stance: '同道引路', desc: '在城角支摊批八字看风水，暗里收罗带灵气的古物，爱拿半句现代俗语试探同乡' },
-  { tag: '修仙', stance: '奇门互市', desc: '自称云游散修，在旧书肆和药铺寻觅丹方与吐纳残篇，手头有秘传方子但缺世俗银钱' },
-  { tag: '武侠', stance: '义气结交', desc: '身怀内家拳脚，在码头与镖行之间接护送险活，肯替谈得来的同道撑腰压阵' },
-  { tag: '鬼怪', stance: '暗市合股', desc: '常在子夜半步鬼市提灯出没，专做阴阳两界奇货与凶宅平事的买卖，消息最灵通' },
-  { tag: '魔法', stance: '巧匠合作', desc: '在钟表行后院熬制西洋炼金魔药、刻印符文器物，常找懂现代门路的人合伙改良工艺' },
-  { tag: '克苏鲁', stance: '秘闻交换', desc: '暗中调查海港深海黑石雕与异域密教手札，手里攥着不少外洋走私与黑市紧俏情报' },
-  { tag: '神魔', stance: '香火共济', desc: '重修城郊荒废古祠，借落魄神明香火替人消灾祈福，在三教九流里人面颇广' },
-  { tag: '行商', stance: '商路竞合', desc: '靠前世眼光提前卡位紧俏百货与房产，既是抢筹劲敌，谈拢了也能联手做大局' },
+  { tag: '鬼市', stance: '暗市合股', desc: '常在子夜半步鬼市提灯出没，专做旧物奇货与偏门消息的买卖，谈价极精' },
+  { tag: '奇巧', stance: '巧匠合作', desc: '在后院暗室捣鼓秘药器物与古法改良，常找懂现代门路的人合伙试制' },
+  { tag: '丹方', stance: '奇门互市', desc: '在旧书肆和药铺寻觅残篇古方，手头握着偏门秘法但缺世俗本钱与销路' },
+  { tag: '古祠', stance: '香火共济', desc: '修缮城郊荒废古祠，借旧时香火人脉在三教九流里穿梭，亦暗中收放旧物' },
 ];
 
+function mix32(n) {
+  let x = n >>> 0;
+  x ^= x >>> 16;
+  x = Math.imul(x, 0x7feb352d) >>> 0;
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x846ca68b) >>> 0;
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
 function fallbackFellows(year, city) {
-  const h1 = ((year * 2654435761) >>> 0);
-  const h2 = (((year + 37) * 2246822519) >>> 0);
-  const name1 = FELLOW_SURNAMES[h1 % FELLOW_SURNAMES.length] + FELLOW_GIVENS[(h1 >>> 5) % FELLOW_GIVENS.length];
-  let name2 = FELLOW_SURNAMES[h2 % FELLOW_SURNAMES.length] + FELLOW_GIVENS[(h2 >>> 6) % FELLOW_GIVENS.length];
-  if (name2 === name1) name2 = FELLOW_SURNAMES[(h2 + 3) % FELLOW_SURNAMES.length] + FELLOW_GIVENS[(h2 + 7) % FELLOW_GIVENS.length];
-  const r1 = FELLOW_ROLES[h1 % FELLOW_ROLES.length];
-  const r2 = FELLOW_ROLES[(h1 + 3 + (h2 % 4)) % FELLOW_ROLES.length];
+  const y = Number(year) || 1948;
+  const m1 = mix32(y * 2654435761);
+  const m2 = mix32((y + 97) * 2246822519);
+  /* 姓氏与名字分属两个互不相交的半区并配与 12 互质的步长，确保同年两人及连续多年绝不撞名撞字 */
+  const s1 = ((y * 3) + (m1 % 3)) % 10;
+  const g1 = (((y * 5) % 12) + 12) % 12;
+  const s2 = 10 + (((y * 7) + (m2 % 3)) % 10);
+  const g2 = 12 + ((((y * 7) % 12) + 12) % 12);
+  const name1 = FELLOW_SURNAMES[s1] + FELLOW_GIVENS[g1];
+  const name2 = FELLOW_SURNAMES[s2] + FELLOW_GIVENS[g2];
+  /* 每年必配一位偏市井商路竞合/博弈型与一位偏江湖暗面/奇门型同行，兼顾商战抢筹与暗面探索 */
+  const r1 = FELLOW_ROLES_MUNDANE[(y * 2 + (m1 >>> 4)) % FELLOW_ROLES_MUNDANE.length];
+  const r2 = FELLOW_ROLES_DARK[(y * 3 + (m2 >>> 4)) % FELLOW_ROLES_DARK.length];
   const c = city || '城里';
-  return [
-    {
-      nick: name1, year, month: (h1 % 6) + 1, city: c, kind: 'traveler', origin: 'fellow',
-      tag: r1.tag, stance: r1.stance, desc: r1.desc,
-      summary: `穿越者「${name1}」落脚${c}：${r1.desc}`,
-    },
-    {
-      nick: name2, year, month: (h2 % 6) + 4, city: c, kind: 'traveler', origin: 'fellow',
-      tag: r2.tag, stance: r2.stance, desc: r2.desc,
-      summary: `穿越者「${name2}」也在${c}：${r2.desc}`,
-    },
-  ];
+  const f1 = {
+    nick: name1, year: y, month: (m1 % 6) + 1, city: c, kind: 'traveler', origin: 'fellow',
+    tag: r1.tag, stance: r1.stance, desc: r1.desc,
+    summary: `穿越者「${name1}」落脚${c}：${r1.desc}`,
+  };
+  const f2 = {
+    nick: name2, year: y, month: (m2 % 6) + 4, city: c, kind: 'traveler', origin: 'fellow',
+    tag: r2.tag, stance: r2.stance, desc: r2.desc,
+    summary: `穿越者「${name2}」也在${c}：${r2.desc}`,
+  };
+  return (y % 2 === 0) ? [f1, f2] : [f2, f1];
 }
 
 /* 启动时若 year_traces 为空，从已有合乎当前规则的对局里提取头几条重要事迹入库 */

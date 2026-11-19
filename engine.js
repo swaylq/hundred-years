@@ -508,7 +508,9 @@ function unpairedBuys(delta, wage) {
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
 const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
-const REVENUE_REFUND_ASSET_RE = /(回笼|回款|经营所得|销售所得|营收|进账)/;
+const REVENUE_REFUND_ASSET_RE = /(回笼|回款|经营所得|销售所得|营收|进账|分红现金|货款现金)/;
+const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|营收|所得|款项|余款|进账)$/;
+const BANK_DEPOSIT_RE = /(存单|定期|活期|存款|存折|银行账户)/;
 const ASSET_BUY_OUTFLOW_RE = /(购入|买入|购买|换购|换取|兑换|置换|囤|存货|采购|收购|进货|预付|定金|盘下|置办)/;
 const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口碑|名声)$/;
 const EXCHANGE_BALANCE_ENTRY_RE = /(兑换|换币|换钞|折算).{0,8}(结余|本金|积蓄|余额|现金|新币|旧币)/;
@@ -575,7 +577,11 @@ function stripBogusCashAndExchange(s, delta) {
         removedAssets.push(nm);
         return false;
       }
-      if (w > 0 && REVENUE_REFUND_ASSET_RE.test(`${nm} ${nt}`) && posRev >= w * 0.3 && buyOut < w * 0.3) {
+      const normKind = normalizeAssetKind(nm, a.kind);
+      const revNamed = REVENUE_REFUND_ASSET_RE.test(`${nm} ${nt}`);
+      const isDeposit = BANK_DEPOSIT_RE.test(nm);
+      const matchesPosEntry = ents.some(e => e && Number(e.amount) > 0 && Math.abs(Number(e.amount) - w) <= Math.max(w * 0.08, 1));
+      if (w > 0 && revNamed && !isDeposit && posRev >= w * 0.3 && (normKind === '现金类' || CASH_LIKE_ASSET_NAME_RE.test(nm) || matchesPosEntry || buyOut < w * 0.3)) {
         removedAssets.push(nm);
         return false;
       }
@@ -1782,6 +1788,36 @@ function isBondDowngrade(prevRel, nextRel) {
   return !!(a && b && b < a);
 }
 
+const INITIAL_EXPLICIT_RE = {
+  '结拜': /(结拜|拜把|义结金兰|磕头结义)/,
+  '提亲': /(提亲|求亲|说媒|下聘|订婚)/,
+  '成婚': /(成婚|结婚|迎娶|拜堂|洞房|领证)/,
+  '道侣': /(道侣|双修|结为道侣)/,
+};
+
+/** 初次照面时防止模型一步跳到「同盟/知己/结拜/宿敌/成婚」等高阶名分，
+ *  把后续月份的关系升温、竞合与反转空间留出来（玩家清单明确写出结拜/提亲/成婚的除外）。 */
+function capInitialBond(s, bond, list = '') {
+  if (!bond || !bond.with || !bond.rel) return bond;
+  const key = whoKey(bond.with);
+  const past = (s && Array.isArray(s.months)) ? s.months : [];
+  const hadPrev = past.some(pm => pm && pm.bond && whoKey(pm.bond.with) === key)
+    || activeTravelerBondsOf(s).some(b => whoKey(b.nick) === key);
+  if (hadPrev) return bond;
+
+  const rel = bond.rel;
+  const listTxt = String(list || '');
+  if (INITIAL_EXPLICIT_RE[rel] && INITIAL_EXPLICIT_RE[rel].test(listTxt)) return bond;
+  if (rel === '同盟') return { ...bond, rel: '合伙' };
+  if (rel === '知己' || rel === '结拜') {
+    const isBiz = /(合伙|合股|商路|启动资金|分润|合作|联手)/.test(bond.note || '');
+    return { ...bond, rel: isBiz ? '合伙' : '结交' };
+  }
+  if (rel === '宿敌') return { ...bond, rel: '对手' };
+  if (rel === '提亲' || rel === '成婚' || rel === '道侣') return { ...bond, rel: '初识' };
+  return bond;
+}
+
 function toThirdPersonTrace(text) {
   return String(text || '')
     .replace(/你们/g, '二人')
@@ -1827,7 +1863,7 @@ function formatBondTrace(nick, partner, city, rel, note) {
   return trimTrace(cleanNote ? `${head}：${cleanNote}` : head, 50);
 }
 
-const ROUTINE_BOND_NOTE_RE = /(深度绑定|利益绑定|绑定加深|继续合作|合作顺畅|例行分账|维持合作|稳步推进|正常分润|深度合作|深度战略|达成共识|高度契合|资源深度共享|深化产能合作|稳产共识)/;
+const ROUTINE_BOND_NOTE_RE = /(深度绑定|利益绑定|绑定加深|继续合作|合作顺畅|例行分账|维持合作|稳步推进|正常分润|深度合作|深度战略|达成共识|高度契合|资源深度共享|深化产能合作|稳产共识|深度互信|深层利益|互通协议)/;
 
 /** 判定本月返回的 bond 是否属于无实质变化的冗余重复：
  *  跨月扫描历史记录（不只看上个月），只要该搭档名分未变且间隔不足 6 个月、
@@ -1854,8 +1890,8 @@ function isRedundantBond(s, bond, tBeat) {
   return false;
 }
 
-const PURE_NEWS_EVENT_RE = /(国务院|暂行办法|办法出台|命令发行|正式发行|颁布|施行|停兑|停止流通|停止使用|大会召开|宣布成立|全国推行|市委|市政府|部委|法令出台|法币贬值|金圆券.{0,8}(发行|崩塌|作废|限价|贬值|前奏)|物价.{0,6}(飞涨|暴涨|狂飙|一日|动荡)|投机客.{0,6}破产|王春哲|证券大楼|抢购成风|黑市转入地下|人心惶惶|解放军进城|军管会|物价闯关|熔断|股灾|金融危机)/;
-const PERSONAL_DEED_RE = /(其|此人|他|她|主角|立下|创办|盘下|开起|建成|拿下|打通|创立|拜师|成婚|结拜|立宗|夺得|斩获|练成|破境|淘得|炼出|入股|独揽|获批|立起|开办|商号|字号|分销|秘方|奇物|根基|手艺|资质|名号)/;
+const PURE_NEWS_EVENT_RE = /(国务院|暂行办法|办法出台|命令发行|正式发行|颁布|施行|停兑|停止流通|停止使用|大会召开|宣布成立|全国推行|市委|市政府|部委|法令出台|法币贬值|金圆券.{0,8}(发行|崩塌|作废|限价|贬值|前奏)|物价.{0,6}(飞涨|暴涨|狂飙|一日|动荡)|投机客.{0,6}破产|王春哲|证券大楼|抢购成风|黑市转入地下|人心惶惶|解放军进城|军管会|物价闯关|熔断|股灾|金融危机|央行|叫停|ICO|币圈|洪水|受灾|千股跌停|暴雷潮|P2P|安稳无恙|避开泥潭|及时.{0,4}避险|风声鹤唳)/;
+const PERSONAL_DEED_RE = /(立下|创办|盘下|开起|建成|拿下|打通|创立|拜师|成婚|结拜|立宗|夺得|斩获|练成|破境|淘得|炼出|入股|独揽|获批|立起|开办|商号|字号|分销|秘方|奇物|根基|手艺|资质|名号|名震|传遍|声名大噪)/;
 
 /** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
  *  严格克制：普通打工买卖、纯抄历史新闻或名分未变/倒退的例行合作返回 null，只有初次结缘、关系跃迁或真正个人大事才记入该年。 */
@@ -2387,7 +2423,7 @@ function stampOf(title, score, traits) {
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
-  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isBondDowngrade, isRedundantBond, normalizeAssetKind, stripPaperLossEntries, stripBogusCashAndExchange,
+  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isBondDowngrade, capInitialBond, isRedundantBond, normalizeAssetKind, stripPaperLossEntries, stripBogusCashAndExchange,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
   SCENARIOS, wishSuggestionsFor, checkWish, stageInfo, monthlyPulse, extractCapsule, stampOf, assetVenueOf,

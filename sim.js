@@ -660,8 +660,15 @@ function buildUser(s, list, extra = {}) {
   const directStageGuide = (() => {
     const r = tBeat.rel;
     const stance = (tBeat.fellow && tBeat.fellow.stance) ? `（对方性情：${tBeat.fellow.stance}）` : '';
+    const rivalLean = /竞合|抢筹|博弈|劲敌/.test(`${(tBeat.fellow && tBeat.fellow.stance) || ''} ${(tBeat.fellow && tBeat.fellow.desc) || ''}`);
     if (!r || r === '初识' || r === '试探') {
-      return `请在 summary 与 story 里写出两人面对面的试探与过招${stance}：比如半句只有现代老乡才懂的口癖暗号、对紧俏货源的各自算盘、当场切磋亮手艺，或谈拢分成条件；按实际结果落到「试探 / 合伙 / 师徒 / 对手」，并填好 bond。\n`;
+      const rivalHint = rivalLean
+        ? '对方偏商路抢筹或博弈，若谈不拢分成或争同一批货，优先写出压价抢单的火药味并落到「对手」；'
+        : '';
+      return `请在 summary 与 story 里写出两人面对面的试探与过招${stance}：比如半句只有现代老乡才懂的口癖暗号、对紧俏货源的各自算盘、当场切磋亮手艺，或谈拢分成条件。${rivalHint}初次照面按实际结果落到「初识 / 试探 / 结交 / 合伙 / 师徒 / 对手」（**初次见面不要一步跳到「同盟/知己/结拜/宿敌」**，留出往后月份升温或反目的空间），并填好 bond。\n`;
+    }
+    if (r === '结交' || r === '师徒') {
+      return `两人已是「${r}」，写出更深的交手、共担风险或切磋交心：若有实质推进可升为「合伙 / 同盟 / 知己 / 结拜 / 提亲」，若因利益或理念生隙也可反目转为「对手」并填 bond；若只是平常叙旧往来无新名分变化，正文写活对话，JSON 的 bond 填 null。\n`;
     }
     if (r === '合伙') {
       return `两人已是「合伙」，**不要再写空洞的「深度绑定/达成共识」套话**！若有实质转折，写出共渡风浪后升温（进阶为「知己 / 结拜 / 同盟 / 师徒」）或因分润、抢单、理念起裂痕（转为「对手」）并填 bond；若只是按老规矩顺带走货无新转折，正文照写两句，JSON 的 bond 填 null。\n`;

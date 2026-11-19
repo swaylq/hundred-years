@@ -1047,7 +1047,7 @@ async function runOneMonthInner(req, res, b, s) {
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
     const contextText = `${b.list || ''}\n${out.delta.story || ''}`;
-    const rawValidBond = E.normalizeBond(out.delta.bond, s, echoes, contextText);
+    const rawValidBond = E.capInitialBond(s, E.normalizeBond(out.delta.bond, s, echoes, contextText), b.list);
     const tBeatNow = E.travelerBeat(s, b.list, echoes);
     const isStaleRepeatBond = E.isRedundantBond(s, rawValidBond, tBeatNow);
     const validBond = isStaleRepeatBond ? null : rawValidBond;

@@ -203,8 +203,14 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
   const t0 = Date.now();
   fs.mkdirSync(LOG_DIR, { recursive: true });
   const target = await chooseTargetYearMonth();
-  const yearData = await httpJson('GET', `/api/year?y=${target.year}`);
-  const existingNames = new Set((yearData.fellows || []).map(f => f.nick));
+  const [yearData, curBoard] = await Promise.all([
+    httpJson('GET', `/api/year?y=${target.year}`),
+    httpJson('GET', '/api/board?limit=30').catch(() => ({ rows: [] })),
+  ]);
+  const existingNames = new Set([
+    ...(yearData.fellows || []).map(f => f.nick),
+    ...((curBoard && curBoard.rows) || []).map(r => r.nick),
+  ]);
   const candidates = TRAVELER_POOL.filter(p => !existingNames.has(p.nick));
   const pickedProfile = candidates[Math.floor(Math.random() * candidates.length)] || TRAVELER_POOL[0];
 
