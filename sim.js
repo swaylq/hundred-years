@@ -263,7 +263,9 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
   "moveTo": "他这个月搬到了哪座城／哪个地方，没搬就不要这个字段",
   "worldEvent": "只有当主角本人这个月做出了城中传开的大事、立起体面字号、遇上罕见异象、或与其他穿越者成婚/结拜/决战时才写一句（35字内），绝不许抄当年国家政策或历史新闻，普通月份填 null",
   "bond": {"with":"本月发生初次结识、暗号试探、抢货交锋或关系名分实质变化的穿越者名字（仅限穿越者；老合伙/同盟照旧干活填 null，绝不许把已有同盟/知己降格写回结交/合伙）","rel":"初识/试探/合伙/同盟/师徒/知己/结拜/对手/宿敌/提亲/成婚/道侣","note":"第三人称客观简述具体约定或交锋结果，不出现「你」，禁写「深度绑定/达成共识」等套话，22字内"},
-  "options": [{"what":"下个月能做的一件事，10到22个字，精炼好读","why":"一句话说明亮点或风险"}],
+  "capsule": "仅当他明确埋藏物件/留信给后世穿越者（kind 填 cache），或新立起响亮商号/堂口/门派（kind 填 legacy）时填 {\"kind\":\"cache|legacy\",\"item\":\"14字内名称\",\"clue\":\"34字内藏匿处或暗语\"}，平常月份填 null",
+  "claimedLegacyId": "仅当提示里列有带 #数字 的旧年遗踪且他本月确实去寻访挖出时填该数字，否则填 null",
+  "options": [{"what":"下个月能做的一件事，10到22个字，精炼好读","why":"一句话说清亮点或代价，18字内"}],
   "memo": {
     "line": "把这个月压成六十到九十字的交接记事",
     "people": [{"who":"谁，带上身份（含认识的熟人、奇人或其他穿越者）","note":"你跟他之间发生了什么"}],
@@ -459,8 +461,26 @@ function buildUser(s, list, extra = {}) {
   /* 尺子的**斜率**：二十四个月攒够四年的收入。这里的 E.MONTHS 是斜率的分母，
    * 不是「这一局有多长」——接着走下去的局照这个速度一直往上，别换成 lastMonthOf，
    * 换了等于告诉模型「他第 25 个月起就不长了」。 */
-  const yearsWant = yearsStart + 4 * (s.n - 1) / E.MONTHS;
+  const yearsWant = yearsStart + (E.baseMonthsOf(s) === E.MONTHS_FAST ? 2 : 4) * (s.n - 1) / E.baseMonthsOf(s);
   const behind = s.n > 3 && yearsNow < yearsWant * 0.75;
+  const stInfo = E.stageInfo(s);
+  const stageSay = stInfo.countdown
+    ? `\n【收官倒计时：还剩 ${stInfo.remaining} 个月】这段岁月快到头了——悬着的头绪、买卖、恩怨和他的心愿，请顺势往实在的着落或收口上推进。`
+    : (stInfo.milestone && stInfo.milestoneLabel
+      ? `\n【阶段关口：${stInfo.milestoneLabel}】已走过 ${s.n - 1} 个月，正文可带出这一段局势或人情的转折感。`
+      : '');
+  const wishSay = s.wish
+    ? `\n【他开局立下的心愿】「${s.wish}」——顺着他的实际行动自然推进或呈现阻力，绝不替他强行办成。`
+    : '';
+  const assetMoveSay = (Array.isArray(s.lastAssetMoves) && s.lastAssetMoves.length)
+    ? `\n【手里资产随历史行情变动】` + s.lastAssetMoves.map(m =>
+        `「${m.name}」本月随市${m.pct >= 0 ? '涨了' : '跌了'}约 ${Math.abs(m.pct).toFixed(1)}%`
+      ).join('；') + '。'
+    : '';
+  const pulse = extra.pulse || null;
+  const pulseSay = (pulse && (pulse.kind === 'urgent' || pulse.kind === 'legacy' || pulse.kind === 'countdown'))
+    ? `\n【本月敲门的急事/线索（${pulse.tag}）】${pulse.text}${pulse.sub ? '（' + pulse.sub + '）' : ''}——如果他打算里应对了就写活应对过程，若置之不理则写出相应后果。`
+    : '';
 
   /* 玩家开局写的那一句「他是个什么人」，整局不变，每个月都要带上——
    * 它改的是他做事的方式和别人怎么待他，不改这个月能挣多少。
@@ -602,8 +622,8 @@ function buildUser(s, list, extra = {}) {
       : `\n【初探暗面边缘（${weird.themes[0].name}）—— 暂不给真神通，先摸门径】\n` +
         `这是他头一回试探「${weird.themes[0].name}」。暗面门道深藏市井之下，**这个月不让他立刻练成法术或一步得宝**，只写他摸到一点真假莫辨的蛛丝马迹（如半真半假的相师、旧摊残页或高人闭门考验），在 memo.threads 里留一条下个月可继续追查的钩子。\n`;
 
-  /* 同年时空里的其他穿越者与重要留痕（严格控制字数，突出同行互动） */
-  const ec = extra.echoes || { traces: [], fellows: [], myBonds: [] };
+  /* 同年时空里的其他穿越者与重要留痕（严格控制字数，突出同行互动与跨年代遗踪） */
+  const ec = extra.echoes || { traces: [], fellows: [], myBonds: [], legacies: [] };
   const fellowLines = (ec.fellows || []).slice(0, 3).map(f =>
     `· 穿越者「${f.nick}」（${f.stance || f.tag || '同行'}）：${f.desc || f.summary}`
   );
@@ -611,13 +631,26 @@ function buildUser(s, list, extra = {}) {
     .filter(t => t && t.kind !== 'traveler')
     .slice(0, 3)
     .map(t => `· ${t.summary}`);
+  const listTxtNow = String(list || '');
+  const legacyPool = (ec.legacies || []).filter(lg => {
+    if (!lg || !lg.item) return false;
+    if (pulse && pulse.kind === 'legacy') return true;
+    return listTxtNow.includes(lg.item) || listTxtNow.includes(lg.nick) || /(遗踪|暗盒|铁盒|老字号|旧年|埋下|挖出|寻访)/.test(listTxtNow);
+  }).slice(0, 2);
+  const legacyLines = legacyPool.map(lg =>
+    `· 【旧年遗踪${lg.id ? '#' + lg.id : ''}】${lg.year} 年穿越者「${lg.nick}」在${lg.city}留下「${lg.item}」（${lg.clue}）` +
+    (lg.claimedBy
+      ? `——注意：此物已被 ${lg.claimedYear || ''} 年的穿越者「${lg.claimedBy}」捷足先登挖走，只剩一张调侃字条`
+      : (lg.capsuleKind === 'cache' ? '——若他去寻访挖出，写活发现旧物与现代暗语的一幕，并把数字 id 填进 claimedLegacyId' : '——若他上门寻访，写活老字号后人或旧识对上暗号的照面'))
+  );
   const echoLines = [
     ...(ec.myBonds || []).map(b => `· 【跨局因果】${b}`),
+    ...legacyLines,
     ...fellowLines,
     ...traceLines,
   ];
   const echoSay = echoLines.length
-    ? `\n【同年在${s.city}活动的其他穿越者与留痕】\n${echoLines.join('\n')}\n`
+    ? `\n【同年在${s.city}活动的其他穿越者与时空留痕】\n${echoLines.join('\n')}\n`
     : '';
 
   const tBeat = E.travelerBeat(s, list, ec);
@@ -667,8 +700,8 @@ ${monthEvents.length ? `这个月正在发生：${monthEvents.map(e => e.text).j
 【他现在的家底】
 手里的钱：${both(s.cash, cur)}（这一年一个普通人一年挣 ${both(income, cur)}）
 东西：${assets}
-欠债：${debts}${missedSay}
-${persona}
+欠债：${debts}${missedSay}${assetMoveSay}
+${persona}${wishSay}${stageSay}${pulseSay}
 【一直记着的事 —— 这一局从头到现在，游戏替他记着的】
 ${memo || '（还没有，这是头一个月）'}
 
@@ -769,7 +802,7 @@ async function runMonth(s, list, opts = {}) {
   const budget = opts.budget || 90000;
   const t0 = Date.now();
   const left = () => budget - (Date.now() - t0);
-  const user = buildUser(s, list, { echoes: opts.echoes });
+  const user = buildUser(s, list, { echoes: opts.echoes, pulse: opts.pulse });
   const model = opts.model || MODEL;
 
   if (opts.onField || opts.onStory) {
@@ -790,6 +823,7 @@ async function runMonth(s, list, opts = {}) {
       if (opts.onRedo) { try { opts.onRedo(); } catch (e) {} }
       const retryUser = buildUser(s, list, {
         echoes: opts.echoes,
+        pulse: opts.pulse,
         retry: ['确保输出合法完整的单个 JSON 对象，字符串内部引用词语请一律用「」而不要裸写英文双引号'],
       });
       const text2 = await OR.call(model, SYS, retryUser, {
@@ -971,28 +1005,37 @@ function optionsLocal(s, salt, echoes) {
     socialOpt = lifeOpts[Math.floor(r() * lifeOpts.length)];
   }
 
-  const third = alreadyWeird
-    ? { what: wPick.way.slice(0, 24), why: `${wPick.name} · ${wPick.hook.slice(0, 28)}` }
-    : (one(rich, '来钱快，风险也大') || one(other, '换个方向试试'));
+  const legacies = (echoes && Array.isArray(echoes.legacies)) ? echoes.legacies : [];
+  const legacyPick = legacies.length && s.n >= 2 && r() < 0.25 ? legacies[0] : null;
+  const third = legacyPick
+    ? {
+        what: legacyPick.capsuleKind === 'cache'
+          ? `去寻 ${legacyPick.year} 年异客留下的「${legacyPick.item}」`.slice(0, 24)
+          : `探访 ${legacyPick.year} 年留下的「${legacyPick.item}」`.slice(0, 24),
+        why: '旧年遗踪 · 或有意外收获',
+      }
+    : alreadyWeird
+      ? { what: wPick.way.slice(0, 24), why: `${wPick.name} · 暗面奇闻` }
+      : (one(rich, '高回报 · 也更担险') || one(other, '换条路试试'));
   return [
-    one(steady, '稳当营生'),
+    one(steady, '稳当来钱 · 风险低'),
     socialOpt,
     third,
   ].filter(Boolean);
 }
 
 const OPT_SYS = `你是《这一百年》的记事人。一位穿越者落在中国近一百年里的某一年某一个月，
-在一座城里过两年，一个月一步。现在给他三条下个月能走的路。
+在一座城里过日子，一个月一步。现在给他三条下个月能走的路。
 
-三条要各有味道，别三条全是枯燥打工赚钱：
+三条要各有味道，**每条的 why 用 14 字以内点明利弊或取舍**，别三条全是枯燥打工：
 1. 一条是稳当生计（接着做手头的活计、铺面，或城里稳妥的买卖）。
 2. 一条是**同行穿越者互动**（若提示里有同年穿越者，优先点名一位穿越者，写去对暗号试探、合伙做一单、交换情报、切磋或抢先卡位；若没有再写本地人情见识）。
-3. 一条是搏一把的新路子（押本钱、倒紧俏货、走远路；仅当他已经踏入暗面且身上有相关本事时，才可给低魔奇闻支线）。
+3. 一条是搏一把的新路子（押本钱、倒紧俏货、走远路，或顺着已露头的旧年遗踪/暗面奇闻追查）。
 
-每条 what 压在 10 到 22 个字，精炼好读、具体到人或地方，不出现游戏用语，不写当年不存在的现代物件。
+每条 what 压在 10 到 22 个字，干脆具体，不出现游戏用语，不写当年不存在的现代物件。
 
 只输出一个 JSON 对象：
-{"options":[{"what":"下个月能做的一件事，10到22个字","why":"一句话说明亮点或风险"}]}`;
+{"options":[{"what":"下个月能做的一件事，10到22个字","why":"14字内说清利弊或风险"}]}`;
 
 async function runOptions(s, opts = {}) {
   const OR = require('./tools/or.js');
@@ -1040,8 +1083,10 @@ const REVIEW_SYS = `你是《这一百年》的记事人。一位穿越者落在
 
 只输出一个 JSON 对象，不要别的字：
 {"title":"给这段日子起个题，四到八个汉字，不带书名号",
+ "stamp":"二到四个汉字的朱砂印文，如囤金客、弄潮儿、乱世孤舟",
  "verdict":"总评正文，二百到三百五十个汉字，分两三段，段与段之间用 \\n 隔开",
  "became":"一句话，二十五字以内：末了他是这座城里的一个什么人",
+ "wishOutcome":"仅当下面给出【开局立下的心愿】时填 {\"status\":\"成了|差一步|另有归宿\",\"note\":\"一句话交代心愿下落，二十八字内\"}，没立过心愿填 null",
  "turns":[{"when":"1948 年 3 月","what":"这一步为什么是转折，一句话，三十字以内"}],
  "missed":"一句话：那一年真有、他却没走的一条路——是什么路、走通了会是什么光景"}
 
@@ -1067,8 +1112,9 @@ function reviewUser(s, r) {
   const held = traits.filter(t => !t.lost).map(t => t.what);
   const lost = traits.filter(t => t.lost).map(t => t.what);
   const people = ((s.memo || {}).people || []).map(x => x.who).slice(0, 12);
-  return `【他是谁】${s.nick}，${s.persona ? `他自己说他是这么个人：「${s.persona}」` : '没写过自己是个什么人'}。
-【落在哪儿】${r.year} 年 ${r.month} 月的${s.city}，一直走到 ${r.endYear} 年 ${r.endMonth} 月，一共 ${r.months} 个月${r.months > E.MONTHS ? `（前二十四个月走完就该收工了，他选了接着往下走）` : ''}。
+  const baseM = E.baseMonthsOf(s);
+  return `【他是谁】${s.nick}，${s.persona ? `他自己说他是这么个人：「${s.persona}」` : '没写过自己是个什么人'}。${s.wish ? `\n【开局立下的心愿】「${s.wish}」（请在 wishOutcome 里如实判定成了、差一步还是另有归宿）` : ''}
+【落在哪儿】${r.year} 年 ${r.month} 月的${s.city}，一直走到 ${r.endYear} 年 ${r.endMonth} 月，一共 ${r.months} 个月${r.months > baseM ? `（前 ${baseM} 个月走完就该收工了，他选了接着往下走）` : ''}。
 【那一年的世道】${c.era}
 挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头一个月约 ${m.ceiling}）`).join('；')}
 这一年前后的事：${(c.events || []).slice(0, 6).map(e => `${e.month} 月：${e.text}`).join('；')}
@@ -1097,13 +1143,24 @@ function reviewLocal(s, r) {
     (b.entries || []).reduce((t, e) => t + e.amount, 0) - (a.entries || []).reduce((t, e) => t + e.amount, 0))[0];
   const held = ((s.memo || {}).traits || []).filter(t => !t.lost).map(t => t.what);
   const yrs = r.score.toFixed(2);
+  const title = r.score >= 3 ? '站住了脚' : r.score >= 0.5 ? '过得去' : '没攒下什么';
+  const wishOutcome = s.wish
+    ? {
+        status: r.score >= 2 ? '成了' : (r.score >= 0.3 ? '差一步' : '另有归宿'),
+        note: r.score >= 2
+          ? `一路攒下实在家底，当年立下的心愿算是落了地。`
+          : `世道起伏难料，当年那桩心愿还留着半截念想。`,
+      }
+    : null;
   return cleanReview({
-    title: r.score >= 3 ? '站住了脚' : r.score >= 0.5 ? '过得去' : '没攒下什么',
+    title,
+    stamp: E.stampOf(title, r.score, held),
     verdict: `${r.year} 年 ${r.month} 月你落在${s.city}，手里 ${r.startCashText}，谁也不认识。\n` +
       `${r.months} 个月走下来，家底是 ${r.endWorthText}，抵得上那时候一个普通人 ${yrs} 年的收入。` +
       (held.length ? `这些日子你练出来的是${held.join('、')}。` : '') +
       (best ? `\n最好的是 ${best.year} 年 ${best.month} 月：${String(best.story || '').slice(0, 80)}` : ''),
     became: held.length ? `一个${held[0]}的人` : `${s.city}城里一个普通人`,
+    wishOutcome,
     turns: [], missed: '',
   }, s, r);
 }
@@ -1117,10 +1174,23 @@ function cleanReview(o, s, r) {
     .filter(t => t && (t.what || t.when))
     .slice(0, 4)
     .map(t => ({ when: str(t.when, 24), what: str(t.what, 80) }));
+  const title = str(o && o.title, 16) || '这些日子';
+  const held = ((s && s.memo && s.memo.traits) || []).filter(t => !t.lost).map(t => t.what);
+  const rawStamp = str(o && o.stamp, 6).replace(/[^一-鿿]/g, '');
+  const stamp = (rawStamp.length >= 2 && rawStamp.length <= 4) ? rawStamp : E.stampOf(title, r && r.score, held);
+  let wishOutcome = null;
+  if (s && s.wish && o && o.wishOutcome && typeof o.wishOutcome === 'object') {
+    const rawSt = String(o.wishOutcome.status || '').trim();
+    const status = rawSt.includes('成') ? '成了' : (rawSt.includes('差') || rawSt.includes('未') ? '差一步' : '另有归宿');
+    const note = str(o.wishOutcome.note, 48);
+    if (note) wishOutcome = { status, note };
+  }
   return {
-    title: str(o && o.title, 16) || '这些日子',
+    title,
+    stamp,
     verdict: str(o && o.verdict, 1200),
     became: str(o && o.became, 60),
+    wishOutcome,
     turns,
     missed: str(o && o.missed, 160),
     /* 存下来是哪一段的总评、什么时候写的——往后翻旧局要认得出 */

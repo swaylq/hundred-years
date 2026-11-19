@@ -12,7 +12,7 @@
 <link rel="icon" type="image/svg+xml" href="/assets/logo-mark.svg">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-<link rel="stylesheet" href="/style.css?v=20261119h">
+<link rel="stylesheet" href="/style.css?v=20261119i">
 </head>
 <body data-screen="pick" data-theme="light">
 
@@ -75,6 +75,8 @@
       </div>
     </div>
 
+    <div id="scenario-bar" class="scenario-bar" hidden aria-label="精选开局"></div>
+
     <div class="pick-toolbar">
       <div class="era-bar" id="era-bar" role="tablist" aria-label="按时代筛选">
         <button type="button" class="era-btn on" data-era="all">全部百年</button>
@@ -102,6 +104,13 @@
       </div>
     </div>
     <div id="year-hero" class="year-hero"></div>
+    <div class="dur-row" id="dur-row" role="group" aria-label="选择时长">
+      <div class="dur-pills">
+        <button type="button" class="dur-btn on" data-dur="24">两年正传</button>
+        <button type="button" class="dur-btn" data-dur="12">一年快局</button>
+      </div>
+      <span class="dur-note num" id="dur-note">24 个月</span>
+    </div>
     <div id="months" class="mo-grid" role="group" aria-label="选择开局月份"></div>
     <div id="mo-metrics" class="mo-metrics" hidden></div>
     <div id="mo-warn" class="warn-strip" hidden></div>
@@ -120,6 +129,14 @@
           <input id="persona" maxlength="80" placeholder="如：走街串巷的木匠，略通风水" aria-describedby="persona-count">
         </div>
       </div>
+      <div class="field">
+        <div class="field-head">
+          <label for="wish">这段日子的心愿（选填）</label>
+          <span id="wish-count" class="field-count num">0 / 30</span>
+        </div>
+        <input id="wish" maxlength="50" placeholder="如：赶在换币前攒下硬通货，站稳脚跟" aria-describedby="wish-count">
+        <div id="wish-hints" class="wish-hints" hidden></div>
+      </div>
       <button id="start" type="button" class="btn-primary start-go">穿去这一年 →</button>
     </div>
   </section>
@@ -135,6 +152,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
             <span id="mic-hint-text"></span>
           </div>
+          <div id="play-pulse" class="pulse-strip" hidden></div>
           <div class="dock-head">
             <label for="list" id="write-label">本月打算</label>
             <div class="dock-meta">
@@ -183,6 +201,7 @@
       <div class="mine-bar-meta" id="mine-meta" hidden></div>
     </div>
     <div class="rank-list" id="rank-world"></div>
+    <div id="mine-echoes" class="mine-echoes" hidden></div>
     <div class="rank-list" id="rank-mine" hidden></div>
   </section>
 
@@ -240,6 +259,6 @@
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="/voice.js?v=20261119g"></script>
-<script src="/app.js?v=20261119h"></script>
+<script src="/app.js?v=20261119i"></script>
 </body>
 </html>

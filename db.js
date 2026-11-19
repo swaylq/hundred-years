@@ -58,6 +58,7 @@ db.exec(`
   ]) if (!cols.has(c)) db.exec(`ALTER TABLE runs ADD COLUMN ${c} ${t}`);
 }
 const MODE = 'months24';
+const MODE_FAST = 'months12';
 const MAX_BOARD_PICKS = 2;
 const ON_BOARD = 'COALESCE(on_board, 1) = 1';
 db.exec(`
@@ -87,6 +88,18 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS token_aliases_tok ON token_aliases(token);
 `);
+{
+  const tCols = new Set(db.prepare('PRAGMA table_info(year_traces)').all().map(c => c.name));
+  for (const [c, t] of [
+    ['capsule_kind', 'TEXT'],
+    ['capsule_item', 'TEXT'],
+    ['capsule_clue', 'TEXT'],
+    ['claimed_by', 'TEXT'],
+    ['claimed_year', 'INTEGER'],
+    ['claimed_run_id', 'TEXT'],
+  ]) if (!tCols.has(c)) db.exec(`ALTER TABLE year_traces ADD COLUMN ${c} ${t}`);
+  db.exec('CREATE INDEX IF NOT EXISTS year_traces_cap ON year_traces(city, capsule_kind, year DESC)');
+}
 
 const id = () => crypto.randomBytes(9).toString('base64url');
 const now = () => Date.now();
@@ -135,6 +148,11 @@ const q = {
                           ORDER BY extra_world_usd DESC LIMIT ?`),
   countExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}' AND ${ON_BOARD}`),
   rankExtra: db.prepare(`SELECT COUNT(*) n FROM runs WHERE extra_status = 'done' AND mode = '${MODE}' AND ${ON_BOARD} AND extra_world_usd > ?`),
+  boardFast: db.prepare(`SELECT id,nick,year,month,score,year_earned,world_usd,result,review,updated FROM runs
+                         WHERE status = 'done' AND world_usd IS NOT NULL AND mode = '${MODE_FAST}' AND ${ON_BOARD}
+                         ORDER BY world_usd DESC, updated DESC LIMIT ?`),
+  countFast: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE_FAST}' AND ${ON_BOARD}`),
+  rankFast: db.prepare(`SELECT COUNT(*) n FROM runs WHERE status = 'done' AND mode = '${MODE_FAST}' AND ${ON_BOARD} AND world_usd > ?`),
   aliasesOf: db.prepare(`SELECT target_token FROM token_aliases WHERE token = ?`),
   addAlias: db.prepare(`INSERT OR IGNORE INTO token_aliases (token, target_token) VALUES (?, ?)`),
   updPick: db.prepare(`UPDATE runs SET board_pick = ? WHERE id = ?`),
@@ -284,7 +302,8 @@ function createRun(state, nick, preferredToken) {
     ? cleanPref
     : crypto.randomBytes(16).toString('base64url');
   const t = now();
-  q.ins.run(rid, token, nick, state.startYear || state.year, state.startMonth || state.month, JSON.stringify(state), 'playing', t, t, MODE);
+  const runMode = (state && Number(state.targetMonths) === 12) ? MODE_FAST : MODE;
+  q.ins.run(rid, token, nick, state.startYear || state.year, state.startMonth || state.month, JSON.stringify(state), 'playing', t, t, runMode);
   return { id: rid, token };
 }
 
@@ -332,6 +351,9 @@ const getRow = rid => q.detail.get(rid);
 const boardExtra = (limit = 50) => q.boardExtra.all(limit).map(r => ({ ...r, extra_result: r.extra_result ? JSON.parse(r.extra_result) : null }));
 const extraCount = () => q.countExtra.get().n;
 const rankExtra = usd => q.rankExtra.get(usd).n + 1;
+const boardFast = (limit = 50) => q.boardFast.all(limit).map(r => ({ ...r, result: r.result ? JSON.parse(r.result) : null }));
+const fastCount = () => q.countFast.get().n;
+const rankFast = usd => q.rankFast.get(usd).n + 1;
 
 /** 榜。给了 year 就是那一年的榜（按当年那种钱净赚多少排，每年内不限制条数），
  *  不给就是总榜（按折成今天的美元排，每位用户最多展示自选或默认赚钱最多的两条）。 */
@@ -487,10 +509,29 @@ const qTrace = {
                             ORDER BY yt.created DESC LIMIT 6`),
   playersInYear: db.prepare(`SELECT id,nick,year,month,state,score,status
                              FROM runs
-                             WHERE mode = '${MODE}' AND COALESCE(on_board, 1) = 1
+                             WHERE mode IN ('${MODE}', '${MODE_FAST}') AND COALESCE(on_board, 1) = 1
                                AND year BETWEEN ? AND ?
                                AND id <> ?
                              ORDER BY CASE WHEN status = 'done' THEN 0 ELSE 1 END, updated DESC LIMIT 12`),
+  insCapsule: db.prepare(`INSERT INTO year_traces (run_id,nick,year,month,city,kind,partner,bond_type,summary,importance,created,capsule_kind,capsule_item,capsule_clue)
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
+  hasCapsuleKind: db.prepare(`SELECT 1 FROM year_traces WHERE run_id = ? AND capsule_kind = ? LIMIT 1`),
+  findLegacies: db.prepare(`SELECT yt.id,yt.run_id,yt.nick,yt.year,yt.month,yt.city,yt.kind,yt.summary,
+                                   yt.capsule_kind,yt.capsule_item,yt.capsule_clue,yt.claimed_by,yt.claimed_year
+                            FROM year_traces yt
+                            LEFT JOIN runs r ON r.id = yt.run_id
+                            WHERE yt.capsule_kind IN ('cache', 'legacy')
+                              AND yt.year < ?
+                              AND yt.run_id <> ?
+                              AND (r.id IS NULL OR COALESCE(r.on_board, 1) = 1)
+                            ORDER BY
+                              CASE WHEN yt.city = ? THEN 0 ELSE 1 END,
+                              CASE WHEN yt.capsule_kind = 'cache' AND yt.claimed_by IS NULL THEN 0 ELSE 1 END,
+                              yt.year DESC, yt.created DESC
+                            LIMIT 12`),
+  getTraceById: db.prepare(`SELECT * FROM year_traces WHERE id = ?`),
+  claimCache: db.prepare(`UPDATE year_traces SET claimed_by = ?, claimed_year = ?, claimed_run_id = ?
+                          WHERE id = ? AND capsule_kind = 'cache' AND claimed_by IS NULL AND run_id <> ?`),
   totalCount: db.prepare(`SELECT COUNT(*) n FROM year_traces`),
 };
 
@@ -693,12 +734,218 @@ function yearEchoes(year, month = 12, opts = {}) {
       if (myBonds.length >= 2) break;
     }
   }
-  return { traces: picked, fellows, myBonds };
+  const legacies = crossEraLegacies(yr, city, { excludeRunId: ex });
+  return { traces: picked, fellows, myBonds, legacies };
+}
+
+/* ── 跨年代时空留物 / 百年字号接力 ─────────────────────────── */
+function addCapsule(runId, cap) {
+  if (!cap || !cap.item || !cap.clue || !cap.year) return null;
+  const nick = String(cap.nick || '').trim();
+  if (!nick || SKIP_NICK.test(nick)) return null;
+  const rid = String(runId || '');
+  const cKind = cap.capsuleKind === 'cache' ? 'cache' : 'legacy';
+  if (qTrace.hasCapsuleKind.get(rid, cKind)) return null;
+  const item = String(cap.item).replace(/\s+/g, ' ').trim().slice(0, 18);
+  const clue = String(cap.clue).replace(/\s+/g, ' ').trim().slice(0, 42);
+  const summary = String(cap.summary || `${nick}在${cap.city || '城里'}留下「${item}」`).slice(0, 54);
+  const res = qTrace.insCapsule.run(
+    rid, nick, Number(cap.year), Number(cap.month || 1), String(cap.city || ''),
+    cKind === 'cache' ? 'capsule' : 'legacy',
+    null, null, summary, 3, now(),
+    cKind, item, clue
+  );
+  return {
+    id: Number(res.lastInsertRowid || 0),
+    year: Number(cap.year),
+    month: Number(cap.month || 1),
+    city: String(cap.city || ''),
+    nick,
+    capsuleKind: cKind,
+    item,
+    clue,
+    summary,
+  };
+}
+
+function claimCapsule(traceId, claimer = {}) {
+  const tid = Number(traceId);
+  if (!(tid > 0)) return null;
+  const row = qTrace.getTraceById.get(tid);
+  if (!row || row.capsule_kind !== 'cache') return null;
+  const nick = String(claimer.nick || '').trim();
+  const rid = String(claimer.runId || '');
+  if (!nick || SKIP_NICK.test(nick) || row.run_id === rid) return null;
+  const r = qTrace.claimCache.run(nick, Number(claimer.year || 0), rid, tid, rid);
+  if (!(r.changes > 0)) return { alreadyClaimed: true, claimedBy: row.claimed_by, claimedYear: row.claimed_year, item: row.capsule_item, fromNick: row.nick, fromYear: row.year };
+  return {
+    claimed: true,
+    id: tid,
+    item: row.capsule_item,
+    fromNick: row.nick,
+    fromYear: row.year,
+    city: row.city,
+  };
+}
+
+const FALLBACK_CAPSULES = [
+  { kind: 'cache', item: '槐树下的锈铁盒', clue: '城西老庙槐树根下三尺，刻着半句「奇变偶不变」' },
+  { kind: 'legacy', item: '同源旧字号', clue: '老街深处挂着一块旧匾，掌柜还记得当年那位古怪东家的暗语' },
+  { kind: 'cache', item: '砖缝里的油纸包', clue: '旧码头渡口石碑后头藏着一包硬货与一张手绘草图' },
+  { kind: 'legacy', item: '半步茶寮旧约', clue: '老茶馆后厢留着一块寄茶木牌，报上旧年暗号能讨一条门路' },
+];
+
+function fallbackLegacyFor(year, city) {
+  const yr = Number(year);
+  if (!(yr >= 1931) || !city) return null;
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < city.length; i++) { h ^= city.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  const dec = Math.floor(yr / 10);
+  const h2 = ((h ^ (dec * 2654435761)) >>> 0);
+  const span = Math.min(28, Math.max(4, yr - 1926));
+  const fromYear = Math.max(1926, yr - (4 + (h2 % Math.max(1, span - 3))));
+  const nick = FELLOW_SURNAMES[h2 % FELLOW_SURNAMES.length] + FELLOW_GIVENS[(h2 >>> 5) % FELLOW_GIVENS.length];
+  const tpl = FALLBACK_CAPSULES[h2 % FALLBACK_CAPSULES.length];
+  return {
+    id: null,
+    origin: 'fallback',
+    year: fromYear,
+    city,
+    nick,
+    capsuleKind: tpl.kind,
+    item: tpl.item,
+    clue: tpl.clue,
+    claimedBy: null,
+    claimedYear: null,
+  };
+}
+
+function crossEraLegacies(year, city, opts = {}) {
+  const yr = Number(year);
+  const ex = String(opts.excludeRunId || '');
+  const c = String(city || '').trim();
+  const out = [];
+  if (yr > 1926) {
+    try {
+      const rows = qTrace.findLegacies.all(yr, ex, c);
+      let hasCache = false, hasLegacy = false;
+      for (const r of rows) {
+        if (!r || !r.capsule_item) continue;
+        if (c && r.city && r.city !== c) continue;
+        if (r.capsule_kind === 'cache' && hasCache) continue;
+        if (r.capsule_kind === 'legacy' && hasLegacy) continue;
+        if (r.capsule_kind === 'cache') hasCache = true;
+        if (r.capsule_kind === 'legacy') hasLegacy = true;
+        out.push({
+          id: r.id,
+          origin: 'player',
+          year: r.year,
+          city: r.city,
+          nick: r.nick,
+          capsuleKind: r.capsule_kind,
+          item: r.capsule_item,
+          clue: r.capsule_clue || r.summary,
+          claimedBy: r.claimed_by || null,
+          claimedYear: r.claimed_year || null,
+        });
+        if (out.length >= 2) break;
+      }
+    } catch (e) {}
+  }
+  if (!out.length) {
+    const fb = fallbackLegacyFor(yr, c);
+    if (fb) out.push(fb);
+  }
+  return out;
+}
+
+/** 查当前浏览器用户的历史对局有没有收到来自其他穿越者的跨时空回响（暗盒被挖、被结缘等）。 */
+function echoAlertsForTokens(tokenOrList) {
+  const toks = expandTokens(tokenOrList);
+  if (!toks.length) return [];
+  try {
+    const ph = toks.map(() => '?').join(',');
+    const mine = db.prepare(`SELECT id, nick, year FROM runs WHERE token IN (${ph}) ORDER BY created DESC LIMIT 100`).all(...toks);
+    if (!mine.length) return [];
+    const runIds = mine.map(r => r.id);
+    const nicks = [...new Set(mine.map(r => String(r.nick || '').trim()).filter(n => n && !SKIP_NICK.test(n)))];
+    const alerts = [];
+    const rPh = runIds.map(() => '?').join(',');
+    const claimed = db.prepare(`
+      SELECT year, city, capsule_item, claimed_by, claimed_year
+      FROM year_traces
+      WHERE run_id IN (${rPh}) AND claimed_by IS NOT NULL
+      ORDER BY created DESC LIMIT 4
+    `).all(...runIds);
+    for (const c of claimed) {
+      alerts.push({
+        kind: 'capsule',
+        text: `你在 ${c.year} 年${c.city}留下的「${c.capsule_item}」，被 ${c.claimed_year || ''} 年的穿越者「${c.claimed_by}」寻走了`,
+      });
+    }
+    if (nicks.length) {
+      const nPh = nicks.map(() => '?').join(',');
+      const bonds = db.prepare(`
+        SELECT nick, partner, year, city, bond_type, summary
+        FROM year_traces
+        WHERE kind = 'bond' AND partner IN (${nPh}) AND run_id NOT IN (${rPh})
+        ORDER BY created DESC LIMIT 4
+      `).all(...nicks, ...runIds);
+      const seen = new Set();
+      for (const b of bonds) {
+        const k = `${b.nick}::${b.partner}::${b.year}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        alerts.push({
+          kind: 'bond',
+          text: `${b.year} 年${b.city}，穿越者「${b.nick}」在另一段岁月里与你的「${b.partner}」结下${b.bond_type || '渊源'}`,
+        });
+      }
+    }
+    return alerts.slice(0, 4);
+  } catch (e) {
+    return [];
+  }
+}
+
+/** 查当前浏览器用户在哪些年份已完结，返回每年的朱砂印文供首页画卷墙盖印。 */
+function myStamps(tokenOrList, stampFn) {
+  const toks = expandTokens(tokenOrList);
+  if (!toks.length) return {};
+  try {
+    const ph = toks.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT id, year, score, review, extra_review, mode, updated
+      FROM runs
+      WHERE token IN (${ph}) AND status = 'done' AND mode IN ('${MODE}', '${MODE_FAST}')
+      ORDER BY score DESC, updated DESC
+    `).all(...toks);
+    const map = {};
+    for (const r of rows) {
+      if (map[r.year]) continue;
+      let title = '', stamp = '';
+      for (const raw of [r.extra_review, r.review]) {
+        if (!raw) continue;
+        try {
+          const rv = JSON.parse(raw);
+          if (rv && rv.stamp) { stamp = String(rv.stamp); title = rv.title || ''; break; }
+          if (rv && rv.title) { title = String(rv.title); break; }
+        } catch {}
+      }
+      const label = stamp || (typeof stampFn === 'function' ? stampFn(title, r.score) : (title.slice(0, 4) || '已走完'));
+      map[r.year] = { id: r.id, stamp: label, title: title || label, score: r.score, mode: r.mode };
+    }
+    return map;
+  } catch (e) {
+    return {};
+  }
 }
 
 module.exports = {
   db, createRun, loadRun, saveRun, finishRun, setOnBoard, board, myRuns, linkTokens, doneCount,
-  rankWorld, rankInYear, doneInYear, yearsWithRuns, FILE,
+  rankWorld, rankInYear, doneInYear, yearsWithRuns, FILE, MODE, MODE_FAST,
   startExtra, finishExtra, saveReview, getRow, boardExtra, extraCount, rankExtra,
-  addTrace, yearEchoes, fallbackFellows, SKIP_NICK, deleteRun, setBoardPick, MAX_BOARD_PICKS,
+  boardFast, fastCount, rankFast,
+  addTrace, addCapsule, claimCapsule, crossEraLegacies, echoAlertsForTokens, myStamps,
+  yearEchoes, fallbackFellows, SKIP_NICK, deleteRun, setBoardPick, MAX_BOARD_PICKS,
 };

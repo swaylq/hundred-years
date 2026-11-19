@@ -173,8 +173,9 @@ const CATALOG = E.SPINE.years.map(y => {
     year: y.year, city: y.city, ceiling: y.ceiling,
     era: c ? c.era : null,
     ready: !!c,
-    /* 二十四个月要走得完：最晚只能从 2024 年 1 月开局 */
+    /* 24 月正传最晚 2024 年 1 月开局，12 月快局最晚 2025 年 1 月开局 */
     startMonths: Array.from({ length: 12 }, (_, i) => i + 1).filter(m => E.startable(y.year, m)),
+    startMonthsFast: Array.from({ length: 12 }, (_, i) => i + 1).filter(m => E.startable(y.year, m, E.MONTHS_FAST)),
     currencies: y.currencies.map(x => E.CN[x]),
     switch: y.switch ? { month: y.switch.month, day: y.switch.day, say: y.switch.say } : null,
   };
@@ -236,25 +237,36 @@ function view(s, runId) {
   const rid = runId || s.id || '';
   const ec = DB.yearEchoes(s.year, s.month, { excludeRunId: rid, nick: s.nick, city: s.city });
   const travelerBonds = E.activeTravelerBondsOf(s);
+  const baseM = E.baseMonthsOf(s);
+  const lastM = E.lastMonthOf(s);
+  const finished = s.n > lastM;
+  const pulse = !finished ? E.monthlyPulse(s, SIM.card(s.year), ec) : null;
+  const assetMoves = (s.lastAssetMoves || []).map(m => ({ ...m, worthText: E.money(m.worth, cur) }));
   return {
     /* year/month 是**走到哪个月**，startYear/startMonth 才是开局那个月 */
     year: s.year, month: s.month,
     startYear: s.startYear, startMonth: s.startMonth,
-    /* months 是**这一局要走几个月**：没接后传就是 24，接了就是 24+N */
-    n: Math.min(s.n, E.lastMonthOf(s)), months: E.lastMonthOf(s),
-    mainMonths: E.MONTHS,
+    /* months 是**这一局要走几个月**：没接后传就是 24（快局 12），接了就是主局+N */
+    n: Math.min(s.n, lastM), months: lastM,
+    mainMonths: baseM,
+    targetMonths: baseM,
     phase: s.phase === 'extra' ? 'extra' : 'main',
-    finished: s.n > E.lastMonthOf(s),
+    finished,
+    stage: E.stageInfo(s),
+    pulse,
+    wish: s.wish || '',
     city: s.city, nick: s.nick, status: s.status,
     currency: cur, currencyName: E.CN[cur],
     cash: s.cash, cashText: E.money(s.cash, cur),
     assets: s.assets.map(a => ({ ...a, worthText: E.money(a.worth, cur) })),
+    lastAssetMoves: assetMoves,
     debts: s.debts.map(d => ({ ...d, amountText: E.money(d.amount, cur) })),
     persona: s.persona || '',
     /* 这一局记着的事，整份发给界面——「不要丢失任何记忆」是要看得见的 */
     memo: s.memo || E.newMemo(),
     fellows: ec.fellows || [],
     echoes: ec.traces || [],
+    legacies: ec.legacies || [],
     travelerBonds,
     netWorth: E.netWorth(s), netWorthText: E.money(E.netWorth(s), cur),
     income: E.incomeOf(s.year, s.month),
@@ -334,12 +346,14 @@ function comicList(s, runId) {
 const isOldRun = s => !s || typeof s.n !== 'number' || !Array.isArray(s.months);
 const OLD_SAY = '这条旧版记录无法继续，请重新开始一局。';
 
-/* 名次。两年那一刻上总榜和年榜；接着走下去的那一段只上后传榜。 */
+/* 名次。两年正传上总榜和年榜；一年快局上一年快局榜；接着走下去的那一段只上后传榜。 */
 const mainRanks = r => ({
   rankWorld: DB.rankWorld(r.worldUsd), ofWorld: DB.doneCount(),
   rankYear: DB.rankInYear(r.year, r.yearEarned), ofYear: DB.doneInYear(r.year),
 });
+const fastRanks = r => ({ rankFast: DB.rankFast(r.worldUsd), ofFast: DB.fastCount() });
 const extraRanks = r => ({ rankExtra: DB.rankExtra(r.worldUsd), ofExtra: DB.extraCount() });
+const isSupportedMode = m => !m || m === DB.MODE || m === DB.MODE_FAST;
 
 /** 给一局的一段（两年那一段，或后传那一段）写一篇收梢。一段只写一次，写完存库里。
  *  结算页（POST /api/review）和榜上点进来的面板（GET /api/peek）都走这儿：
@@ -355,9 +369,10 @@ async function writeReview(id, row, s, extra, req) {
   busy.add(lock);
   try {
     const r = JSON.parse(rj);
-    /* 两年那一篇只看前二十四个月——玩家要是已经接着往下走了，
-     * 后面那些月份不该混进两年的收梢里。 */
-    const src = (!extra && s.months.length > E.MONTHS) ? { ...s, months: s.months.slice(0, E.MONTHS) } : s;
+    /* 主局那一篇只看前 baseM 个月——玩家要是已经接着往下走了，
+     * 后面那些月份不该混进主局的收梢里。 */
+    const baseM = E.baseMonthsOf(s);
+    const src = (!extra && s.months.length > baseM) ? { ...s, months: s.months.slice(0, baseM) } : s;
     let rev;
     if (HAS_KEY && rateOk(clientIp(req)).ok) {
       try { rev = await SIM.runReview(src, r); }
@@ -386,7 +401,13 @@ const routes = {
   'POST /api/transcribe/refine': async (req, res) =>
     VOICE.handleRefine(req, res, { DB, rateOk: voiceRateOk, clientIp, readBody, json, oops }),
 
-  'GET /api/years': async (req, res) => json(res, 200, { years: CATALOG }),
+  'GET /api/years': async (req, res) => json(res, 200, { years: CATALOG, scenarios: E.SCENARIOS }),
+
+  'GET /api/stamps': async (req, res, q) => {
+    const raw = q.tokens || q.token;
+    if (!raw) return json(res, 200, { stamps: {} });
+    json(res, 200, { stamps: DB.myStamps(String(raw), E.stampOf) });
+  },
 
   'GET /api/year': async (req, res, q) => {
     const y = Number(q.y);
@@ -407,21 +428,31 @@ const routes = {
       });
     }
     const ec = DB.yearEchoes(y, 12, { city: row.city });
-    json(res, 200, { card, months, ceiling: row.ceiling, city: row.city, switch: row.switch, echoes: ec.traces, fellows: ec.fellows || [] });
+    json(res, 200, {
+      card, months, ceiling: row.ceiling, city: row.city, switch: row.switch,
+      startMonths: row.startMonths, startMonthsFast: row.startMonthsFast,
+      wishHints: E.wishSuggestionsFor(y, card),
+      echoes: ec.traces, fellows: ec.fellows || [], legacies: ec.legacies || [],
+    });
   },
 
   'POST /api/run': async (req, res) => {
     const b = await readBody(req);
     const year = Number(b.year), month = Number(b.month);
+    const targetMonths = Number(b.targetMonths || b.duration) === E.MONTHS_FAST ? E.MONTHS_FAST : E.MONTHS;
     if (!CATALOG.some(x => x.year === year && x.ready)) return oops(res, 400, '这一年暂时无法开始游戏');
     if (!(month >= 1 && month <= 12)) return oops(res, 400, '月份要在 1 到 12 之间');
-    /* 一局二十四个月，走到头不能超出 2025 年 12 月 */
-    if (!E.startable(year, month)) return oops(res, 400, `从这个月开始不足 ${E.MONTHS} 个月。最晚可从 2024 年 1 月开始`);
+    if (!E.startable(year, month, targetMonths)) {
+      const latest = targetMonths === E.MONTHS_FAST ? '2025 年 1 月' : '2024 年 1 月';
+      return oops(res, 400, `从这个月开始不足 ${targetMonths} 个月，最晚可从 ${latest} 开始`);
+    }
     const nick = String(b.nick || '').trim().slice(0, 16) || '无名';
     /* 主角设定：玩家写的一句「他是个什么人」，50 个汉字封顶，明摆着的超人写法顶回去 */
     const per = E.checkPersona(b.persona);
     if (!per.ok) return json(res, 400, { error: per.say, count: per.n, limit: E.PERSONA_LIMIT });
-    const s = E.newRun({ year, month, nick, persona: per.text });
+    const wChk = E.checkWish(b.wish);
+    if (!wChk.ok) return json(res, 400, { error: wChk.say, count: wChk.n, limit: E.WISH_LIMIT });
+    const s = E.newRun({ year, month, nick, persona: per.text, wish: wChk.text, targetMonths, scenarioId: b.scenarioId });
     const echoes = DB.yearEchoes(year, month, { nick, city: s.city });
     s.options = SIM.optionsLocal(s, 0, echoes);
     const { id, token } = DB.createRun(s, nick, String(b.token || '').split(',')[0].trim());
@@ -485,15 +516,18 @@ const routes = {
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
     const extra = s.phase === 'extra';
     const last = E.lastMonthOf(s);
+    const baseM = E.baseMonthsOf(s);
+    const isFast = baseM === E.MONTHS_FAST;
+    const ranksForMain = r => isFast ? fastRanks(r) : mainRanks(r);
 
-    /* 结过的原样端回去。两年那一刻的成绩绝不重算——重算一次就等于没冻。 */
+    /* 结过的原样端回去。主局那一刻的成绩绝不重算——重算一次就等于没冻。 */
     if (!extra && row.status === 'done' && row.result) {
       const r0 = JSON.parse(row.result);
       const rev0 = row.review ? JSON.parse(row.review) : null;
       if (HAS_KEY && !finaleImgUrlOf(b.id, false)) ensureFinaleImage(b.id, s, r0, rev0, false).catch(() => {});
       return json(res, 200, {
-        result: r0, already: true, mainMonths: E.MONTHS, ...mainRanks(r0), months: monthList(s, b.id),
-        review: rev0, finaleImage: finaleImgUrlOf(b.id, false), extraRoom: E.extraRoom(s),
+        result: r0, already: true, mainMonths: baseM, isFast, wish: s.wish || '', ...ranksForMain(r0), months: monthList(s, b.id),
+        review: rev0, finaleImage: finaleImgUrlOf(b.id, false), extraRoom: isFast ? 0 : E.extraRoom(s),
       });
     }
     if (extra && row.extra_status === 'done' && row.extra_result) {
@@ -501,7 +535,7 @@ const routes = {
       const rev0 = row.extra_review ? JSON.parse(row.extra_review) : null;
       if (HAS_KEY && !finaleImgUrlOf(b.id, true)) ensureFinaleImage(b.id, s, r0, rev0, true).catch(() => {});
       return json(res, 200, {
-        result: r0, already: true, phase: 'extra', mainMonths: E.MONTHS, ...extraRanks(r0), months: monthList(s, b.id),
+        result: r0, already: true, phase: 'extra', mainMonths: baseM, isFast, wish: s.wish || '', ...extraRanks(r0), months: monthList(s, b.id),
         review: rev0, finaleImage: finaleImgUrlOf(b.id, true),
         main: row.result ? JSON.parse(row.result) : null,
       });
@@ -530,19 +564,19 @@ const routes = {
       DB.finishExtra(b.id, s, r);
       if (HAS_KEY) ensureFinaleImage(b.id, s, r, null, true).catch(() => {});
       return json(res, 200, {
-        result: r, phase: 'extra', mainMonths: E.MONTHS, ...extraRanks(r), months: monthList(s, b.id),
+        result: r, phase: 'extra', mainMonths: baseM, isFast, wish: s.wish || '', ...extraRanks(r), months: monthList(s, b.id),
         finaleImage: finaleImgUrlOf(b.id, true),
-        main: row.result ? JSON.parse(row.result) : null,      // 两年那一刻的成绩，对照着看
+        main: row.result ? JSON.parse(row.result) : null,      // 主局那一刻的成绩，对照着看
       });
     }
     const wrote = DB.finishRun(b.id, s, r);
     if (!wrote) {
-      /* 冻结闸挡下了：库里已经有一份两年的成绩，端那一份出来 */
+      /* 冻结闸挡下了：库里已经有一份主局的成绩，端那一份出来 */
       const r0 = JSON.parse(DB.getRow(b.id).result);
-      return json(res, 200, { result: r0, already: true, mainMonths: E.MONTHS, ...mainRanks(r0), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false) });
+      return json(res, 200, { result: r0, already: true, mainMonths: baseM, isFast, wish: s.wish || '', ...ranksForMain(r0), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false) });
     }
     if (HAS_KEY) ensureFinaleImage(b.id, s, r, null, false).catch(() => {});
-    json(res, 200, { result: r, mainMonths: E.MONTHS, ...mainRanks(r), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false), extraRoom: E.extraRoom(s) });
+    json(res, 200, { result: r, mainMonths: baseM, isFast, wish: s.wish || '', ...ranksForMain(r), months: monthList(s, b.id), finaleImage: finaleImgUrlOf(b.id, false), extraRoom: isFast ? 0 : E.extraRoom(s) });
   },
 
   /* 接着走下去：两年结完账，最多再走五年。
@@ -553,6 +587,7 @@ const routes = {
     if (!found) return oops(res, 404, '无法读取这条记录，请从原来使用的浏览器打开');
     const s = found.state;
     if (isOldRun(s)) return oops(res, 409, OLD_SAY);
+    if (E.baseMonthsOf(s) === E.MONTHS_FAST) return oops(res, 400, '一年快局满一年即收官，想长期续走请选两年正传');
     if (found.row.status !== 'done') return oops(res, 400, '先把前两年过完，才能接着往下走');
     if (s.phase === 'extra') return oops(res, 400, '这一局已经接着往下走过了');
     const r = E.reopen(s);
@@ -591,12 +626,14 @@ const routes = {
     const id = String(q.id || '');
     const row = DB.getRow(id);
     if (!row) return oops(res, 404, '没有这一局');
-    if (row.mode && row.mode !== 'months24') return oops(res, 409, '旧版记录暂不支持查看');
+    if (row.mode && !isSupportedMode(row.mode)) return oops(res, 409, '旧版记录暂不支持查看');
     if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，结算后才能查看成绩');
     let st = null;
     try { st = JSON.parse(row.state); } catch (e) {}
     if (!st || isOldRun(st)) return oops(res, 409, OLD_SAY);
     const result = JSON.parse(row.result);
+    const baseM = E.baseMonthsOf(st);
+    const isFast = baseM === E.MONTHS_FAST || row.mode === DB.MODE_FAST;
     /* 自己的局：面板上多一颗「看每个月写了什么」，点过去走 /api/detail */
     const mine = !!(q.token && DB.loadRun(id, String(q.token)));
     if (Number(row.on_board) === 0 && !mine) return oops(res, 404, '这条旧记录已下架');
@@ -606,12 +643,14 @@ const routes = {
     const xDone = row.extra_status === 'done' && !!row.extra_result;
     const extraReview = xDone && row.extra_review ? JSON.parse(row.extra_review) : null;
     if (xDone && !extraReview) writeReview(id, row, st, true, req).catch(swallow);
+    /* 公开查看不透出私人心愿原文 */
+    const pubRev = review ? { ...review, wishOutcome: null } : null;
     json(res, 200, {
       id: row.id, nick: row.nick, year: row.year, month: row.month, city: st.city,
       created: row.created, updated: row.updated, mine,
-      mainMonths: E.MONTHS,
-      result, rank: mainRanks(result),
-      review, writing: !review,
+      mainMonths: baseM, isFast,
+      result, rank: isFast ? fastRanks(result) : mainRanks(result),
+      review: pubRev, writing: !review,
       finaleImage: finaleImgUrlOf(id, false),
       comic: comicList(st, id),
       extraStatus: row.extra_status || null,
@@ -632,23 +671,25 @@ const routes = {
     const row = DB.getRow(id);
     if (!row) return oops(res, 404, '没有这一局');
     if (!DB.loadRun(id, String(q.token || ''))) return oops(res, 403, '每个月的打算与经历只有本人能看，排行榜可看成绩单与回顾');
-    if (row.mode && row.mode !== 'months24') return oops(res, 409, '旧版记录暂不支持查看详情');
+    if (row.mode && !isSupportedMode(row.mode)) return oops(res, 409, '旧版记录暂不支持查看详情');
     if (row.status !== 'done' || !row.result) return oops(res, 403, '这一局还没走完，结算后才能查看成绩');
     let st = null;
     try { st = JSON.parse(row.state); } catch (e) {}
     if (!st || isOldRun(st)) return oops(res, 409, OLD_SAY);
     const result = JSON.parse(row.result);
+    const baseM = E.baseMonthsOf(st);
+    const isFast = baseM === E.MONTHS_FAST || row.mode === DB.MODE_FAST;
     json(res, 200, {
       id: row.id, nick: row.nick, year: row.year, month: row.month, city: st.city,
-      persona: st.persona || '', created: row.created, updated: row.updated,
-      mainMonths: E.MONTHS,
+      persona: st.persona || '', wish: st.wish || '', created: row.created, updated: row.updated,
+      mainMonths: baseM, isFast,
       result, review: row.review ? JSON.parse(row.review) : null,
       finaleImage: finaleImgUrlOf(id, false),
-      rank: mainRanks(result),
+      rank: isFast ? fastRanks(result) : mainRanks(result),
       /* 后传：接着走下去的那一段。extraStatus 是 playing 就是还在走。 */
       extraStatus: row.extra_status || null,
       extraTo: row.extra_months || 0,
-      extraRoom: row.extra_status ? 0 : E.extraRoom(st),   // 还能往下走几个月
+      extraRoom: (row.extra_status || isFast) ? 0 : E.extraRoom(st),   // 还能往下走几个月
       extraResult: row.extra_result ? JSON.parse(row.extra_result) : null,
       extraReview: row.extra_review ? JSON.parse(row.extra_review) : null,
       extraFinaleImage: row.extra_status === 'done' ? finaleImgUrlOf(id, true) : null,
@@ -760,6 +801,23 @@ const routes = {
         })),
       });
     }
+    if (q.scope === 'fast') {
+      const rows = DB.boardFast(limit);
+      return json(res, 200, {
+        scope: 'fast', year: null, total: DB.fastCount(), yearsWithRuns: DB.yearsWithRuns(),
+        rows: rows.map((r, i) => ({
+          rank: i + 1, id: r.id, nick: r.nick, year: r.year, month: r.month,
+          months: E.MONTHS_FAST,
+          yearEarned: r.year_earned, yearEarnedText: r.result?.yearEarnedText || null,
+          worldUsd: r.world_usd, worldUsdText: E.fmtUsd(r.world_usd || 0),
+          score: r.score, scoreText: E.fmtScore(r.score),
+          city: r.result?.city,
+          title: parseTitle(r.review),
+          image: finaleImgUrlOf(r.id, false),
+          at: r.updated,
+        })),
+      });
+    }
     const year = q.year ? Number(q.year) : null;
     if (year && !(year >= 1926 && year <= 2025)) return oops(res, 400, '年份要在 1926 到 2025 之间');
     const rows = DB.board(limit, year);
@@ -785,23 +843,24 @@ const routes = {
 
   'GET /api/mine': async (req, res, q) => {
     const raw = q.tokens || q.token;
-    if (!raw) return json(res, 200, { rows: [], maxBoardPicks: DB.MAX_BOARD_PICKS, pickedCount: 0, eligibleCount: 0, boardDefault: true });
+    if (!raw) return json(res, 200, { rows: [], echoAlerts: [], stamps: {}, maxBoardPicks: DB.MAX_BOARD_PICKS, pickedCount: 0, eligibleCount: 0, boardDefault: true });
     const rows = DB.myRuns(String(raw)).map(r => {
       const isEx = r.extra_status === 'done';
+      const isFast = r.mode === DB.MODE_FAST;
       let image = finaleImgUrlOf(r.id, isEx) || finaleImgUrlOf(r.id, false);
       if (!image) {
-        const cap = Math.max(24, Number(r.month) || 0, Number(r.extra_months) || 0) + 2;
+        const cap = Math.max(isFast ? 12 : 24, Number(r.month) || 0, Number(r.extra_months) || 0) + 2;
         for (let m = cap; m >= 1; m--) {
           const u = imgUrlOf(r.id, m);
           if (u) { image = u; break; }
         }
       }
-      let title = '';
+      let title = '', stamp = '';
       for (const s of [r.extra_review, r.review]) {
         if (!s) continue;
         try {
           const rv = JSON.parse(s);
-          if (rv && rv.title) { title = String(rv.title); break; }
+          if (rv && rv.title) { title = String(rv.title); stamp = rv.stamp ? String(rv.stamp) : ''; break; }
         } catch {}
       }
       let resObj = null;
@@ -810,7 +869,7 @@ const routes = {
       }
       const yInfo = E.yearOf(r.year);
       let city = (resObj && resObj.city) || (yInfo && yInfo.city) || '';
-      let stepN = null, totalMonths = E.MONTHS;
+      let stepN = null, totalMonths = isFast ? E.MONTHS_FAST : E.MONTHS;
       if (r.status !== 'done' || r.extra_status === 'playing') {
         try {
           const full = DB.getRow(r.id);
@@ -828,11 +887,13 @@ const routes = {
       const { result: _res, extra_result: _xres, review: _rev, extra_review: _xrev, ...clean } = r;
       return {
         ...clean,
+        isFast,
         city,
         stepN,
         totalMonths,
         image,
         title,
+        stamp,
         worldUsd,
         worldUsdText,
         yearEarnedText,
@@ -841,8 +902,12 @@ const routes = {
     const pickedCount = rows.filter(r => r.onBoard).length;
     const eligibleCount = rows.filter(r => r.canPickBoard).length;
     const boardDefault = rows.every(r => r.boardDefault !== false);
+    const echoAlerts = DB.echoAlertsForTokens(String(raw));
+    const stamps = DB.myStamps(String(raw), E.stampOf);
     json(res, 200, {
       rows,
+      echoAlerts,
+      stamps,
       maxBoardPicks: DB.MAX_BOARD_PICKS,
       pickedCount,
       eligibleCount,
@@ -933,13 +998,14 @@ async function runOneMonthInner(req, res, b, s) {
     /* 没密钥的时候正文是本地模板，一瞬间就出来，没什么可流的 */
     const sse = (b.stream && HAS_KEY) ? openStream(res) : null;
     const echoes = DB.yearEchoes(s.year, s.month, { excludeRunId: b.id, nick: s.nick, city: s.city });
+    const pulseNow = E.monthlyPulse(s, SIM.card(s.year), echoes);
 
     let out, usedLocal = false;
     if (HAS_KEY) {
       const r = rateOk(ip);
       if (!r.ok) {
         /* 撞了限流不让游戏坏掉——退回本地演算，并如实告诉玩家为什么 */
-        out = SIM.runMonthLocal(s, b.list, { echoes }); usedLocal = true;
+        out = SIM.runMonthLocal(s, b.list, { echoes, pulse: pulseNow }); usedLocal = true;
         out.why = r.why === 'ip' ? '你这十分钟问得太密了，这个月先由本地算' : '这会儿全站都很忙，这个月先由本地算';
       } else {
         try {
@@ -949,20 +1015,21 @@ async function runOneMonthInner(req, res, b, s) {
             },
             onRedo: () => sse.send('redo', {}),
             echoes,
-          } : { echoes });
+            pulse: pulseNow,
+          } : { echoes, pulse: pulseNow });
         } catch (err) {
           /* 原话只进服务端日志。它是服务商回的英文 JSON，直接印到页面上，
              玩家读到的是「HTTP 402 {"error":{"message":"This request would exceed
              your available credits…」——既看不懂，又把内部情况摊开了。 */
           console.error('这个月退回本地演算：', String(err.message).slice(0, 300));
-          out = SIM.runMonthLocal(s, b.list, { echoes }); usedLocal = true;
+          out = SIM.runMonthLocal(s, b.list, { echoes, pulse: pulseNow }); usedLocal = true;
           out.why = '模型这会儿叫不动，这个月先由本地算';
           /* 流到一半断了：让前端把已经吐出去的半截正文擦掉，换成兜底的那份，
              不然屏幕上会剩着一段没头没尾的话。 */
           if (sse) sse.send('redo', {});
         }
       }
-    } else { out = SIM.runMonthLocal(s, b.list, { echoes }); usedLocal = true; }
+    } else { out = SIM.runMonthLocal(s, b.list, { echoes, pulse: pulseNow }); usedLocal = true; }
 
     const curNow = E.currencyOf(s.year, s.month);
     /* 顶回去的理由只能是「那一年没有这东西」。模型偶尔会替玩家把事否掉
@@ -1002,6 +1069,29 @@ async function runOneMonthInner(req, res, b, s) {
     const traceCand = E.extractWorldTrace(s, { year: s.year, month: s.month, list: b.list }, out.delta, res1, echoes);
     const traceSaved = traceCand && DB.addTrace(b.id, traceCand) ? traceCand : null;
 
+    const capCand = E.extractCapsule(s, b.list, out.delta);
+    let capsuleSaved = null;
+    if (capCand) {
+      capsuleSaved = DB.addCapsule(b.id, capCand);
+      if (capsuleSaved) {
+        if (capCand.capsuleKind === 'cache') s.capsuleCacheSaved = true;
+        else s.capsuleLegacySaved = true;
+      }
+    }
+
+    let capsuleClaimed = null;
+    const realCaches = (echoes.legacies || []).filter(lg => lg && lg.id && lg.capsuleKind === 'cache' && !lg.claimedBy);
+    if (realCaches.length) {
+      const wantId = Number(out.delta.claimedLegacyId || 0);
+      const listStr = String(b.list || '');
+      const hitLg = realCaches.find(lg => lg.id === wantId)
+        || realCaches.find(lg => listStr.includes(lg.item) || (listStr.includes(lg.nick) && /(挖|找|寻|取|启|撬|暗盒|铁盒|遗踪)/.test(listStr)));
+      if (hitLg) {
+        const cl = DB.claimCapsule(hitLg.id, { nick: s.nick, year: s.year, runId: b.id });
+        if (cl && cl.claimed) capsuleClaimed = cl;
+      }
+    }
+
     const assetsAdded = (out.delta.assetsAdd || [])
       .slice(0, 8)
       .map(a => String((a && a.name) || '').trim())
@@ -1033,6 +1123,7 @@ async function runOneMonthInner(req, res, b, s) {
      * closeOut 只做两件事：把 n 记成 MONTHS+1、最后一个月要是换币的月份就补折一次
      * （不折的话，正好停在 1949 年 5 月的人能攥着一堆该作废的钱走人）。 */
     const switched = s.n < E.lastMonthOf(s) ? E.advanceTo(s, s.n + 1) : [E.closeOut(s)].filter(Boolean);
+    const assetMoves = (s.lastAssetMoves || []).map(m => ({ ...m, worthText: E.money(m.worth, s.currency) }));
     /* 三条路跟正文是同一次调用回来的：不多花一次钱，也不让他多等。
      * 模型没给或者给了空的，就退回照年卡拼的那份——界面上永远有三条。
      * 放在推进之后：这三条说的是下个月，本地那份也该照下个月的年份拼。 */
@@ -1054,6 +1145,9 @@ async function runOneMonthInner(req, res, b, s) {
       summary: played.summary,
       story: out.delta.story,
       assetsAdded: played.assetsAdded || [],
+      assetMoves,
+      capsuleSaved,
+      capsuleClaimed,
       image: imgUrlOf(b.id, played.n) || null,
       imagePending: HAS_KEY && !imgUrlOf(b.id, played.n),
       tally,

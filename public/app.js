@@ -41,10 +41,15 @@ const primaryToken = () => localStorage.getItem(TOKEN_KEY) || readTokens()[0] ||
 let token = readTokens().join(',');
 
 let years = [];
+let scenarios = [];
+let myStampsMap = {};
 let selectedYear = null;
 let currentEra = 'all';
 let picked = null;
 let pickedMonth = null;
+let pickedDuration = 24;
+let activeScenarioId = '';
+let currentYearData = null;
 let yearCardCache = new Map();
 let run = null;
 let boardMode = 'world';
@@ -301,7 +306,56 @@ const eraNameOf = y => {
   return hit ? hit[2] : '百年';
 };
 const heat = c => c >= 14 ? 3 : c >= 7 ? 2 : c >= 2 ? 1 : 0;
-const isStartableYear = info => !!(info && info.ready && (info.startMonths || []).length > 0);
+const isStartableYear = info => !!(info && info.ready && ((info.startMonths || []).length > 0 || (info.startMonthsFast || []).length > 0));
+
+function renderScenarios() {
+  const bar = $('#scenario-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  if (!Array.isArray(scenarios) || !scenarios.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.appendChild(el('span', 'scenario-kicker', '精选切口'));
+  for (const sc of scenarios) {
+    const b = el('button', 'scenario-pill', sc.label);
+    b.type = 'button';
+    b.title = sc.wish || sc.label;
+    b.addEventListener('click', () => {
+      openYear(sc.year, {
+        presetMonth: sc.month,
+        presetDuration: sc.targetMonths || 24,
+        presetWish: sc.wish || '',
+        scenarioId: sc.id || '',
+      });
+    });
+    bar.appendChild(b);
+  }
+  requestAnimationFrame(() => syncScrollFade(bar));
+}
+
+function applyStampsToGrid() {
+  $$('#grid .y-card').forEach(card => {
+    const y = Number(card.dataset.year);
+    const old = card.querySelector('.y-stamp');
+    const st = myStampsMap && myStampsMap[y];
+    if (st && st.stamp) {
+      if (old) old.textContent = st.stamp;
+      else card.appendChild(el('span', 'y-stamp', st.stamp));
+    } else if (old) {
+      old.remove();
+    }
+  });
+}
+
+async function loadStamps() {
+  if (!token) return;
+  try {
+    const d = await api('/api/stamps?token=' + encodeURIComponent(token));
+    if (d && d.stamps) {
+      myStampsMap = d.stamps;
+      applyStampsToGrid();
+    }
+  } catch (e) {}
+}
 
 function renderSpotlight(info) {
   const box = $('#pick-spotlight');
@@ -376,6 +430,9 @@ function renderYearGrid(era = 'all') {
     }
     if (marks.children.length) btn.appendChild(marks);
 
+    const st = myStampsMap && myStampsMap[info.year];
+    if (st && st.stamp) btn.appendChild(el('span', 'y-stamp', st.stamp));
+
     const foot = el('span', 'y-card-foot');
     foot.appendChild(el('strong', 'y-card-year num', String(info.year)));
     foot.appendChild(el('span', 'y-card-city', info.city || ''));
@@ -399,13 +456,19 @@ function syncScrollFade(node) {
   node.classList.toggle('fade-l', maxScroll > 4 && node.scrollLeft > 4);
   node.classList.toggle('fade-r', maxScroll > 4 && node.scrollLeft < maxScroll - 4);
 }
-function syncEraBarFade() { syncScrollFade($('#era-bar')); }
+function syncEraBarFade() {
+  syncScrollFade($('#era-bar'));
+  syncScrollFade($('#scenario-bar'));
+}
 function syncPlayStripsFade() {
   syncScrollFade($('#fellow-bar'));
   syncScrollFade($('#picks .quick-picks-scroll'));
 }
 if ($('#era-bar')) {
   $('#era-bar').addEventListener('scroll', syncEraBarFade, { passive: true });
+}
+if ($('#scenario-bar')) {
+  $('#scenario-bar').addEventListener('scroll', () => syncScrollFade($('#scenario-bar')), { passive: true });
 }
 if ($('#fellow-bar')) {
   $('#fellow-bar').addEventListener('scroll', () => syncScrollFade($('#fellow-bar')), { passive: true });
@@ -443,8 +506,11 @@ $('#sp-rand').addEventListener('click', () => {
 async function loadYears() {
   const d = await api('/api/years');
   years = d.years || [];
+  scenarios = d.scenarios || [];
+  renderScenarios();
   renderYearGrid(currentEra);
   requestAnimationFrame(syncEraBarFade);
+  loadStamps();
 }
 
 /* ── 2. 选月开局（年份封面英雄卡 + 零滚动直达启程） ─────────── */
@@ -478,8 +544,70 @@ function updateYearStepButtons(y) {
   }
 }
 
+function syncWishCount() {
+  const elW = $('#wish');
+  const elC = $('#wish-count');
+  if (!elW || !elC) return;
+  const n = countHan(elW.value);
+  elC.textContent = `${n} / 30`;
+  elC.classList.toggle('over', n > 30);
+}
+
+function renderYearMonths(d, presetMonth = null) {
+  const mo = $('#months');
+  if (!mo || !d) return;
+  mo.innerHTML = '';
+  const info = (years || []).find(x => x.year === picked) || {};
+  const list24 = d.startMonths || info.startMonths || [];
+  const list12 = d.startMonthsFast || info.startMonthsFast || list24;
+  if (pickedDuration === 24 && !list24.length && list12.length) pickedDuration = 12;
+
+  $$('#dur-row .dur-btn').forEach(b => {
+    const dur = Number(b.dataset.dur);
+    const can = dur === 12 ? list12.length > 0 : list24.length > 0;
+    b.disabled = !can;
+    b.classList.toggle('on', dur === pickedDuration);
+  });
+  const dn = $('#dur-note');
+  if (dn) dn.textContent = pickedDuration === 12 ? '12 个月 · 节奏紧凑' : '24 个月 · 完整两年';
+
+  const ok = new Set(pickedDuration === 12 ? list12 : list24);
+  let targetPick = null;
+  let firstPick = null;
+  for (const m of d.months) {
+    const b = el('button', 'mo-cell num');
+    b.type = 'button';
+    b.disabled = !ok.has(m.month);
+    b.innerHTML = `${m.month}月${m.events.length ? '<i class="ev-dot"></i>' : ''}`;
+    b.setAttribute('aria-pressed', 'false');
+    b.title = b.disabled ? `从这个月起走不满 ${pickedDuration} 个月` : (m.events.join('；') || '城里平稳');
+    b.addEventListener('click', () => pickMonth(m, b));
+    mo.appendChild(b);
+    if (!firstPick && !b.disabled) firstPick = [m, b];
+    if (!b.disabled && ((presetMonth && m.month === Number(presetMonth)) || (!presetMonth && pickedMonth && m.month === pickedMonth))) {
+      targetPick = [m, b];
+    }
+  }
+  const chosen = targetPick || firstPick;
+  if (chosen) pickMonth(chosen[0], chosen[1]);
+  else {
+    pickedMonth = null;
+    $('#start-box').hidden = true;
+  }
+}
+
+$$('#dur-row .dur-btn').forEach(b => b.addEventListener('click', () => {
+  const dur = Number(b.dataset.dur) === 12 ? 12 : 24;
+  if (dur === pickedDuration || b.disabled) return;
+  pickedDuration = dur;
+  if (currentYearData) renderYearMonths(currentYearData, pickedMonth);
+}));
+
 async function openYear(y, opts = {}) {
   selectedYear = y;
+  activeScenarioId = opts.scenarioId || '';
+  if (opts.presetDuration === 12 || opts.presetDuration === 24) pickedDuration = opts.presetDuration;
+  else pickedDuration = 24;
   const infoRow = (years || []).find(x => x.year === y);
   if (infoRow) renderSpotlight(infoRow);
   updateYearStepButtons(y);
@@ -513,6 +641,7 @@ async function openYear(y, opts = {}) {
 
   picked = y;
   pickedMonth = null;
+  currentYearData = d;
   const c = d.card;
 
   const pills = [`<span class="pill">${esc(d.city)}</span>`];
@@ -552,23 +681,34 @@ async function openYear(y, opts = {}) {
     }
   }
 
-  const mo = $('#months');
-  mo.innerHTML = '';
-  const info = (years || []).find(x => x.year === y) || {};
-  const ok = new Set(info.startMonths || d.months.map(m => m.month));
-  let firstPick = null;
-  for (const m of d.months) {
-    const b = el('button', 'mo-cell num');
-    b.type = 'button';
-    b.disabled = !ok.has(m.month);
-    b.innerHTML = `${m.month}月${m.events.length ? '<i class="ev-dot"></i>' : ''}`;
-    b.setAttribute('aria-pressed', 'false');
-    b.title = b.disabled ? '从这个月起走不满 24 个月' : (m.events.join('；') || '城里平稳');
-    b.addEventListener('click', () => pickMonth(m, b));
-    mo.appendChild(b);
-    if (!firstPick && !b.disabled) firstPick = [m, b];
+  const wishEl = $('#wish');
+  if (wishEl) {
+    wishEl.value = opts.presetWish || '';
+    syncWishCount();
   }
-  if (firstPick) pickMonth(firstPick[0], firstPick[1]);
+  const hintsEl = $('#wish-hints');
+  if (hintsEl) {
+    hintsEl.innerHTML = '';
+    const hints = Array.isArray(d.wishHints) ? d.wishHints : [];
+    if (hints.length) {
+      hintsEl.hidden = false;
+      for (const h of hints.slice(0, 2)) {
+        const hb = el('button', 'wish-chip', h);
+        hb.type = 'button';
+        hb.addEventListener('click', () => {
+          if (!wishEl) return;
+          wishEl.value = h;
+          syncWishCount();
+          wishEl.focus();
+        });
+        hintsEl.appendChild(hb);
+      }
+    } else {
+      hintsEl.hidden = true;
+    }
+  }
+
+  renderYearMonths(d, opts.presetMonth || null);
 }
 
 function pickMonth(m, btn) {
@@ -577,8 +717,9 @@ function pickMonth(m, btn) {
   btn.classList.add('on');
   btn.setAttribute('aria-pressed', 'true');
 
+  const spanMonths = pickedDuration === 12 ? 12 : 24;
   const a0 = picked * 12 + m.month - 1;
-  const t = a0 + 23;
+  const t = a0 + (spanMonths - 1);
   const sy2 = String(picked).slice(-2);
   const ey2 = String(Math.floor(t / 12)).slice(-2);
   const span = `${sy2}.${String(m.month).padStart(2, '0')} → ${ey2}.${String(t % 12 + 1).padStart(2, '0')}`;
@@ -601,13 +742,13 @@ function pickMonth(m, btn) {
   const warn = $('#mo-warn');
   if (sw.length) {
     warn.hidden = false;
-    warn.innerHTML = `<b>这 24 个月内会赶上换币（${esc(sw.join('、'))}）</b>：现金按官方比率折算，囤下的实物家当按市价保值。`;
+    warn.innerHTML = `<b>这 ${spanMonths} 个月内会赶上换币（${esc(sw.join('、'))}）</b>：现金按官方比率折算，囤下的实物家当按市价保值。`;
   } else {
     warn.hidden = true;
   }
 
   $('#start-box').hidden = false;
-  $('#start').textContent = `穿去 ${picked} 年 ${m.month} 月 →`;
+  $('#start').textContent = `穿去 ${picked} 年 ${m.month} 月${spanMonths === 12 ? '（一年快局）' : ''} →`;
 }
 
 const HAN = /[\u4e00-\u9fff\u3400-\u4dbf]/gu;
@@ -619,6 +760,7 @@ $('#persona').addEventListener('input', () => {
   el2.textContent = `${n} / 50`;
   el2.classList.toggle('over', n > 50);
 });
+if ($('#wish')) $('#wish').addEventListener('input', syncWishCount);
 
 $('#start').addEventListener('click', async () => {
   if (!pickedMonth) return toast('请先挑一个开始的月份');
@@ -630,7 +772,12 @@ $('#start').addEventListener('click', async () => {
   try {
     const nick = $('#nick').value.trim();
     const persona = $('#persona').value.trim();
-    const d = await post('/api/run', { year: picked, month: pickedMonth, nick, persona, token: primaryToken() });
+    const wish = $('#wish') ? $('#wish').value.trim() : '';
+    const d = await post('/api/run', {
+      year: picked, month: pickedMonth, nick, persona, wish,
+      targetMonths: pickedDuration, scenarioId: activeScenarioId,
+      token: primaryToken(),
+    });
     addToken(d.token);
     localStorage.setItem(RUN_KEY, d.id);
     run = { id: d.id, state: d.state };
@@ -794,10 +941,14 @@ function renderHud(s, netInfo) {
     ? `<small class="num${netInfo.neg ? ' neg' : ''}">上月 ${esc(netInfo.short)}</small>`
     : `<small class="num muted">年入约 ${esc(s.incomeText)}</small>`;
   const ym = `${s.year}.${String(s.month).padStart(2, '0')}`;
-  const stepText = s.phase === 'extra' ? `续走第 ${now} / ${s.months} 月` : `第 ${now} / ${s.months} 个月`;
+  const st = s.stage || null;
+  const stageBit = (!done && st && st.label) ? ` · ${st.label}` : '';
+  const stepText = s.phase === 'extra' ? `续走第 ${now} / ${s.months} 月` : `第 ${now} / ${s.months} 月${stageBit}`;
+  const isFastRun = Number(s.mainMonths || s.targetMonths || 24) === 12;
   const rightMeta = done
-    ? (s.phase === 'extra' ? '续走期满可算账' : '满两年可算账')
+    ? (s.phase === 'extra' ? '续走期满可算账' : (isFastRun ? '满一年可算账' : '满两年可算账'))
     : `还剩 ${left} 月收官`;
+  const isCountdown = !done && !!(st && st.countdown);
 
   const bar = $('#play-bar');
   bar.innerHTML =
@@ -811,7 +962,7 @@ function renderHud(s, netInfo) {
          ${deltaHtml}
        </div>
      </div>
-     <div class="progress-wrap">
+     <div class="progress-wrap${isCountdown ? ' is-countdown' : ''}">
        <div class="progress-meta">
          <span class="num">${stepText}</span>
          <span>${rightMeta}</span>
@@ -969,12 +1120,26 @@ function renderPlay(last) {
     storyCard.appendChild(toggle);
   }
 
-  /* 关键提醒（换币 / 留痕 / 跨时代拦截 / 固定规则兜底） */
+  /* 关键提醒（换币 / 资产行情变动 / 时空留物 / 留痕 / 跨时代拦截 / 固定规则兜底） */
   const notices = [];
   if (last.switched && last.switched.length) {
     for (const sw of last.switched) {
       notices.push({ warn: true, html: `<b>本月换币</b>：${esc(sw.say)} 手里的 ${esc(sw.before)} 折成了 ${esc(sw.after)}。` });
     }
+  }
+  const aMoves = !last.first ? (last.assetMoves || s.lastAssetMoves || []) : [];
+  if (aMoves.length) {
+    const segs = aMoves.map(m => `「${esc(m.name)}」随市${m.pct >= 0 ? '涨' : '跌'} ${Math.abs(m.pct).toFixed(1)}%`).join('；');
+    notices.push({ warn: aMoves.every(m => m.pct < 0), html: `<b>家当行情</b>：${segs}。` });
+  }
+  if (last.capsuleSaved && last.capsuleSaved.item) {
+    const cs = last.capsuleSaved;
+    const label = cs.capsuleKind === 'cache' ? '时空暗盒' : '百年字号';
+    notices.push({ warn: false, html: `<b>${label}</b>：你在${esc(cs.city)}留下的「${esc(cs.item)}」已封入岁月，后世同城穿越者或能寻得。` });
+  }
+  if (last.capsuleClaimed && last.capsuleClaimed.item) {
+    const cc = last.capsuleClaimed;
+    notices.push({ warn: false, html: `<b>寻得旧物</b>：你启出了 ${cc.fromYear} 年穿越者「${esc(cc.fromNick)}」留在${esc(cc.city)}的「${esc(cc.item)}」。` });
   }
   if (bondInfo && bondInfo.with) {
     const detail = `与穿越者「${esc(bondInfo.with)}」${esc(bondInfo.rel || '交集')}${bondInfo.note ? ' —— ' + esc(bondInfo.note) : ''}`;
@@ -1005,14 +1170,15 @@ function renderPlay(last) {
   /* 行动区 */
   const ta = $('#list');
   ta.disabled = done;
+  const isFastRun = Number(s.mainMonths || s.targetMonths || 24) === 12;
   $('#write-label').textContent = done
-    ? (s.phase === 'extra' ? '续走期满' : '满两年了')
+    ? (s.phase === 'extra' ? '续走期满' : (isFastRun ? '满一年了' : '满两年了'))
     : `第 ${s.n} 个月 · 打算做什么`;
   const send = $('#send');
   send.classList.remove('busy');
   if (done) {
     send.disabled = false;
-    send.textContent = s.phase === 'extra' ? '去算总账 →' : '去算这两年的账 →';
+    send.textContent = s.phase === 'extra' ? '去算总账 →' : (isFastRun ? '去算这一年的账 →' : '去算这两年的账 →');
     send.onclick = settle;
   } else {
     const n = countHan(ta.value);
@@ -1021,20 +1187,95 @@ function renderPlay(last) {
     send.onclick = sendMonth;
   }
   updateDepthBar(countHan(ta.value));
+  renderPulse(s, done);
   renderFellowBar(s, done);
   renderPicks(done ? [] : (last.options || s.options || []));
   if (voice) voice.sync();
 }
 
-/* ── 同城穿越者快选交互条 ────────────────────────────────── */
+/* ── 本月风声 / 急事敲门条（最多 1 条，安静出现） ───────────── */
+function renderPulse(s, done) {
+  const box = $('#play-pulse');
+  if (!box) return;
+  box.innerHTML = '';
+  const p = !done && s && s.pulse;
+  if (!p || !p.text) {
+    box.hidden = true;
+    box.className = 'pulse-strip';
+    return;
+  }
+  box.hidden = false;
+  box.className = 'pulse-strip is-' + (p.kind || 'rumor');
+  const main = el('div', 'pulse-main');
+  main.appendChild(el('span', 'pulse-tag', p.tag || '城中风声'));
+  const body = el('div', 'pulse-copy');
+  body.appendChild(el('span', 'pulse-text', p.text));
+  if (p.sub) body.appendChild(el('small', 'pulse-sub', p.sub));
+  main.appendChild(body);
+  box.appendChild(main);
+  if (p.draft) {
+    const act = el('button', 'pulse-act', p.kind === 'legacy' ? '去寻访' : '写进打算');
+    act.type = 'button';
+    act.addEventListener('click', () => {
+      writeIn(p.draft);
+      act.classList.add('used');
+    });
+    box.appendChild(act);
+  }
+}
+
+/* ── 手头可用快选条（家当 / 头绪 / 旧年遗踪 / 同城穿越者合一排） ── */
 function renderFellowBar(s, done) {
   const bar = $('#fellow-bar');
   if (!bar) return;
   bar.innerHTML = '';
   if (done || !s) { bar.hidden = true; return; }
+  const chips = [];
+
+  /* 1. 最值钱一件家当（若已攒下） */
+  const topAsset = [...(s.assets || [])].filter(a => a && a.name).sort((a, b) => (b.worth || 0) - (a.worth || 0))[0];
+  if (topAsset) {
+    const moveBit = topAsset.lastPct != null && Math.abs(topAsset.lastPct) >= 2
+      ? ` ${topAsset.lastPct > 0 ? '+' : '−'}${Math.abs(topAsset.lastPct).toFixed(0)}%`
+      : '';
+    chips.push({
+      cls: 'chip-asset',
+      label: topAsset.name,
+      sub: `家当${moveBit}`,
+      tip: `${topAsset.worthText || ''}${topAsset.note ? ' · ' + topAsset.note : ''}`,
+      draft: `动用手里的「${topAsset.name}」，拿它变现、抵押或做这一月的本钱`,
+    });
+  }
+
+  /* 2. 挂着的一件未了头绪 */
+  const openTh = ((s.memo && s.memo.threads) || []).find(t => t && !t.done && t.what);
+  if (openTh) {
+    chips.push({
+      cls: 'chip-thread',
+      label: openTh.what.slice(0, 10),
+      sub: '待办',
+      tip: openTh.note || openTh.what,
+      draft: `把之前挂下的「${openTh.what}」办妥了结`,
+    });
+  }
+
+  /* 3. 一条跨年代旧年遗踪 */
+  const lg0 = (Array.isArray(s.legacies) ? s.legacies : []).find(x => x && x.item && !x.claimedBy);
+  if (lg0 && s.n >= 2) {
+    chips.push({
+      cls: 'chip-legacy',
+      label: lg0.item.slice(0, 10),
+      sub: `${lg0.year}遗踪`,
+      tip: `${lg0.year} 年穿越者「${lg0.nick}」留：${lg0.clue}`,
+      draft: lg0.capsuleKind === 'cache'
+        ? `顺着 ${lg0.year} 年穿越者「${lg0.nick}」留下的线索，去寻「${lg0.item}」`
+        : `去城里打听 ${lg0.year} 年穿越者「${lg0.nick}」留下的「${lg0.item}」`,
+    });
+  }
+
+  /* 4. 同城穿越者（优先已结缘，再补未照面同道） */
   const bonds = Array.isArray(s.travelerBonds) ? s.travelerBonds : [];
   const fellows = Array.isArray(s.fellows) ? s.fellows : [];
-  const items = [];
   const seen = new Set();
   const bondDraftOf = (nick, rel) => {
     if (rel === '对手' || rel === '宿敌') return `找穿越者${nick}正面交锋，抢下这波货源或切磋分个高下`;
@@ -1044,40 +1285,44 @@ function renderFellowBar(s, done) {
     if (rel === '初识' || rel === '试探') return `去找穿越者${nick}再探虚实，聊聊买卖或切磋几手`;
     return `找穿越者${nick}对账分润，顺便看能结盟还是得防一手`;
   };
+  let fellowCnt = 0;
   for (const b of bonds) {
     if (!b || !b.nick || seen.has(b.nick)) continue;
     seen.add(b.nick);
-    items.push({
-      nick: b.nick,
+    chips.push({
+      cls: 'bonded',
+      label: b.nick,
       sub: b.rel || '结交',
-      bonded: true,
       tip: b.note || `已与穿越者${b.nick}结为${b.rel}`,
       draft: bondDraftOf(b.nick, b.rel || '结交'),
     });
+    if (++fellowCnt >= 3) break;
   }
   for (const f of fellows) {
+    if (fellowCnt >= 3) break;
     if (!f || !f.nick || seen.has(f.nick)) continue;
     seen.add(f.nick);
     const rivalLean = /竞合|抢筹|暗市/.test(`${f.stance || ''} ${f.desc || ''}`);
-    items.push({
-      nick: f.nick,
+    chips.push({
+      cls: '',
+      label: f.nick,
       sub: f.stance || f.tag || '同城',
-      bonded: false,
       tip: f.desc || f.summary || '',
       draft: rivalLean
         ? `去探探同城穿越者${f.nick}的底细，看是联手还是抢筹`
         : `去寻访同城穿越者${f.nick}，对个暗号探探虚实`,
     });
-    if (items.length >= 4) break;
+    fellowCnt++;
   }
-  if (!items.length) { bar.hidden = true; return; }
+
+  if (!chips.length) { bar.hidden = true; return; }
   bar.hidden = false;
-  bar.appendChild(el('span', 'fellow-kicker', '同城穿越者'));
-  for (const it of items) {
-    const btn = el('button', 'fellow-chip' + (it.bonded ? ' bonded' : ''));
+  bar.appendChild(el('span', 'fellow-kicker', '手头可用'));
+  for (const it of chips) {
+    const btn = el('button', 'fellow-chip' + (it.cls ? ' ' + it.cls : ''));
     btn.type = 'button';
     if (it.tip) btn.title = it.tip;
-    btn.innerHTML = `${esc(it.nick)} <em>· ${esc(it.sub)}</em>`;
+    btn.innerHTML = `${esc(it.label)} <em>· ${esc(it.sub)}</em>`;
     btn.addEventListener('click', () => {
       writeIn(it.draft);
       btn.classList.add('used');
@@ -1088,7 +1333,7 @@ function renderFellowBar(s, done) {
   requestAnimationFrame(() => syncScrollFade(bar));
 }
 
-/* ── 单行参考路子药丸 ────────────────────────────────────── */
+/* ── 单行参考路子药丸（带简短利弊，手机直接可见） ──────────── */
 function renderPicks(list) {
   const wrap = $('#picks');
   wrap.innerHTML = '';
@@ -1097,9 +1342,13 @@ function renderPicks(list) {
   if (!has) return;
   const scroller = el('div', 'quick-picks-scroll');
   for (const o of list) {
-    const b = el('button', 'q-pill', o.what || '');
+    const b = el('button', 'q-pill');
     b.type = 'button';
-    if (o.why) b.title = o.why;
+    b.appendChild(el('strong', 'q-what', o.what || ''));
+    if (o.why) {
+      b.appendChild(el('small', 'q-why', o.why));
+      b.title = o.why;
+    }
     b.addEventListener('click', () => {
       writeIn(o.what || '');
       b.classList.add('used');
@@ -1339,7 +1588,10 @@ async function sendMonth() {
     renderPlay(d);
     animatePanel($('#play-story'), 'panel-in-up');
     goTop();
-    if (d.done) toast(d.state.phase === 'extra' ? '这几年过完了，可以去算总账了' : '满两年了，可以去算这两年的账了');
+    if (d.done) {
+      const fast = Number(d.state && (d.state.mainMonths || d.state.targetMonths)) === 12;
+      toast(d.state.phase === 'extra' ? '这几年过完了，可以去算总账了' : (fast ? '满一年了，可以去算这一年的账了' : '满两年了，可以去算这两年的账了'));
+    }
   } catch (e) {
     toast(e instanceof TypeError ? '网络连接断了，你写的打算还留着，请再试一次。' : e.message);
     renderPlay(lastOf(run.state));
@@ -1407,7 +1659,11 @@ async function openSheet(kind, opts = {}) {
     const list = [sheetItem('手头现金', s.cashText, '随时可调动')];
     const assets = [...(s.assets || [])].sort((a, b) => (b.worth || 0) - (a.worth || 0));
     for (const a of assets) {
-      list.push(sheetItem(a.name, a.worthText, `${a.kind || '实物'}${a.note ? ' · ' + a.note : ''}`));
+      const mTag = a.venue ? ` · 随${a.venue}市` : '';
+      const pTag = a.lastPct != null && Math.abs(a.lastPct) >= 1
+        ? `（上月 ${a.lastPct > 0 ? '+' : '−'}${Math.abs(a.lastPct).toFixed(1)}%）`
+        : '';
+      list.push(sheetItem(a.name, a.worthText, `${a.kind || '实物'}${mTag}${pTag}${a.note ? ' · ' + a.note : ''}`));
     }
     body.appendChild(sheetSection('手里家当', list));
 
@@ -1427,6 +1683,9 @@ async function openSheet(kind, opts = {}) {
     titleEl.textContent = '人脉与本事';
     if (s.persona) {
       body.appendChild(sheetSection('人物底子', [sheetItem(s.persona, '', '')]));
+    }
+    if (s.wish) {
+      body.appendChild(sheetSection('开局心愿', [sheetItem(s.wish, '', '')]));
     }
     const tBonds = Array.isArray(s.travelerBonds) ? s.travelerBonds : [];
     const fellows = Array.isArray(s.fellows) ? s.fellows : [];
@@ -1538,6 +1797,8 @@ async function settle() {
       finaleImage: d.finaleImage || null,
       months: d.months || [],
       mainMonths: d.mainMonths || 24,
+      isFast: !!d.isFast || Number(d.mainMonths) === 12,
+      wish: d.wish || (d.result && d.result.wish) || '',
       extraRoom: d.extraRoom || 0,
       phase,
       main: d.main || null,
@@ -1546,12 +1807,14 @@ async function settle() {
     localStorage.removeItem(RUN_KEY);
     run = null;
     syncNavPlay();
+    loadStamps();
     go('done');
     if (!d.review) fetchReview(rid, phase === 'extra', $('#done-body'));
   } catch (e) {
     toast(e.message);
     send.disabled = false;
-    send.textContent = run && run.state.phase === 'extra' ? '去算总账 →' : '去算这两年的账 →';
+    const isFastRun = run && Number(run.state.mainMonths || run.state.targetMonths) === 12;
+    send.textContent = run && run.state.phase === 'extra' ? '去算总账 →' : (isFastRun ? '去算这一年的账 →' : '去算这两年的账 →');
     send.classList.remove('busy');
   }
 }
@@ -1910,7 +2173,7 @@ function renderComicStrip(host, cfg) {
     fim.alt = '终章收官画卷';
     fim.loading = 'lazy';
     fa.appendChild(fim);
-    fa.appendChild(el('span', 'done-stamp', cfg.phase === 'extra' ? '终章 · 续走收官' : '终章 · 两年收官'));
+    fa.appendChild(el('span', 'done-stamp', cfg.phase === 'extra' ? '终章 · 续走收官' : (cfg.mainMonths === 12 ? '终章 · 一年收官' : '终章 · 两年收官')));
     fin.appendChild(fa);
 
     const fb = el('div', 'comic-finale-body');
@@ -1941,15 +2204,30 @@ function renderComicStrip(host, cfg) {
   host.appendChild(wrap);
 }
 
+function renderWishBox(host, wish, wishOutcome) {
+  if (!host) return;
+  host.innerHTML = '';
+  if (!wish && !wishOutcome) { host.hidden = true; return; }
+  host.hidden = false;
+  const st = (wishOutcome && wishOutcome.status) || '待判';
+  const cls = st === '成了' ? ' ok' : (st === '差一步' ? ' near' : '');
+  host.appendChild(el('span', 'wish-badge' + cls, st === '待判' ? '心愿' : `心愿 · ${st}`));
+  const txt = (wishOutcome && wishOutcome.note) ? `${wish ? '「' + wish + '」— ' : ''}${wishOutcome.note}` : `开局心愿：${wish}`;
+  host.appendChild(el('span', 'wish-verdict-txt', txt));
+}
+
 function renderMagazineView(container, cfg) {
   container.innerHTML = '';
   const r = cfg.result;
   const ranks = cfg.ranks || {};
   const extra = cfg.phase === 'extra';
+  const isFast = !!cfg.isFast || Number(cfg.mainMonths) === 12;
   const yrs = (r.score < 0 ? '−' : '') + Math.abs(r.score).toFixed(2);
   const stampText = extra
     ? `续走结算 · 续走榜第 ${ranks.rankExtra ?? '—'}`
-    : `两年结算 · 总榜第 ${ranks.rankWorld ?? '—'}`;
+    : (isFast
+      ? `一年快局 · 快局榜第 ${ranks.rankFast ?? '—'}`
+      : `两年结算 · 总榜第 ${ranks.rankWorld ?? '—'}`);
   const months = Array.isArray(cfg.months) ? cfg.months : [];
   const hasMonths = months.length > 0;
 
@@ -1960,7 +2238,7 @@ function renderMagazineView(container, cfg) {
     review: cfg.review || null,
     finaleImage: cfg.finaleImage || null,
     months,
-    mainMonths: cfg.mainMonths || 24,
+    mainMonths: cfg.mainMonths || (isFast ? 12 : 24),
     extra,
   };
 
@@ -1976,11 +2254,17 @@ function renderMagazineView(container, cfg) {
   sm.appendChild(el('div', 'done-amount num' + (r.yearEarned < 0 ? ' neg' : ''), r.yearEarnedText));
 
   const titleRow = el('div', 'done-title-row');
-  const titleEl = el('b', '', cfg.review && cfg.review.title ? `《${cfg.review.title}》` : (extra ? '续走档案' : '两年档案'));
+  const titleEl = el('b', '', cfg.review && cfg.review.title ? `《${cfg.review.title}》` : (extra ? '续走档案' : (isFast ? '一年档案' : '两年档案')));
   titleEl.dataset.magTitle = '1';
   titleRow.appendChild(titleEl);
   titleRow.appendChild(el('span', 'num', `抵普通人 ${yrs} 年收入`));
   sm.appendChild(titleRow);
+
+  const wishEl = el('div', 'wish-verdict');
+  wishEl.dataset.magWish = '1';
+  wishEl.dataset.wishText = cfg.wish || '';
+  renderWishBox(wishEl, cfg.wish || '', cfg.review && cfg.review.wishOutcome);
+  sm.appendChild(wishEl);
 
   const acts = el('div', 'done-actions');
   if (hasMonths) {
@@ -2070,7 +2354,9 @@ function renderMagazineView(container, cfg) {
   const sg = el('div', 'stat-grid');
   const rankLabel = extra
     ? `第 ${ranks.rankExtra ?? '—'} / ${ranks.ofExtra ?? '—'}`
-    : `${r.year}年榜 #${ranks.rankYear ?? '—'} · 总榜 #${ranks.rankWorld ?? '—'}`;
+    : (isFast
+      ? `快局榜 #${ranks.rankFast ?? '—'} / ${ranks.ofFast ?? '—'}`
+      : `${r.year}年榜 #${ranks.rankYear ?? '—'} · 总榜 #${ranks.rankWorld ?? '—'}`);
   const statRows = [
     ['开局本钱', r.startCashText || fmtMoney(r.startCash, r.currencyName)],
     ['收官家底', r.endWorthText || fmtMoney(r.endWorth, r.currencyName)],
@@ -2151,6 +2437,9 @@ function patchMagazineReview(container, rv, extra = false) {
     if (tl) fillTimelineBox(tl, rv);
     const vb = container.querySelector('[data-mag-verdict]');
     if (vb) fillVerdictBox(vb, rv);
+    const wb = container.querySelector('[data-mag-wish]');
+    if (wb) renderWishBox(wb, wb.dataset.wishText || '', rv.wishOutcome || null);
+    loadStamps();
   } else {
     const vbx = container.querySelector('[data-mag-verdict-extra]');
     if (vbx) fillVerdictBox(vbx, rv);
@@ -2222,7 +2511,9 @@ async function openDetail(id, back = 'mine') {
       finaleImage: d.finaleImage || null,
       months: d.months || [],
       mainMonths: d.mainMonths || 24,
+      isFast: !!d.isFast || Number(d.mainMonths) === 12,
       persona: d.persona || '',
+      wish: d.wish || '',
       extraStatus: d.extraStatus,
       extraRoom: d.extraRoom,
       extraResult: d.extraResult,
@@ -2253,6 +2544,7 @@ async function openPeek(id) {
       finaleImage: d.finaleImage || null,
       months: d.comic || [],
       mainMonths: d.mainMonths || 24,
+      isFast: !!d.isFast || Number(d.mainMonths) === 12,
       mine: !!d.mine,
       extraStatus: d.extraStatus,
       extraResult: d.extraResult,
@@ -2766,10 +3058,15 @@ async function openSharePoster(pctx) {
   const SERIF = '"Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif';
   const SANS = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif';
 
+  const isFast = Number(pctx.mainMonths) === 12;
   const measureCvs = document.createElement('canvas');
   const mctx = measureCvs.getContext('2d');
   mctx.font = `400 21px ${SERIF}`;
   const becameLines = rv.became ? wrapCanvasLines(mctx, '—— ' + rv.became, IN_W - 12).slice(0, 2) : [];
+  const wishLineStr = (rv.wishOutcome && rv.wishOutcome.note)
+    ? `心愿 · ${rv.wishOutcome.status || ''}：${rv.wishOutcome.note}`
+    : '';
+  const wishLines = wishLineStr ? wrapCanvasLines(mctx, wishLineStr, IN_W - 16).slice(0, 2) : [];
   mctx.font = `400 22px ${SERIF}`;
   const verdictLines = wrapCanvasLines(mctx, rv.verdict || '', IN_W - 16).slice(0, 16);
   mctx.font = `400 20px ${SANS}`;
@@ -2783,7 +3080,7 @@ async function openSharePoster(pctx) {
   const cardH = 236;
   const hasRev = !!(rv.title || verdictLines.length);
   const revH = hasRev
-    ? 38 + 42 + (becameLines.length ? becameLines.length * 32 + 6 : 0) + 14 + verdictLines.length * 36
+    ? 38 + 42 + (becameLines.length ? becameLines.length * 32 + 6 : 0) + (wishLines.length ? wishLines.length * 32 + 8 : 0) + 14 + verdictLines.length * 36
     : 0;
   const turnsH = turns.length ? 36 + 30 + turnsLineCount * 32 : 0;
   const H = 116 + (artH ? artH + 34 : 0) + 24 + cardH + revH + turnsH + 112;
@@ -2815,7 +3112,7 @@ async function openSharePoster(pctx) {
   c.fillRect(titleX + 184, y - 33, 86, 34);
   c.fillStyle = '#fbf4e6';
   c.font = `500 17px ${SERIF}`;
-  c.fillText(pctx.extra ? '续走档案' : '两年档案', titleX + 194, y - 10);
+  c.fillText(pctx.extra ? '续走档案' : (isFast ? '一年档案' : '两年档案'), titleX + 194, y - 10);
 
   c.textAlign = 'right';
   c.fillStyle = '#4a5160';
@@ -2857,7 +3154,7 @@ async function openSharePoster(pctx) {
   c.font = `400 19px ${SANS}`;
   const earnedHead = pctx.extra
     ? `前前后后 ${(r.months / 12).toFixed(0)} 年净赚（收官家底 ${r.endWorthText || ''}）`
-    : `这两年净赚（收官家底 ${r.endWorthText || ''}）`;
+    : (isFast ? `这一年净赚（收官家底 ${r.endWorthText || ''}）` : `这两年净赚（收官家底 ${r.endWorthText || ''}）`);
   c.fillText(earnedHead, PAD + 28, y + 40);
 
   const earnedStr = String(r.yearEarnedText || '');
@@ -2886,7 +3183,7 @@ async function openSharePoster(pctx) {
   c.fillStyle = 'rgba(183, 49, 42, 0.85)';
   c.font = `600 24px ${SERIF}`;
   c.textAlign = 'center';
-  c.fillText(pctx.extra ? '续走结算' : '两年结算', 0, 9);
+  c.fillText(pctx.extra ? '续走结算' : (isFast ? '一年快局' : '两年结算'), 0, 9);
   c.restore();
 
   c.strokeStyle = '#dedbd2';
@@ -2896,7 +3193,7 @@ async function openSharePoster(pctx) {
   const col1 = `折合今天美元：${r.worldUsdText || '—'}`;
   const col2 = pctx.extra
     ? `两年之后榜第 ${ranks.rankExtra ?? '—'} 名`
-    : `${r.year} 年榜第 ${ranks.rankYear ?? '—'} 名 · 总榜第 ${ranks.rankWorld ?? '—'} 名`;
+    : (isFast ? `一年快局榜第 ${ranks.rankFast ?? '—'} 名` : `${r.year} 年榜第 ${ranks.rankYear ?? '—'} 名 · 总榜第 ${ranks.rankWorld ?? '—'} 名`);
   c.fillText(col1, PAD + 28, y + 212);
   c.textAlign = 'right';
   c.fillText(col2, W - PAD - 28, y + 212);
@@ -2920,6 +3217,12 @@ async function openSharePoster(pctx) {
       c.font = `400 21px ${SERIF}`;
       for (const bl of becameLines) { y += 32; c.fillText(bl, PAD, y); }
       y += 6;
+    }
+    if (wishLines.length) {
+      c.fillStyle = '#8e2620';
+      c.font = `500 20px ${SERIF}`;
+      for (const wl of wishLines) { y += 32; c.fillText(wl, PAD, y); }
+      y += 8;
     }
     y += 14;
     c.fillStyle = '#1e2431';
@@ -2975,6 +3278,8 @@ function setBoardMode(mode, opts = {}) {
   $('#rank-world').hidden = isMine;
   $('#rank-mine').hidden = !isMine;
   $('#board-filter').hidden = isMine;
+  const mineEchoes = $('#mine-echoes');
+  if (mineEchoes) mineEchoes.hidden = !isMine || !mineEchoes.childElementCount;
   const mineMeta = $('#mine-meta');
   if (mineMeta) mineMeta.hidden = !isMine || !mineMeta.childElementCount;
   if (opts.animate && changed) {
@@ -3000,6 +3305,7 @@ $('#board-filter').addEventListener('change', e => {
   const v = e.target.value;
   if (v === 'world') { boardScope = 'world'; boardYear = null; }
   else if (v === 'extra') { boardScope = 'extra'; boardYear = null; }
+  else if (v === 'fast') { boardScope = 'fast'; boardYear = null; }
   else { boardScope = 'world'; boardYear = Number(v) || null; }
   loadBoard();
 });
@@ -3122,7 +3428,9 @@ function buildMineCard(opts) {
       left.appendChild(el('span', 'mine-top-tag num', opts.boardRankInMine === 1 ? '赚钱第 1' : '赚钱第 2'));
     }
   } else if (opts.playing) {
-    left.appendChild(el('span', 'mine-foot-note', '进行中 · 结算后可选入总榜'));
+    left.appendChild(el('span', 'mine-foot-note', opts.isFast ? '快局进行中' : '进行中 · 结算后可选入总榜'));
+  } else if (opts.isFast) {
+    left.appendChild(el('span', 'mine-foot-note', '一年快局 · 计入快局榜'));
   } else {
     left.appendChild(el('span', 'mine-foot-note', '旧版记录'));
   }
@@ -3142,15 +3450,16 @@ function buildMineCard(opts) {
 async function loadBoard() {
   const box = $('#rank-world');
   box.innerHTML = '<p class="wait">正在翻开榜单…</p>';
-  const qs = boardScope === 'extra' ? '&scope=extra' : (boardYear ? '&year=' + boardYear : '');
+  const qs = boardScope === 'extra' ? '&scope=extra' : (boardScope === 'fast' ? '&scope=fast' : (boardYear ? '&year=' + boardYear : ''));
   let d;
   try { d = await api('/api/board?limit=50' + qs); }
   catch (e) { box.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
 
   const sel = $('#board-filter');
-  const curVal = boardScope === 'extra' ? 'extra' : (boardYear ? String(boardYear) : 'world');
+  const curVal = boardScope === 'extra' ? 'extra' : (boardScope === 'fast' ? 'fast' : (boardYear ? String(boardYear) : 'world'));
   sel.innerHTML =
     `<option value="world">总榜 · 全部年份</option>
+     <option value="fast">一年快局榜</option>
      <option value="extra">两年之后榜</option>` +
     (d.yearsWithRuns || []).map(r => `<option value="${r.year}">${r.year} 年（${r.n} 局）</option>`).join('');
   sel.value = curVal;
@@ -3160,7 +3469,9 @@ async function loadBoard() {
     const eb = el('div', 'empty-box');
     eb.appendChild(el('p', '', boardScope === 'extra'
       ? '还没有人走完两年之后的续篇。'
-      : boardYear ? `还没有人走完从 ${boardYear} 年开始的对局。` : '榜上还没有记录，去挑个年份开一局吧。'));
+      : boardScope === 'fast'
+        ? '还没有人走完一年快局，去挑个年份试一局吧。'
+        : boardYear ? `还没有人走完从 ${boardYear} 年开始的对局。` : '榜上还没有记录，去挑个年份开一局吧。'));
     const b = el('button', 'btn-ghost', '去挑个年份');
     b.type = 'button';
     b.addEventListener('click', () => go('pick'));
@@ -3229,8 +3540,10 @@ async function fillBoardArts(items, screen) {
 async function loadMine() {
   const box = $('#rank-mine');
   const meta = $('#mine-meta');
+  const echoesBox = $('#mine-echoes');
   box.innerHTML = '';
   if (meta) { meta.innerHTML = ''; meta.hidden = true; }
+  if (echoesBox) { echoesBox.innerHTML = ''; echoesBox.hidden = true; }
   const showEmpty = () => {
     const eb = el('div', 'empty-box');
     eb.appendChild(el('p', '', '还没有玩过的记录，去挑个年份开一局吧。'));
@@ -3246,6 +3559,18 @@ async function loadMine() {
   let d;
   try { d = await api('/api/mine?token=' + encodeURIComponent(token)); }
   catch (e) { box.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+
+  if (d.stamps) {
+    myStampsMap = d.stamps;
+    applyStampsToGrid();
+  }
+  if (echoesBox && Array.isArray(d.echoAlerts) && d.echoAlerts.length) {
+    echoesBox.appendChild(el('div', 'mine-echo-head', '时空回响'));
+    for (const a of d.echoAlerts) {
+      echoesBox.appendChild(el('div', 'mine-echo-row', a.text || ''));
+    }
+    echoesBox.hidden = boardMode !== 'mine';
+  }
 
   box.innerHTML = '';
   if (!d.rows.length) return showEmpty();
@@ -3274,13 +3599,14 @@ async function loadMine() {
 
   const pendingArts = [];
   for (const r of d.rows) {
-    const old = r.mode && r.mode !== 'months24';
+    const old = r.mode && r.mode !== 'months24' && r.mode !== 'months12';
+    const isFast = r.mode === 'months12' || !!r.isFast;
     const done = r.status === 'done';
     const playing = !old && (!done || r.extra_status === 'playing');
     const badge = old ? '旧版'
       : r.extra_status === 'playing' ? '续走中'
       : r.extra_status === 'done' ? '续走已结'
-      : done ? '已结算' : '进行中';
+      : (isFast ? (done ? '快局已结' : '快局中') : (done ? '已结算' : '进行中'));
     const badgeCls = playing ? 'live' : (done && !old ? 'top' : '');
     const sc = r.extra_status === 'done' && r.extra_score != null ? r.extra_score : r.score;
     const scStr = sc == null ? '' : `${Math.abs(sc) < 10 ? sc.toFixed(2) : sc.toFixed(1)} 年`;
@@ -3288,9 +3614,9 @@ async function loadMine() {
       : playing ? '继续 →'
       : (r.worldUsdText || scStr || '—');
     const scoreSub = old ? '' : (playing ? '接上进度' : (r.worldUsdText && scStr ? scStr : '连环画 →'));
-    const title = r.title || (playing && r.stepN ? `第 ${r.stepN} / ${r.totalMonths || 24} 月` : '');
+    const title = r.title || (playing && r.stepN ? `第 ${r.stepN} / ${r.totalMonths || (isFast ? 12 : 24)} 月` : '');
     const ym = `${r.year}.${String(r.month).padStart(2, '0')}`;
-    const sub = `${ym}${r.city ? ' · ' + r.city : ''}${!playing && !old && r.yearEarnedText ? ' · 净赚 ' + r.yearEarnedText : ''}`;
+    const sub = `${ym}${r.city ? ' · ' + r.city : ''}${isFast ? ' · 一年快局' : ''}${!playing && !old && r.yearEarnedText ? ' · 净赚 ' + r.yearEarnedText : ''}`;
     const needArt = !r.image && !old && done && !!r.id;
     if (needArt) pendingArts.push({ id: r.id, extra: r.extra_status === 'done' });
 
@@ -3308,6 +3634,7 @@ async function loadMine() {
       scoreSub,
       disabled: old,
       playing,
+      isFast,
       canPickBoard: !!r.canPickBoard,
       onBoard: !!r.onBoard,
       boardRankInMine: r.boardRankInMine || null,

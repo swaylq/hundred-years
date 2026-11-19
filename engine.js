@@ -15,9 +15,11 @@ const TL = require(path.join(__dirname, 'data', 'tech-timeline.json'));
 const WORLD = require(path.join(__dirname, 'data', 'world.json'));
 
 const DAYS = 30;                 // 一个月按三十天算，只在月内物价插值时用得着
-const MONTHS = 24;               // 一局走二十四个月
-const MONTHS_EXTRA = 60;         // 走完两年之后，最多还能再往下走五年（后传）
+const MONTHS = 24;               // 两年正传走二十四个月
+const MONTHS_FAST = 12;          // 一年快局走十二个月
+const MONTHS_EXTRA = 60;         // 走完之后，最多还能再往下走五年（后传）
 const LIST_LIMIT = 500;          // 一个月的清单，汉字上限
+const WISH_LIMIT = 30;           // 开局心愿，汉字上限
 const CN = { SILVER: '银元', FABI: '法币', GOLDYUAN: '金圆券', RMB1: '人民币（旧）', RMB: '人民币' };
 
 const yearOf = y => SPINE.years.find(x => x.year === y);
@@ -139,11 +141,12 @@ const worthOf = (year, month) => worthAt(year, month, 1);
 /** 下一个月是几年几月 */
 function nextMonth(year, month) { return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 }; }
 
-/** 从这个月开局，二十四个月走得完吗——年卡只写到 2025 年 12 月，
- *  最晚只能从 2024 年 1 月起步。 */
-function startable(year, month) {
+/** 从这个月开局，这一局走得完吗——年卡只写到 2025 年 12 月，
+ *  24 月正传最晚从 2024 年 1 月起步，12 月快局最晚从 2025 年 1 月起步。 */
+function startable(year, month, totalMonths = MONTHS) {
+  const span = Number(totalMonths) === MONTHS_FAST ? MONTHS_FAST : MONTHS;
   const last = SPINE.years[SPINE.years.length - 1];
-  return (year * 12 + month - 1) + (MONTHS - 1) <= last.year * 12 + 11;
+  return (year * 12 + month - 1) + (span - 1) <= last.year * 12 + 11;
 }
 
 /** 一张账单上只许有一个单位。
@@ -182,16 +185,18 @@ function money(n, cur) { return moneyIn(n, unitOf(n), cur); }
  *  一开局就是三十万年的收入。 */
 function startingCash(year, month) { return incomeOf(year, month) / 10; }
 
-function newRun({ year, month, nick, seed, persona }) {
+function newRun({ year, month, nick, seed, persona, wish, targetMonths, scenarioId }) {
   const Y = yearOf(year);
   const cur = currencyOf(year, month);
   const cash = startingCash(year, month);
+  const span = Number(targetMonths) === MONTHS_FAST ? MONTHS_FAST : MONTHS;
   return {
     /* year/month 是**现在走到哪个月**，每过一个月往前挪一格；
      * 开局那个月单独记在 startYear/startMonth，结算和榜都认它。 */
     year, month,
     startYear: year, startMonth: month,
-    n: 1,                                   // 第几个月，1..MONTHS
+    targetMonths: span,                     // 24（两年正传）或 12（一年快局）
+    n: 1,                                   // 第几个月，1..targetMonths
     nick: nick || '无名',
     seed: seed || Math.floor(Math.random() * 1e9),
     /* 城市按开局那一年定，之后不再变。年卡是一年一座城写的，
@@ -215,6 +220,9 @@ function newRun({ year, month, nick, seed, persona }) {
      * 除了钱，这一局再没有别的槽——名声、关系、体力、麻烦四条杠 2026-09-02 撤了，
      * 它们的作用改由钱和正文里的事承担（罚款、货被没收、被关几天挣不到钱）。 */
     persona: checkPersona(persona).text || '',
+    wish: checkWish(wish).text || '',
+    scenarioId: scenarioId ? String(scenarioId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) : '',
+    lastAssetMoves: [],
     startWorth: netWorth({ cash, assets: [], debts: [] }),
     startIncome: incomeOf(year, month),
     months: [],
@@ -291,12 +299,68 @@ function switchOnEntry(year, month) {
  *
  *  现金、债权、欠债不跟着走：它们的名义数目本来就是死的，
  *  真实价值缩水由「除以当月年收入」那一步自然体现。 */
+/* 只有明确属于金融、房产、贵金属或虚拟货币的投资型家当才叠加历史行情涨跌；
+ * 日常存货（米、布、杂货、工具、票证）仍严格按中位收入保值，守住换币与保值底线。 */
+const ASSET_VENUES = [
+  ['币', /(比特币|虚拟货币|数字货币|以太坊|以太币|加密币)/],
+  ['房', /(房子|房产|商品房|商铺|铺面|四合院|洋房|公寓|住宅|地皮|宅基地|楼盘|写字楼|仓库产权)/],
+  ['股', /(股票|股份|股权|基金|公债|国债|认购证|期货|证券|标金)/],
+  ['金', /(黄金|金条|赤金|小黄鱼|大黄鱼|金块|金饰|美钞|美元|外汇|英镑|港币|银元|大洋|袁大头|银锭)/],
+];
+const ASSET_VENUE_DRIFT = {
+  '币': { up: 0.08, down: -0.07, jit: 0.022 },
+  '股': { up: 0.065, down: -0.055, jit: 0.018 },
+  '金': { up: 0.036, down: -0.028, jit: 0.01 },
+  '房': { up: 0.028, down: -0.02, jit: 0.008 },
+};
+
+function assetVenueOf(name, kind, note) {
+  if (kind === '债权' || kind === '现金类' || kind === '票证') return null;
+  const txt = `${String(name || '')} ${String(note || '')}`;
+  for (const [v, re] of ASSET_VENUES) if (re.test(txt)) return v;
+  return null;
+}
+
+function hashStr(s) {
+  let h = 2166136261 >>> 0;
+  const str = String(s || '');
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h;
+}
+
 function reprice(s, from, to) {
+  if (s && typeof s === 'object') s.lastAssetMoves = [];
   const k = incomeOf(to.year, to.month) / incomeOf(from.year, from.month);
   if (!isFinite(k) || k <= 0) return;
-  for (const a of s.assets) {
+  const isSwitch = !!(switchDueAfter(from.year, from.month) || switchOnEntry(to.year, to.month));
+  const moves = [];
+  for (const a of (s.assets || [])) {
     if (a.kind === '债权' || a.kind === '现金类') continue;
     a.worth *= k;
+    delete a.lastPct;
+    if (isSwitch) continue;
+    const v = a.venue || assetVenueOf(a.name, a.kind, a.note);
+    if (!v) continue;
+    a.venue = v;
+    const m = marketAt(to.year, to.month, v);
+    if (!m) continue;
+    const cfg = ASSET_VENUE_DRIFT[v];
+    if (!cfg) continue;
+    const base = m.dir > 0 ? cfg.up : cfg.down;
+    const u = hash32(((s.seed || 1) * 4099) ^ ((to.year * 12 + to.month) * 65537) ^ hashStr(a.name)) / 2 ** 32;
+    const pct = Math.max(-0.14, Math.min(0.16, base + (u * 2 - 1) * cfg.jit));
+    a.worth = Math.max(0.01, a.worth * (1 + pct));
+    a.lastPct = Math.round(pct * 1000) / 10;
+    if (Math.abs(a.lastPct) >= 2) {
+      moves.push({ name: a.name, venue: v, pct: a.lastPct, dir: m.dir, worth: a.worth });
+    }
+  }
+  if (s && typeof s === 'object' && moves.length) {
+    moves.sort((a, b) => b.worth - a.worth);
+    s.lastAssetMoves = moves.slice(0, 2);
   }
 }
 
@@ -571,11 +635,13 @@ function applyMonth(s, delta) {
     if (!nm || !(w > 0)) continue;
     const kd = normalizeAssetKind(nm, a.kind);
     const nt = String(a.note || '').trim().slice(0, 60);
-    const rec = { name: nm, kind: kd, worth: w, note: nt };
+    const vn = assetVenueOf(nm, kd, nt);
+    const rec = { name: nm, kind: kd, worth: w, note: nt, ...(vn ? { venue: vn } : {}) };
     const prev = s.assets.find(x => x.name === nm && x.kind === kd);
     if (prev) {
       prev.worth += w;
       if (nt) prev.note = nt;
+      if (vn && !prev.venue) prev.venue = vn;
     } else {
       s.assets.push(rec);
     }
@@ -818,9 +884,12 @@ function advanceTo(s, n) {
   return events;
 }
 
-/** 这一局最后一个月是第几个月。走完两年选了「接着走下去」的，
- *  s.extraTo 记着续到第几个月（最多 24+60）；没续过的就是二十四。 */
-function lastMonthOf(s) { return (s && s.extraTo) || MONTHS; }
+/** 这一局原本定好的主局月数：默认 24 个月，快局 12 个月。 */
+function baseMonthsOf(s) { return (s && Number(s.targetMonths) === MONTHS_FAST) ? MONTHS_FAST : MONTHS; }
+
+/** 这一局最后一个月是第几个月。走完主局选了「接着走下去」的，
+ *  s.extraTo 记着续到第几个月（最多主局+60）；没续过的就是主局月数。 */
+function lastMonthOf(s) { return (s && s.extraTo) || baseMonthsOf(s); }
 
 /** 还能往下走几个月。年卡只写到 SPINE 最后那一年的 12 月，
  *  从 2024 年附近开局的局收工时已经贴着头，一个月也接不下去。 */
@@ -835,7 +904,7 @@ function extraRoom(s) {
  *
  *  **两年那一刻的成绩是冻住的**——这里一个字都不碰结算过的那份结果，
  *  它存在库里的 score / year_earned / world_usd / result 四列上，总榜只认那四列。
- *  这边只把存档接回「第 24 个月刚过完、还没收工」的样子，再照常推进到第 25 个月。
+ *  这边只把存档接回「最后一个月刚过完、还没收工」的样子，再照常推进到下个月。
  *
  *  能这么接，是因为 closeOut 动手之前把该动的都存进了 s.preClose：
  *  少了这一份，收工那个月正好换币的局（1949 年 5 月那种）会把那笔折算算两遍。 */
@@ -844,22 +913,23 @@ function reopen(s) {
   const room = extraRoom(s);
   const lastYear = SPINE.years[SPINE.years.length - 1].year;
   if (!room) return { ok: false, say: `年卡只到 ${lastYear} 年 12 月，这一局已经走到头了。` };
+  const base = baseMonthsOf(s);
   const p = s.preClose;
   if (!p) {
     /* 这个功能之前收的工，没存下那一份。收工那个月没换钱的话，closeOut 只改了 s.n，
      * 把它退回去就够了；真赶上换钱的那几局（1935-11、1948-08、1949-05、1955-03）
      * 没法原样退，只能顶回去——硬接的话那笔折算会算两遍。 */
     if (s.endSwitched) return { ok: false, say: '这一局满两年时正赶上币制改革，旧版记录没法往后接。' };
-    s.n = MONTHS;
+    s.n = base;
   } else {
     s.cash = p.cash; s.assets = p.assets; s.debts = p.debts; s.currency = p.currency;
     s.n = p.n; s.year = p.year; s.month = p.month;
   }
   delete s.preClose; delete s.endSwitched;
-  s.extraTo = MONTHS + room;
+  s.extraTo = base + room;
   s.phase = 'extra';
   s.status = 'extra';
-  const events = advanceTo(s, MONTHS + 1);
+  const events = advanceTo(s, base + 1);
   return { ok: true, room, to: s.extraTo, events };
 }
 
@@ -984,9 +1054,11 @@ function settle(s) {
     /* 年卡上那个「一个月做到头」的数，只是个参照，不再削任何东西 */
     yearTop: yearOf(startYear).ceiling,
     months: walked.length,
-    /* 这份结果是两年那一刻的，还是接着走下去之后的总账 */
-    phase: walked.length > MONTHS ? 'extra' : 'main',
-    extraMonths: Math.max(0, walked.length - MONTHS),
+    /* 这份结果是主局那一刻的，还是接着走下去之后的总账 */
+    targetMonths: baseMonthsOf(s),
+    wish: s.wish || '',
+    phase: walked.length > baseMonthsOf(s) ? 'extra' : 'main',
+    extraMonths: Math.max(0, walked.length - baseMonthsOf(s)),
   };
 }
 
@@ -1986,15 +2058,342 @@ function deriveHeadline(headline, summary, memoLine, story) {
   return (sub.length >= 8 && sub.length <= 24 ? sub : first.slice(0, 22)).replace(/[，,、：:]+$/, '');
 }
 
+/** 检一句开局心愿。空着照样能开局，写了 30 个汉字封顶。 */
+function checkWish(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return { ok: true, n: 0, text: '' };
+  const n = countHan(t);
+  if (n > WISH_LIMIT) {
+    return { ok: false, n, text: '', say: `心愿写了 ${n} 个汉字，请压到 ${WISH_LIMIT} 字以内。` };
+  }
+  return { ok: true, n, text: t.slice(0, 90) };
+}
+
+/* ── 精选历史开局切口（首页一行轻入口，点完直接定位年份与预设心愿） ───── */
+const SCENARIOS = [
+  {
+    id: 'y1948',
+    label: '1948 · 躲过金圆券',
+    year: 1948, month: 1, targetMonths: 12,
+    wish: '赶在八月换币前把家底换成硬通货，安稳渡过动荡一年',
+  },
+  {
+    id: 'y1962',
+    label: '1962 · 凭票度荒',
+    year: 1962, month: 1, targetMonths: 24,
+    wish: '在凭票过日子的年头攒齐票证和人情，站稳脚跟',
+  },
+  {
+    id: 'y1992',
+    label: '1992 · 南下淘金',
+    year: 1992, month: 1, targetMonths: 24,
+    wish: '踩准南下浪潮盘下实在家业，赶在回落前落袋为安',
+  },
+  {
+    id: 'y2008',
+    label: '2008 · 股灾逃顶',
+    year: 2008, month: 1, targetMonths: 24,
+    wish: '躲过股灾与寒冬，保住本钱再趁低点翻身',
+  },
+  {
+    id: 'y1936',
+    label: '1936 · 暗面寻奇',
+    year: 1936, month: 3, targetMonths: 24,
+    wish: '在城里站住脚，顺着街角奇闻叩开暗面江湖门径',
+  },
+];
+
+/** 给任意一年配两条顺手的开局心愿灵感（选填，点一下直接填入）。 */
+function wishSuggestionsFor(year, card) {
+  const y = Number(year) || 1948;
+  const hit = SCENARIOS.find(x => x.year === y);
+  const sy = yearOf(y);
+  const city = (sy && sy.city) || '城里';
+  const list = [];
+  if (hit) list.push(hit.wish);
+  if (sy && sy.switch && !list.some(x => x.includes('换币'))) {
+    list.push('趁换币前把现钱换成实在家当，稳住家底');
+  }
+  if (y <= 1949) {
+    list.push(`在${city}盘下一间铺面，乱世里护住身家`);
+    list.push('结交一位同城穿越者，联手闯出一片名堂');
+  } else if (y <= 1977) {
+    list.push('凭真本事攒齐紧俏票证和熟人门路');
+    list.push('在城里寻访隐世奇人，暗里练成一门手艺');
+  } else if (y <= 2008) {
+    list.push(`赶上这波行情，在${city}攒下第一桶金`);
+    list.push('跟同城穿越者搭伙立起响亮字号');
+  } else {
+    list.push(`看准潮起潮落，在${city}置下安身家业`);
+    list.push('在烟火气里寻访奇人异事，不虚此行');
+  }
+  const uniq = [];
+  for (const s of list) {
+    if (s && !uniq.includes(s)) uniq.push(s);
+    if (uniq.length >= 2) break;
+  }
+  return uniq;
+}
+
+/* ── 四幕阶段与终局倒计时 ──────────────────────────────────── */
+function stageInfo(s) {
+  const base = baseMonthsOf(s);
+  const last = lastMonthOf(s);
+  const n = Math.min(Number((s && s.n) || 1), last);
+  const remaining = Math.max(0, last - n + 1);
+  if (s && s.phase === 'extra') {
+    return { act: 5, label: '续走岁月', countdown: remaining <= 3, remaining, milestone: false, milestoneLabel: '' };
+  }
+  if (base === MONTHS_FAST) {
+    if (remaining <= 3) {
+      return {
+        act: 4, label: '收官倒计时', countdown: true, remaining,
+        milestone: remaining === 3 || remaining === 1,
+        milestoneLabel: remaining === 1 ? '收官之月' : '收官倒计时',
+      };
+    }
+    if (n <= 3) return { act: 1, label: '初来立脚', countdown: false, remaining, milestone: false, milestoneLabel: '' };
+    if (n <= 6) return { act: 2, label: '顺势起势', countdown: false, remaining, milestone: n === 6, milestoneLabel: n === 6 ? '过半变局' : '' };
+    return { act: 3, label: '风浪变局', countdown: false, remaining, milestone: false, milestoneLabel: '' };
+  }
+  if (remaining <= 3) {
+    return {
+      act: 4, label: '收官倒计时', countdown: true, remaining,
+      milestone: remaining === 3 || remaining === 1,
+      milestoneLabel: remaining === 1 ? '收官之月' : '收官倒计时',
+    };
+  }
+  if (n <= 6) return { act: 1, label: '初来立脚', countdown: false, remaining, milestone: n === 6, milestoneLabel: n === 6 ? '立脚半年' : '' };
+  if (n <= 12) return { act: 2, label: '顺势起势', countdown: false, remaining, milestone: n === 12, milestoneLabel: n === 12 ? '过半变局' : '' };
+  if (n <= 18) return { act: 3, label: '风浪变局', countdown: false, remaining, milestone: n === 18, milestoneLabel: n === 18 ? '冲刺前夜' : '' };
+  return { act: 4, label: '深耕定局', countdown: false, remaining, milestone: false, milestoneLabel: '' };
+}
+
+/* ── 本月风声 / 急事敲门（零额外模型调用，最多一条，不增负担） ───── */
+const MARKET_RUMOR_UP = {
+  '股': '茶馆里有人透风，过一两月证券行情怕是要大起，早有人在收筹码。',
+  '房': '街面牙人都在说，往后阵子房子和地皮要往上跳，手里有闲钱的都在看盘。',
+  '金': '钱庄熟客压低声音说，纸票子快压不住了，金银外币眼看要走俏。',
+  '囤': '货栈里风声不对，紧俏日用品过阵子怕要断货涨价，行里已在压仓。',
+  '币': '圈里有人悄声传，数字货币过阵子要起一波大行情，不少人正往里凑。',
+};
+const MARKET_RUMOR_DOWN = {
+  '股': '老掮客私下摇头，说这波证券涨得太虚，再过一两月怕是要变天。',
+  '房': '楼市里风声转冷，几个大行家已在悄悄出货，怕往后不好脱手。',
+  '金': '街面传上头要严查金银黑市，风头紧起来，手里压着重货的都在犯嘀咕。',
+  '囤': '货行里传银根要收紧，压在仓里的存货再不出手，往后怕要砸手里。',
+  '币': '圈里风声转紧，数字货币大起大落，再往高处追怕要套牢。',
+};
+const MARKET_RUMOR_FOG = '市井里消息满天飞，有人说要大涨，也有人劝着落袋为安，真假难辨。';
+
+function monthlyPulse(s, card, echoes) {
+  if (!s || s.finished || s.n > lastMonthOf(s)) return null;
+  const st = stageInfo(s);
+  const cur = currencyOf(s.year, s.month);
+  const inc = incomeOf(s.year, s.month) || 1;
+  const n = Number(s.n) || 1;
+
+  /* 1. 终局倒计时（最后 3 月与收官之月） */
+  if (s.phase !== 'extra' && st.countdown && (st.remaining === 3 || st.remaining === 1)) {
+    const wishBit = s.wish ? `心愿「${s.wish.slice(0, 18)}」` : '手里的货、债和人情';
+    return {
+      kind: 'countdown',
+      tag: st.remaining === 1 ? '收官之月' : `剩 ${st.remaining} 月收官`,
+      text: st.remaining === 1
+        ? `这是最后一个月，${wishBit}该做个了断了。`
+        : `离收官只剩 ${st.remaining} 个月，${wishBit}得趁早收口。`,
+    };
+  }
+
+  /* 2. 换币当月 / 提前 1–2 月换币风声 */
+  const swNow = switchDueAfter(s.year, s.month) || switchOnEntry(s.year, s.month);
+  if (swNow) {
+    return {
+      kind: 'urgent',
+      tag: '本月换币',
+      text: `${String(swNow.say || '').replace(/。+$/, '')}。留现钱还是换家当，这个月得拿主意。`,
+      draft: '打听换币细则，先把手里现钱折成保值实物或紧俏货',
+    };
+  }
+  const nm1 = nextMonth(s.year, s.month);
+  const nm2 = nextMonth(nm1.year, nm1.month);
+  const swSoon = switchDueAfter(nm1.year, nm1.month) || switchOnEntry(nm1.year, nm1.month)
+    || switchDueAfter(nm2.year, nm2.month) || switchOnEntry(nm2.year, nm2.month);
+  if (swSoon && n >= 2) {
+    return {
+      kind: 'rumor',
+      tag: '街面风声',
+      text: `茶馆里压低声音传，过一两月要改换${CN[swSoon.to] || '新币'}，纸票子怕攥不住。`,
+      draft: '提前把多余现钱换成金银或耐放实物，避开换币折损',
+    };
+  }
+
+  /* 3. 当月年卡 risks（第 1 个月保持清爽，第 2 个月起敲门） */
+  if (n >= 2 && card && Array.isArray(card.risks)) {
+    const rk = card.risks.find(x => Number(x.month) === Number(s.month));
+    if (rk && rk.what) {
+      return {
+        kind: 'urgent',
+        tag: '本月急事',
+        text: trimTrace(rk.what, 44),
+        sub: rk.hit ? trimTrace(rk.hit, 48) : '',
+      };
+    }
+  }
+
+  /* 4. 欠债偏重：债主上门催账 */
+  const debts = Array.isArray(s.debts) ? s.debts : [];
+  const debtSum = debts.reduce((t, d) => t + (Number(d.amount) || 0), 0);
+  if (n >= 3 && debtSum >= inc * 0.35 && debts.length) {
+    const topD = debts.slice().sort((a, b) => (b.amount || 0) - (a.amount || 0))[0];
+    return {
+      kind: 'urgent',
+      tag: '债主催门',
+      text: `欠${topD.who}的 ${money(topD.amount, cur)} 已拖了些日子，对方托人带话本月要见个准信。`,
+      draft: `先想办法凑钱还清欠${topD.who}的账，或上门谈宽限`,
+    };
+  }
+
+  /* 5. 跨年代遗踪线索（旧年异客留下的暗盒或百年字号） */
+  const legacies = (echoes && Array.isArray(echoes.legacies)) ? echoes.legacies : [];
+  if (n >= 2 && legacies.length && (n === 2 || n % 4 === 3)) {
+    const lg = legacies[(n + (s.seed || 1)) % legacies.length];
+    const isCache = lg.capsuleKind === 'cache';
+    return {
+      kind: 'legacy',
+      tag: isCache ? '旧年暗盒' : '百年遗踪',
+      legacyId: lg.id || null,
+      text: isCache
+        ? `${lg.year} 年有位异客「${lg.nick}」曾在${lg.city}藏下「${lg.item}」：${trimTrace(lg.clue, 30)}`
+        : `${lg.year} 年穿越者「${lg.nick}」留下的「${lg.item}」仍在${lg.city}流传：${trimTrace(lg.clue, 30)}`,
+      draft: isCache
+        ? `顺着 ${lg.year} 年穿越者「${lg.nick}」留下的线索，去寻访那处「${lg.item}」`
+        : `去${lg.city}打听 ${lg.year} 年穿越者「${lg.nick}」留下的「${lg.item}」，看看能否攀上旧缘`,
+    };
+  }
+
+  /* 6. 提前 1–2 个月的历史行情拐点风声（七成准、三成留雾） */
+  if (n >= 2) {
+    const kNow = s.year * 12 + (s.month - 1);
+    const soonM = MARKETS.find(w => w.a === kNow + 1 || w.a === kNow + 2);
+    if (soonM && soonM.venues && soonM.venues.length) {
+      const roll = hash32((s.seed || 1) * 524287 + n * 131071) / 2 ** 32;
+      const v0 = soonM.venues[0];
+      const msg = roll < 0.75
+        ? ((soonM.dir > 0 ? MARKET_RUMOR_UP[v0] : MARKET_RUMOR_DOWN[v0]) || MARKET_RUMOR_FOG)
+        : MARKET_RUMOR_FOG;
+      return {
+        kind: 'rumor',
+        tag: '街面风声',
+        text: msg,
+      };
+    }
+  }
+
+  /* 7. 阶段节点（半年盘点）或挂着太久的未了头绪 */
+  const openThreads = ((s.memo && s.memo.threads) || []).filter(t => !t.done);
+  const staleThread = openThreads.find(t => n - (t.opened || 1) >= 3);
+  if (staleThread) {
+    return {
+      kind: 'turn',
+      tag: '旧事催办',
+      text: `第 ${staleThread.opened} 个月起头的「${staleThread.what}」还悬着，再拖下去恐生变故。`,
+      draft: `先把第 ${staleThread.opened} 个月挂下的「${staleThread.what}」办妥了结`,
+    };
+  }
+  if (st.milestone && st.milestoneLabel && n >= 6) {
+    const wishNote = s.wish ? `对照开局心愿「${s.wish.slice(0, 18)}」，` : '';
+    return {
+      kind: 'turn',
+      tag: st.milestoneLabel,
+      text: `${wishNote}已过 ${n - 1} 个月，眼下是守稳旧摊还是换道加码的关口。`,
+    };
+  }
+
+  /* 8. 间隔露出当年大事（每 3 个月最多 1 次，保持呼吸感） */
+  if (n >= 3 && n % 3 === 1 && card && Array.isArray(card.events)) {
+    const ev = card.events.find(e => Number(e.month) === Number(s.month));
+    if (ev && ev.text) {
+      return {
+        kind: 'rumor',
+        tag: '城中动静',
+        text: trimTrace(ev.text, 48),
+      };
+    }
+  }
+
+  return null;
+}
+
+/* ── 跨年代时空留物 / 百年字号提取 ─────────────────────────── */
+const CAPSULE_CACHE_RE = /(埋下|藏下|埋藏|暗盒|铁盒|时空|留给后|后世|后来人|后来的穿越者|留封信|留张字条|藏在|埋在|托付给后)/;
+const CAPSULE_LEGACY_RE = /(字号|商号|老店|铺子|堂口|武馆|门派|书院|会馆|酒楼|茶楼|药铺|钱庄|戏班)/;
+
+function extractCapsule(s, list, delta) {
+  const raw = delta && delta.capsule;
+  if (!raw || typeof raw !== 'object') return null;
+  const kind = raw.kind === 'cache' ? 'cache' : (raw.kind === 'legacy' ? 'legacy' : null);
+  if (!kind) return null;
+  const item = oneLine(raw.item || '', 16).replace(/[《》「」『』""'']/g, '').trim();
+  const clue = oneLine(raw.clue || '', 38).trim();
+  if (item.length < 2 || clue.length < 4) return null;
+  const listTxt = String(list || '');
+  const storyTxt = String((delta && delta.story) || '');
+  if (kind === 'cache') {
+    if (s.capsuleCacheSaved) return null;
+    if (!CAPSULE_CACHE_RE.test(listTxt)) return null;
+  } else {
+    if (s.capsuleLegacySaved) return null;
+    if (!CAPSULE_LEGACY_RE.test(`${listTxt} ${storyTxt} ${item}`)) return null;
+  }
+  const city = s.city || '';
+  const nick = oneLine(s.nick || '异客', 14);
+  const summary = kind === 'cache'
+    ? trimTrace(`穿越者「${nick}」在 ${s.year} 年${city}留下一处「${item}」`, 50)
+    : trimTrace(`穿越者「${nick}」在 ${s.year} 年${city}立起「${item}」`, 50);
+  return {
+    year: s.year,
+    month: s.month,
+    city,
+    nick,
+    kind: kind === 'cache' ? 'capsule' : 'legacy',
+    capsuleKind: kind,
+    item,
+    clue,
+    summary,
+    importance: 3,
+  };
+}
+
+/** 从总评标题、本事或成绩抽一枚 2–4 字朱砂印文，盖在首页百年卡片上。 */
+function stampOf(title, score, traits) {
+  const clean = String(title || '').replace(/[^一-鿿]/g, '');
+  if (clean.length >= 2 && clean.length <= 4) return clean;
+  if (clean.length > 4) return clean.slice(0, 4);
+  const t0 = Array.isArray(traits) && traits.length
+    ? String(traits[0] || '').replace(/[^一-鿿]/g, '')
+    : '';
+  if (t0.length >= 2 && t0.length <= 4) return t0;
+  const sc = Number(score);
+  if (isFinite(sc)) {
+    if (sc >= 10) return '一方巨贾';
+    if (sc >= 3) return '站稳脚跟';
+    if (sc >= 0.5) return '安稳度日';
+    return '乱世过客';
+  }
+  return '到此一游';
+}
+
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
   trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isBondDowngrade, isRedundantBond, normalizeAssetKind, stripPaperLossEntries, stripBogusCashAndExchange,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
+  SCENARIOS, wishSuggestionsFor, checkWish, stageInfo, monthlyPulse, extractCapsule, stampOf, assetVenueOf,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,
-  DAYS, MONTHS, MONTHS_EXTRA, LIST_LIMIT, PERSONA_LIMIT, CN, SPINE, TL,
-  lastMonthOf, extraRoom, reopen,
+  DAYS, MONTHS, MONTHS_FAST, MONTHS_EXTRA, LIST_LIMIT, PERSONA_LIMIT, WISH_LIMIT, CN, SPINE, TL,
+  baseMonthsOf, lastMonthOf, extraRoom, reopen,
   yearOf, scanAnachronism, sayAnachronism, currencyAt, priceAt, worthAt, incomeAt, incomeAtDay,
   money, moneyIn, unitOf, fixScale, fixSigns, unpairedBuys,
   currencyOf, incomeOf, worthOf, nextMonth, startable, monthTop, switchDueAfter, switchOnEntry, reprice, closeOut,
