@@ -5,6 +5,7 @@
    3) 朱砂（--seal）留给印章、高光、进度与警示；主按钮用墨黑（--ink）
    ===================================================================== */
 :root {
+  color-scheme: light;
   --canvas:       oklch(0.958 0.008 82);
   --surface:      oklch(0.992 0.004 82);
   --surface-2:    oklch(0.928 0.010 80);
@@ -37,7 +38,9 @@
   --ease-exit:   cubic-bezier(0.4, 0, 1, 1);
 }
 
+:root[data-theme="dark"],
 [data-theme="dark"] {
+  color-scheme: dark;
   --canvas:       oklch(0.165 0.008 75);
   --surface:      oklch(0.215 0.009 75);
   --surface-2:    oklch(0.260 0.010 75);
@@ -87,15 +90,26 @@ button:disabled { cursor: not-allowed; }
 html.theme-switching body,
 html.theme-switching .app-nav,
 html.theme-switching .spotlight,
+html.theme-switching .era-btn,
 html.theme-switching .year-hero,
+html.theme-switching .mo-cell,
+html.theme-switching .mo-metrics,
+html.theme-switching .start-card,
 html.theme-switching .hud,
 html.theme-switching .hero-art-card,
 html.theme-switching .dock,
 html.theme-switching .done-hero,
+html.theme-switching .stat-box,
+html.theme-switching .timeline,
+html.theme-switching .verdict-box,
 html.theme-switching .comic-book,
 html.theme-switching .comic-panel,
+html.theme-switching .board-select,
 html.theme-switching .rank-card,
-html.theme-switching .rank-card-foot {
+html.theme-switching .rank-card-foot,
+html.theme-switching .sheet,
+html.theme-switching .comic-lb,
+html.theme-switching .poster-sheet {
   transition: background-color .24s var(--ease), color .24s var(--ease), border-color .24s var(--ease);
 }
 
@@ -198,7 +212,8 @@ html.theme-switching .rank-card-foot {
 .screen.on { display: block; position: relative; z-index: 3; }
 .screen.is-leaving {
   display: block; position: absolute; z-index: 2;
-  left: var(--main-px); right: var(--main-px);
+  left: max(var(--main-px), env(safe-area-inset-left, 0px));
+  right: max(var(--main-px), env(safe-area-inset-right, 0px));
   pointer-events: none; user-select: none;
   will-change: transform, opacity;
 }
@@ -1367,9 +1382,9 @@ html.theme-switching .rank-card-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-bottom: 12px; flex-wrap: wrap;
 }
-.board-pills { display: flex; gap: 6px; }
+.board-pills { display: flex; gap: 6px; flex: 0 0 auto; }
 .board-select {
-  min-height: 38px; padding: 0 10px; border-radius: var(--r-sm);
+  min-height: 36px; height: 36px; padding: 0 10px; border-radius: var(--r-sm);
   border: 1px solid var(--line-strong); background: var(--surface);
   font-size: 16px; min-width: 0; max-width: 100%; flex: 0 1 auto;
 }
@@ -1379,7 +1394,7 @@ html.theme-switching .rank-card-foot {
   display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center;
   padding: 10px; border-radius: var(--r-md);
   background: var(--surface); border: 1px solid var(--line);
-  text-align: left; width: 100%;
+  text-align: left; width: 100%; min-width: 0;
   transition: border-color .15s, transform .12s var(--ease);
 }
 .rank-card:hover:not(:disabled) { border-color: var(--ink); transform: translateY(-1px); }
@@ -1412,25 +1427,30 @@ html.theme-switching .rank-card-foot {
 .rank-no.live { background: var(--indigo); }
 .rank-info { min-width: 0; }
 .rank-name {
-  font-size: 14.5px; font-weight: 600;
-  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  font-size: 14.5px; font-weight: 600; min-width: 0;
+  display: flex; align-items: baseline; gap: 3px 6px; flex-wrap: wrap;
 }
-.rank-title { font-size: 12.5px; color: var(--fg-muted); font-weight: 400; }
-.rank-sub { font-size: 12px; color: var(--fg-faint); margin-top: 3px; }
+.rank-nick { min-width: 0; overflow-wrap: anywhere; }
+.rank-title {
+  font-size: 12.5px; color: var(--fg-muted); font-weight: 400;
+  min-width: 0; overflow-wrap: break-word;
+}
+.rank-sub { font-size: 12px; color: var(--fg-faint); margin-top: 3px; overflow-wrap: break-word; }
 .rank-score { text-align: right; white-space: nowrap; }
 .rank-score b { display: block; font: 600 14.5px/1.25 var(--sans); color: var(--ink); }
 .rank-score span { font-size: 11.5px; color: var(--fg-faint); }
 
 /* 我的记录：总榜自选两条 + 删除记录操作栏 */
 .mine-bar-meta {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  font-size: 12.5px; color: var(--fg-muted);
+  display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--fg-muted); min-width: 0;
 }
-.mine-meta-text { line-height: 1.4; }
+.mine-meta-text { line-height: 1.45; overflow-wrap: break-word; }
 .mine-reset-btn {
-  padding: 4px 10px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 34px; padding: 0 12px; border-radius: var(--r-pill);
   border: 1px solid var(--line-strong); background: var(--surface);
-  color: var(--ink); font-size: 12px; font-weight: 500;
+  color: var(--ink); font-size: 12px; font-weight: 500; white-space: nowrap;
   transition: border-color .15s, background .15s;
 }
 .mine-reset-btn:hover:not(:disabled) { border-color: var(--ink); background: var(--surface-2); }
@@ -1451,7 +1471,7 @@ html.theme-switching .rank-card-foot {
 .rank-card-main {
   display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center;
   padding: 10px; width: 100%; border: 0; background: transparent;
-  text-align: left;
+  text-align: left; min-width: 0;
   transition: background .15s;
 }
 .rank-card-main:hover:not(:disabled) { background: color-mix(in oklch, var(--surface-2) 45%, transparent); }
@@ -1459,22 +1479,24 @@ html.theme-switching .rank-card-foot {
 .rank-card-main:disabled { opacity: .55; }
 
 .rank-card-foot {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 7px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px 10px;
+  padding: 8px 10px;
   border-top: 1px solid var(--line);
   background: color-mix(in oklch, var(--canvas) 52%, var(--surface));
 }
 .mine-foot-left, .mine-foot-right {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
+.mine-foot-left { flex: 1 1 auto; min-width: 0; }
+.mine-foot-right { flex: 0 0 auto; }
 .mine-foot-note {
-  font-size: 12px; color: var(--fg-faint);
+  font-size: 12px; color: var(--fg-muted); line-height: 1.4;
 }
 .board-pick-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  height: 28px; padding: 0 11px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-height: 36px; padding: 0 12px; border-radius: var(--r-pill);
   border: 1px solid var(--line-strong); background: var(--surface);
-  color: var(--fg-muted); font-size: 12px; font-weight: 500;
+  color: var(--fg-muted); font-size: 12.5px; font-weight: 500; white-space: nowrap;
   transition: border-color .15s, background .15s, color .15s;
 }
 .board-pick-btn:hover:not(:disabled) {
@@ -1490,15 +1512,16 @@ html.theme-switching .rank-card-foot {
 .board-pick-btn:disabled { opacity: .45; }
 
 .mine-top-tag {
-  font-size: 11.5px; color: var(--fg-faint);
-  padding: 2px 7px; border-radius: var(--r-pill);
+  font-size: 11.5px; color: var(--fg-muted); white-space: nowrap;
+  padding: 3px 8px; border-radius: var(--r-pill);
   background: var(--surface); border: 1px solid var(--line);
 }
 
 .run-del-btn {
-  height: 28px; padding: 0 10px; border-radius: var(--r-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 36px; padding: 0 12px; border-radius: var(--r-sm);
   border: 1px solid transparent; background: transparent;
-  color: var(--fg-faint); font-size: 12px; font-weight: 500;
+  color: var(--fg-muted); font-size: 12.5px; font-weight: 500; white-space: nowrap;
   transition: color .15s, background .15s, border-color .15s;
 }
 .run-del-btn:hover:not(:disabled) {
@@ -1510,6 +1533,49 @@ html.theme-switching .rank-card-foot {
   color: var(--seal-ink) !important; font-weight: 600;
 }
 .run-del-btn:disabled { opacity: .45; }
+
+@media (max-width: 599px) {
+  .rank-card:not(.mine-card),
+  .rank-card-main {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: start;
+  }
+  .rank-card:not(.mine-card) .rank-thumb,
+  .rank-card-main .rank-thumb {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+  .rank-card:not(.mine-card) .rank-info,
+  .rank-card-main .rank-info {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .rank-card:not(.mine-card) .rank-score,
+  .rank-card-main .rank-score {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    text-align: left;
+    white-space: normal;
+    padding-top: 5px;
+    border-top: 1px dashed var(--line);
+  }
+  .rank-score b {
+    font-size: 14px;
+    line-height: 1.3;
+    overflow-wrap: break-word;
+  }
+  .rank-score span {
+    white-space: nowrap;
+  }
+}
 
 /* ── 底部抽屉（家当 / 人脉 / 世道） ──────────────────────── */
 .sheet-backdrop {
@@ -1720,6 +1786,8 @@ html.theme-switching .rank-card-foot {
   .comic-finale-body { padding: 13px 14px 14px; }
   .comic-finale-foot { flex-direction: column; align-items: stretch; gap: 10px; }
   .comic-finale-foot .comic-export-btn { width: 100%; min-height: 42px; font-size: 14px; }
+  .board-select { flex: 1 1 144px; }
+  .mine-bar-meta { flex: 1 0 100%; justify-content: space-between; }
 }
 
 @media (min-width: 520px) {
@@ -1760,6 +1828,9 @@ html.theme-switching .rank-card-foot {
   .done-actions > .btn-ghost:last-child:nth-child(even) { grid-column: auto; }
   .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .board-select { min-height: 34px; height: 34px; font-size: 13px; }
+  .mine-reset-btn { min-height: 28px; padding: 0 10px; }
+  .board-pick-btn { min-height: 30px; padding: 0 11px; font-size: 12px; }
+  .run-del-btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
   .rank-card { grid-template-columns: 128px minmax(0, 1fr) auto; padding: 12px 14px; }
   .rank-card-main { grid-template-columns: 128px minmax(0, 1fr) auto; padding: 12px 14px; }
   .rank-card-foot { padding: 8px 14px; }

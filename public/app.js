@@ -124,6 +124,7 @@ function applyTheme(theme, animate = false) {
     clearTimeout(themeSwitchT);
     themeSwitchT = setTimeout(() => document.documentElement.classList.remove('theme-switching'), 260);
   }
+  document.documentElement.dataset.theme = t;
   document.body.dataset.theme = t;
   localStorage.setItem(THEME_KEY, t);
   const btn = $('#btn-theme');
@@ -225,6 +226,7 @@ function go(name, opts = {}) {
   if (prevScreenId !== targetScreen && newEl) {
     const oldY = window.scrollY;
     const mainEl = $('.app-main');
+    const mainTop = mainEl ? mainEl.offsetTop : 0;
     const padTop = mainEl ? (parseFloat(getComputedStyle(mainEl).paddingTop) || 16) : 16;
 
     clearTimeout(screenLeaveT);
@@ -242,7 +244,7 @@ function go(name, opts = {}) {
 
     if (!opts.instant && !reducedMotion() && oldEl && oldEl !== newEl) {
       oldEl.style.top = `${padTop + newY - oldY}px`;
-      oldEl.style.maxHeight = `${Math.max(240, oldY + window.innerHeight - padTop)}px`;
+      oldEl.style.maxHeight = `${Math.max(240, oldY + window.innerHeight - mainTop - padTop)}px`;
       oldEl.style.overflow = 'hidden';
       oldEl.classList.add('is-leaving', `tr-out-${dir}`);
       newEl.classList.add(`tr-in-${dir}`);
@@ -3066,7 +3068,7 @@ function fillRankMainNodes(host, opts) {
 
   const info = el('div', 'rank-info');
   const nm = el('div', 'rank-name');
-  nm.appendChild(document.createTextNode(opts.nick || '无名'));
+  nm.appendChild(el('span', 'rank-nick', opts.nick || '无名'));
   if (opts.title) nm.appendChild(el('span', 'rank-title', opts.title));
   info.appendChild(nm);
   info.appendChild(el('div', 'rank-sub num', opts.sub || ''));
