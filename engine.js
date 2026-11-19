@@ -403,11 +403,19 @@ function applySwitch(s, sw) {
  *  一个月零开销的月份不存在。156 个有账的月份里符合这条的只有 2 个，两个都是真错。
  *  真到了一笔出账都没有的月份，翻的也只是名字里明说了在花钱的那几笔。 */
 const SPEND = /伙食|房租|房钱|租金|路费|车钱|打点|门包|茶钱|保护费|开销|购置|采买|买|支出|费用|水电|煤球|工本|手续/;
-const EARN = /卖出|售出|所得|收回|讨回|退还|报酬|工钱|工资|奖励|提成|抽成|酬劳|利润|差价|收益|溢价|赚|分租|出租|收租|包租|转租|招租|租金收入|房租收入|租金进项|租金回款|房租回款/;
+const STRICT_SPEND = /生活开销|日常开销|基本开销|应酬开销|基本餐饮|餐饮消费|伙食|吃住|房租支出|支出|开销|打点费?|门包|茶钱|保护费|手续费|工本费|水电煤|水电费|采购成本|进货成本|补货成本|药补|礼金|礼品支出|宴请|招待费|暂住证|路费|车钱|车费|预付定金|预付金/;
+const EARN = /卖出|售出|所得|收回|讨回|退还|退回|退款|返还|报销|补贴|补助|赔付|赔偿|回款|收入|进项|报酬|工钱|工资|薪酬|薪资|奖励|提成|抽成|酬劳|利润|差价|收益|溢价|赚|分成|分红|结账|分租|出租|收租|包租|转租|招租|租金收入|房租收入|租金进项|租金回款|房租回款|残值|结余/;
 function fixSigns(delta) {
   const ents = (delta.entries || []).filter(e => e && e.what != null && isFinite(Number(e.amount)));
-  if (ents.length < 3 || ents.some(e => Number(e.amount) < 0)) return null;
-  const out = ents.filter(e => SPEND.test(e.what) && !EARN.test(e.what));
+  if (!ents.length) return null;
+  const allPos = ents.length >= 3 && !ents.some(e => Number(e.amount) < 0);
+  const out = ents.filter(e => {
+    if (!(Number(e.amount) > 0)) return false;
+    const w = String(e.what || '');
+    if (EARN.test(w)) return false;
+    if (allPos) return SPEND.test(w);
+    return STRICT_SPEND.test(w);
+  });
   if (!out.length) return null;
   for (const e of out) e.amount = -Math.abs(Number(e.amount));
   return { flipped: out.map(e => String(e.what)) };

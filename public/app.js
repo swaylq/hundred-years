@@ -1280,7 +1280,8 @@ function renderFellowBar(s, done) {
   const bondDraftOf = (nick, rel) => {
     if (rel === '对手' || rel === '宿敌') return `找穿越者${nick}正面交锋，抢下这波货源或切磋分个高下`;
     if (rel === '同盟') return `约穿越者${nick}吃酒交心，商量结拜或合办大事`;
-    if (rel === '知己' || rel === '结拜') return `约穿越者${nick}叙旧深谈，共议往后长远打算`;
+    if (rel === '知己') return `约穿越者${nick}吃酒交心，谈谈结拜、提亲或往后生死相托的大事`;
+    if (rel === '结拜') return `约穿越者${nick}叙旧深谈，共议往后长远打算`;
     if (rel === '提亲' || rel === '成婚' || rel === '道侣') return `与穿越者${nick}共商持家大事与本月生计`;
     if (rel === '初识' || rel === '试探') return `去找穿越者${nick}再探虚实，聊聊买卖或切磋几手`;
     return `找穿越者${nick}对账分润，顺便看能结盟还是得防一手`;
