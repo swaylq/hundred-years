@@ -516,8 +516,12 @@ function unpairedBuys(delta, wage) {
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
 const MARKET_ASSET_LOSS_RE = /(黄金|金条|现货|古玩|字画|文玩|股票|基金|期货|理财|比特币|银元|美钞|铺位|商铺|库存|存货|货物|资产).{0,12}(波动损失|波动亏损|亏损清算|市价损失|市场波动损|贬值损失|跌价损失)/;
+const CONFISCATED_LOSS_RE = /(亏损本钱|本金亏损|本金损失|赔光本钱|本钱赔光|货被没收|被没收.{0,4}亏|倒卖亏损|货款损失)/;
 const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
 const REVENUE_REFUND_ASSET_RE = /(回笼|回款|变现|获利|盈利|利润|经营所得|销售所得|出货所得|卖货所得|营收|进账|分红现金|货款现金)/;
+const BARTER_REVENUE_ENTRY_RE = /(置换|换得|换回|折现|差价|增值|回款|变现|所得|分润|收益|获利|转手|出清|囤货)/;
+const BARTER_DOUBLE_ASSET_RE = /(置换|换得|换回|换取|囤积|避险|储备|所得|折现|分润|改良)/;
+const FREE_FIND_ASSET_RE = /(挖出|寻访|遗踪|铁盒|暗盒|获赠|赠与|捡到|捡漏|赏赐|奖励)/;
 const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|变现款|现款|收款|营收|所得|款项|余款|进账)$/;
 const BANK_DEPOSIT_RE = /(存单|定期|活期|存款|存折|银行账户)/;
 const ASSET_BUY_OUTFLOW_RE = /(购入|买入|购买|换购|换取|兑换|置换|囤|存货|采购|收购|进货|预付|定金|盘下|置办)/;
@@ -525,10 +529,9 @@ const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口
 const EXCHANGE_BALANCE_ENTRY_RE = /(兑换|换币|换钞|折算).{0,8}(结余|本金|积蓄|余额|现金|新币|旧币)/;
 const DEPOSIT_OUTFLOW_RE = /(存入|存单|定期|活期|转入|开户)/;
 
-/** 防止同一笔存货/实物资产跌价被扣两遍：
- *  模型在「买了 45 万黄金、行情大跌后只剩 13.5 万残值」时，常既记「购入黄金本金 -450000」、
- *  assetsAdd 记折后残值 135000，又在 entries 里额外扣一笔「黄金市场短期波动亏损清算 -315000」，
- *  导致现金和净值被重复扣掉双倍（亏掉 140%）。未卖出的账面跌价已在 assetsAdd.worth 体现，不应再扣现金。 */
+/** 防止同一笔存货/实物资产跌价或货被没收被扣两遍：
+ *  1) 「买了 45 万黄金、行情大跌后只剩 13.5 万残值」时，已记购入出账与折后残值，不再重复扣波动亏损；
+ *  2) 「买黑市药引子本金 -40」且货被没收（未入家当），本金已通过买进出账扣完，不再额外扣一笔「亏损本钱 -38」。 */
 function stripPaperLossEntries(delta) {
   if (!delta || !Array.isArray(delta.entries) || !delta.entries.length) return null;
   const buyOut = delta.entries
@@ -539,30 +542,34 @@ function stripPaperLossEntries(delta) {
   const hasBuyOrAsset = buyOut > 0 || addedWorth > 0;
   if (!hasBuyOrAsset) return null;
   const hasDiscountedAssetBuy = buyOut > 0 && addedWorth > 0 && buyOut > addedWorth;
+  const hasUnrecoveredBuy = buyOut > 0 && addedWorth < buyOut;
   const removed = [];
   delta.entries = delta.entries.filter(e => {
     if (!e || !(Number(e.amount) < 0)) return true;
     const what = String(e.what || '');
+    const lossAmt = -Number(e.amount);
     if (PAPER_LOSS_RE.test(what)) {
       removed.push(what);
       return false;
     }
-    if (hasDiscountedAssetBuy && MARKET_ASSET_LOSS_RE.test(what)) {
-      const lossAmt = -Number(e.amount);
-      if (lossAmt <= buyOut * 1.05) {
-        removed.push(what);
-        return false;
-      }
+    if (hasDiscountedAssetBuy && MARKET_ASSET_LOSS_RE.test(what) && lossAmt <= buyOut * 1.05) {
+      removed.push(what);
+      return false;
+    }
+    if (hasUnrecoveredBuy && CONFISCATED_LOSS_RE.test(what) && lossAmt <= buyOut * 1.05) {
+      removed.push(what);
+      return false;
     }
     return true;
   });
   return removed.length ? { removed } : null;
 }
 
-/** 防止把原本就有的积蓄/换币结余、已入账的回笼资金或虚无感悟重复算进家当：
+/** 防止把原本就有的积蓄/换币结余、已入账的回笼/置换资金或虚无感悟重复算进家当：
  *  1) entries 里把现有积蓄记成正数「兑换新币结余 +534000」，等于凭空把本钱翻倍；
  *  2) assetsAdd 里塞「现金结余 / 回笼银元储备（本月经营回笼资金）」且无对应购入出账，而这笔钱已通过 entries 进过 s.cash；
- *  3) 把「炼金感悟」「密教线索」等抽象无形物估高价塞进 assetsAdd。 */
+ *  3) 以货换货/置换时既未扣买入本金也未 assetsDrop 销掉旧货，却一边在 entries 记正数「置换收益/折现 +X」、一边又在 assetsAdd 加同额实物 worth=X，导致同一笔钱算两遍；
+ *  4) 把「炼金感悟」「密教线索」等抽象无形物估高价塞进 assetsAdd。 */
 function stripBogusCashAndExchange(s, delta) {
   if (!delta) return null;
   const removedEntries = [];
@@ -584,9 +591,18 @@ function stripBogusCashAndExchange(s, delta) {
     const ents = Array.isArray(delta.entries) ? delta.entries : [];
     const hasDepositOut = ents.some(e => e && Number(e.amount) < 0 && DEPOSIT_OUTFLOW_RE.test(String(e.what || '')));
     const posRev = ents.filter(e => e && Number(e.amount) > 0).reduce((t, e) => t + Number(e.amount), 0);
+    const barterPos = ents
+      .filter(e => e && Number(e.amount) > 0 && BARTER_REVENUE_ENTRY_RE.test(String(e.what || '')))
+      .reduce((t, e) => t + Number(e.amount), 0);
     const buyOut = ents
       .filter(e => e && Number(e.amount) < 0 && ASSET_BUY_OUTFLOW_RE.test(String(e.what || '')) && !BUY_LOSS_RE.test(String(e.what || '')))
       .reduce((t, e) => t - Number(e.amount), 0);
+    const drops = Array.isArray(delta.assetsDrop) ? delta.assetsDrop.map(x => String(x || '').trim()).filter(Boolean) : [];
+    const droppedWorth = drops.length && s && Array.isArray(s.assets)
+      ? s.assets
+        .filter(a => a && a.name && drops.some(d => d === a.name || a.name.includes(d) || d.includes(a.name)))
+        .reduce((t, a) => t + (Number(a.worth) || 0), 0)
+      : 0;
     delta.assetsAdd = delta.assetsAdd.filter(a => {
       if (!a || !a.name) return false;
       const nm = String(a.name).trim();
@@ -611,6 +627,19 @@ function stripBogusCashAndExchange(s, delta) {
       if (w > 0 && revNamed && !isDeposit && posRev >= w * 0.3 && (normKind === '现金类' || CASH_LIKE_ASSET_NAME_RE.test(nm) || matchesPosEntry || buyOut < w * 0.3)) {
         removedAssets.push(nm);
         return false;
+      }
+      /* 置换/以货换货双计拦截：无买入出账也无旧货销账，却已在 entries 计入同额/覆盖额正数置换收益，不许再凭空叠加实物家当 */
+      if (w > 0 && !isDeposit && buyOut < w * 0.25 && droppedWorth < w * 0.25 && !FREE_FIND_ASSET_RE.test(`${nm} ${nt}`)) {
+        const matchesBarterEntry = ents.some(e =>
+          e && Number(e.amount) > 0 &&
+          BARTER_REVENUE_ENTRY_RE.test(String(e.what || '')) &&
+          Math.abs(Number(e.amount) - w) <= Math.max(w * 0.06, 1)
+        );
+        const coveredByBarterRev = barterPos >= w * 0.8 && BARTER_DOUBLE_ASSET_RE.test(`${nm} ${nt}`);
+        if (matchesBarterEntry || coveredByBarterRev) {
+          removedAssets.push(nm);
+          return false;
+        }
       }
       return true;
     });
@@ -1298,7 +1327,7 @@ function applyMemo(s, delta, at, opts = {}) {
     const tWhat = `与穿越者${partner}${rel}`;
     const pKey = whoKey(partner);
     const isSameBondTrait = w => {
-      const m = String(w || '').match(/^(?:与)?(?:穿越者)?(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$/);
+      const m = String(w || '').match(/^(?:与)?(?:穿越者)?(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行|关系|交情|渊源|羁绊)$/);
       return !!(m && whoKey(cleanTravelerNick(m[1])) === pKey);
     };
     let trec = m.traits.find(x => isSameBondTrait(x.what));
@@ -1879,8 +1908,9 @@ const BOND_FRIENDLY_TIER = {
   '初识': 1, '试探': 1, '结交': 1, '结缘': 1, '同行': 1,
   '合伙': 2, '师徒': 2,
   '同盟': 3,
-  '知己': 4, '结拜': 4, '提亲': 4,
-  '成婚': 5, '道侣': 5,
+  '知己': 4,
+  '结拜': 5, '提亲': 5,
+  '成婚': 6, '道侣': 6,
 };
 
 function isBondDowngrade(prevRel, nextRel) {
@@ -2392,8 +2422,10 @@ function monthlyPulse(s, card, echoes) {
     };
   }
 
-  /* 5. 跨年代遗踪线索（旧年异客留下的暗盒或百年字号） */
-  const legacies = (echoes && Array.isArray(echoes.legacies)) ? echoes.legacies : [];
+  /* 5. 跨年代遗踪线索（旧年异客留下的暗盒或百年字号，跳过本局已探访过的） */
+  const claimedSet = new Set(Array.isArray(s.claimedLegacies) ? s.claimedLegacies.map(String) : []);
+  const legacies = ((echoes && Array.isArray(echoes.legacies)) ? echoes.legacies : [])
+    .filter(lg => lg && lg.item && !claimedSet.has(String(lg.id || lg.item)));
   if (n >= 2 && legacies.length && (n === 2 || n % 4 === 3)) {
     const lg = legacies[(n + (s.seed || 1)) % legacies.length];
     const isCache = lg.capsuleKind === 'cache';
@@ -2464,7 +2496,8 @@ function monthlyPulse(s, card, echoes) {
 }
 
 /* ── 跨年代时空留物 / 百年字号提取 ─────────────────────────── */
-const CAPSULE_CACHE_RE = /(埋下|藏下|埋藏|暗盒|铁盒|时空|留给后|后世|后来人|后来的穿越者|留封信|留张字条|藏在|埋在|托付给后)/;
+const CAPSULE_CACHE_RE = /(埋下|藏下|埋藏|留给后|留给后来|后来的穿越者|留封信|留张字条|藏在|埋在|托付给后|封存给后|埋个|藏个)/;
+const DIG_CACHE_RE = /(探那|挖出|挖掘|寻访|寻那|找那|翻出|开启|启出|撬开|去探|顺着.{0,12}线索)/;
 const CAPSULE_LEGACY_RE = /(字号|商号|老店|铺子|堂口|武馆|门派|书院|会馆|酒楼|茶楼|药铺|钱庄|戏班)/;
 
 function extractCapsule(s, list, delta) {
@@ -2479,7 +2512,9 @@ function extractCapsule(s, list, delta) {
   const storyTxt = String((delta && delta.story) || '');
   if (kind === 'cache') {
     if (s.capsuleCacheSaved) return null;
+    if (delta && delta.claimedLegacyId) return null;
     if (!CAPSULE_CACHE_RE.test(listTxt)) return null;
+    if (DIG_CACHE_RE.test(listTxt) && !/(重新埋|再埋|埋下新|留给后|留封信|留张字条)/.test(listTxt)) return null;
   } else {
     if (s.capsuleLegacySaved) return null;
     if (!CAPSULE_LEGACY_RE.test(`${listTxt} ${storyTxt} ${item}`)) return null;

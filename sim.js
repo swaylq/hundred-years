@@ -97,7 +97,7 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 东西卖出去的时候，再用 assetsDrop 把它划掉，同时把卖的钱记成进账。
 若买进的实物/存货当月市价下跌，进货款记出账、assetsAdd 按跌后的现值记即可，**绝不许在 entries 里再额外扣一笔「库存贬值/跌价损耗」现金出账**，否则同一笔亏空会被扣两遍。
 手头原有本钱、换币结余和本月挣剩下的现金，系统会自动计入现金余额：**绝不许把「兑换新币结余」「原有积蓄」记成正数进账，也不许把「现金结余」「本月经营所得」再塞进 assetsAdd**，否则同一笔钱会被算两遍。
-换购金银外币或囤货时，entries 必须把花出去的**本金**记为负数（如「换购银元 -5000」），同时 assetsAdd 记入对应实物，绝不能只扣手续费又把本金塞进 assetsAdd；卖货收到的回款既已记进 entries 正数，也不许再把同一笔「回笼银元/回款资金」重复塞进 assetsAdd。感悟、线索、口碑只记进 memo.traits 或 memo.threads，不进 assetsAdd。
+换购金银外币或囤货时，entries 必须把花出去的**本金**记为负数（如「换购银元 -5000」），同时 assetsAdd 记入对应实物，绝不能只扣手续费又把本金塞进 assetsAdd；以货换货或置换实物时，必须用 assetsDrop 销掉交出去的旧货再在 assetsAdd 记新货，**若换来的实物留在手里进了 assetsAdd，绝不许同时在 entries 里再记一笔同额「置换收益/折现」（否则同一笔资产算两遍）**，entries 只记实落到手的净差价；卖货收到的回款既已记进 entries 正数，也不许再把同一笔「回笼银元/回款资金」重复塞进 assetsAdd；买货后若货被没收或赔光，entries 只记买入本金负数，不许额外再扣一笔「亏损本钱」。同类粮油、金银或票证继续添仓时优先沿用家底里已有的名字。感悟、线索、口碑只记进 memo.traits 或 memo.threads，不进 assetsAdd。
 
 **当月买当月就卖光了的，不用记 assetsAdd**——进账出账两笔已经把它说清楚了。
 要记的是**月底还压在他手里**的那些：没卖完的货、交出去还没退的押金、
@@ -632,8 +632,10 @@ function buildUser(s, list, extra = {}) {
     .slice(0, 3)
     .map(t => `· ${t.summary}`);
   const listTxtNow = String(list || '');
+  const claimedLgSet = new Set(Array.isArray(s.claimedLegacies) ? s.claimedLegacies.map(String) : []);
   const legacyPool = (ec.legacies || []).filter(lg => {
     if (!lg || !lg.item) return false;
+    if (claimedLgSet.has(String(lg.id || lg.item))) return false;
     if (pulse && pulse.kind === 'legacy') return true;
     return listTxtNow.includes(lg.item) || listTxtNow.includes(lg.nick) || /(遗踪|暗盒|铁盒|老字号|旧年|埋下|挖出|寻访)/.test(listTxtNow);
   }).slice(0, 2);

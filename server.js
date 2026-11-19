@@ -1080,13 +1080,18 @@ async function runOneMonthInner(req, res, b, s) {
     }
 
     let capsuleClaimed = null;
-    const realCaches = (echoes.legacies || []).filter(lg => lg && lg.id && lg.capsuleKind === 'cache' && !lg.claimedBy);
-    if (realCaches.length) {
-      const wantId = Number(out.delta.claimedLegacyId || 0);
-      const listStr = String(b.list || '');
-      const hitLg = realCaches.find(lg => lg.id === wantId)
-        || realCaches.find(lg => listStr.includes(lg.item) || (listStr.includes(lg.nick) && /(挖|找|寻|取|启|撬|暗盒|铁盒|遗踪)/.test(listStr)));
-      if (hitLg) {
+    const allLegacies = (echoes.legacies || []).filter(lg => lg && lg.item && !lg.claimedBy);
+    const listStr = String(b.list || '');
+    const storyStr = String((out.delta && out.delta.story) || '');
+    const wantId = Number(out.delta.claimedLegacyId || 0);
+    const hitLg = allLegacies.find(lg => lg.id && lg.id === wantId)
+      || allLegacies.find(lg => listStr.includes(lg.item) || (lg.nick && listStr.includes(lg.nick) && /(挖|找|寻|取|启|撬|暗盒|铁盒|遗踪|老字号|字号)/.test(listStr)))
+      || allLegacies.find(lg => lg.capsuleKind === 'cache' && /(挖出|撬开|启出|铁盒|暗盒)/.test(`${listStr} ${storyStr}`) && /(铁盒|暗盒|油纸包|槐树|渡口)/.test(`${listStr} ${storyStr}`));
+    if (hitLg) {
+      if (!Array.isArray(s.claimedLegacies)) s.claimedLegacies = [];
+      const keyLg = String(hitLg.id || hitLg.item);
+      if (!s.claimedLegacies.includes(keyLg)) s.claimedLegacies.push(keyLg);
+      if (hitLg.id && hitLg.capsuleKind === 'cache') {
         const cl = DB.claimCapsule(hitLg.id, { nick: s.nick, year: s.year, runId: b.id });
         if (cl && cl.claimed) capsuleClaimed = cl;
       }

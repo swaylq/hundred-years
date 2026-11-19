@@ -606,15 +606,24 @@ function mix32(n) {
   return (x ^ (x >>> 16)) >>> 0;
 }
 
-function fallbackFellows(year, city) {
+function fallbackFellows(year, city, avoidNick = '') {
   const y = Number(year) || 1948;
   const m1 = mix32(y * 2654435761);
   const m2 = mix32((y + 97) * 2246822519);
-  /* 姓氏与名字分属两个互不相交的半区并配与 12 互质的步长，确保同年两人及连续多年绝不撞名撞字 */
+  const avoid = String(avoidNick || '').trim();
+  const avoidTail = avoid.length >= 2 ? avoid.slice(-2) : '';
+  const clashes = (sIdx, gIdx) => {
+    if (!avoid) return false;
+    const nm = FELLOW_SURNAMES[sIdx] + FELLOW_GIVENS[gIdx];
+    return nm === avoid || (avoidTail && (FELLOW_GIVENS[gIdx] === avoidTail || nm.endsWith(avoidTail)));
+  };
+  /* 姓氏与名字分属两个互不相交的半区并配与 12 互质的步长，确保同年两人及连续多年绝不撞名撞字，亦不与当前主角撞字 */
   const s1 = ((y * 3) + (m1 % 3)) % 10;
-  const g1 = (((y * 5) % 12) + 12) % 12;
+  let g1 = (((y * 5) % 12) + 12) % 12;
+  if (clashes(s1, g1)) g1 = (g1 + 1) % 12;
   const s2 = 10 + (((y * 7) + (m2 % 3)) % 10);
-  const g2 = 12 + ((((y * 7) % 12) + 12) % 12);
+  let g2 = 12 + ((((y * 7) % 12) + 12) % 12);
+  if (clashes(s2, g2)) g2 = 12 + (((g2 - 12) + 1) % 12);
   const name1 = FELLOW_SURNAMES[s1] + FELLOW_GIVENS[g1];
   const name2 = FELLOW_SURNAMES[s2] + FELLOW_GIVENS[g2];
   /* 每年必配一位偏市井商路竞合/博弈型与一位偏江湖暗面/奇门型同行，兼顾商战抢筹与暗面探索 */
@@ -724,7 +733,7 @@ function yearEchoes(year, month = 12, opts = {}) {
     }
   } catch (e) {}
 
-  for (const fb of fallbackFellows(yr, city)) {
+  for (const fb of fallbackFellows(yr, city, nick)) {
     if (seenNick.has(fb.nick)) continue;
     seenNick.add(fb.nick);
     fellows.push(fb);

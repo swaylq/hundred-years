@@ -225,7 +225,10 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
     ...((curBoard && curBoard.rows) || []).map(r => r.nick),
     ...recentBotNames,
   ]);
-  const candidates = TRAVELER_POOL.filter(p => !existingNames.has(p.nick));
+  const fellowTails = new Set(
+    (yearData.fellows || []).map(f => String(f.nick || '').slice(-2)).filter(x => x.length === 2)
+  );
+  const candidates = TRAVELER_POOL.filter(p => !existingNames.has(p.nick) && !fellowTails.has(String(p.nick || '').slice(-2)));
   const pickedProfile = candidates[Math.floor(Math.random() * candidates.length)] || TRAVELER_POOL[0];
 
   console.log(`=== 开启试玩：${target.year} 年 ${target.month} 月 · ${yearData.city} ===`);
