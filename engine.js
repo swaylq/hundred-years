@@ -544,7 +544,8 @@ const FREE_FIND_ASSET_RE = /(挖出|寻访|遗踪|铁盒|暗盒|获赠|赠与|�
 const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|变现款|现款|收款|营收|所得|款项|余款|进账)$/;
 const BANK_DEPOSIT_RE = /(存单|定期|活期|存款|存折|银行账户)/;
 const ASSET_BUY_OUTFLOW_RE = /(购入|买入|购买|换购|换取|兑换|置换|囤|存货|采购|收购|进货|预付|定金|盘下|置办)/;
-const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口碑|名声)$/;
+const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口碑|名声|门路|渠道|人脉|情报网|消息网|路子)$/;
+const RECAP_TOTAL_WORTH_NOTE_RE = /(所有身家|全部身家|全部家底|所有家底|总值|合计|累计|汇总)/;
 const EXCHANGE_BALANCE_ENTRY_RE = /(兑换|换币|换钞|折算).{0,8}(结余|本金|积蓄|余额|现金|新币|旧币)/;
 const DEPOSIT_OUTFLOW_RE = /(存入|存单|定期|活期|转入|开户)/;
 
@@ -614,7 +615,8 @@ function stripBogusCashAndExchange(s, delta) {
     });
   }
   if (Array.isArray(delta.assetsAdd) && delta.assetsAdd.length) {
-    const ents = Array.isArray(delta.entries) ? delta.entries : [];
+    if (!Array.isArray(delta.entries)) delta.entries = [];
+    const ents = delta.entries;
     const hasDepositOut = ents.some(e => e && Number(e.amount) < 0 && DEPOSIT_OUTFLOW_RE.test(String(e.what || '')));
     const posRev = ents.filter(e => e && Number(e.amount) > 0).reduce((t, e) => t + Number(e.amount), 0);
     const barterPos = ents
@@ -632,6 +634,13 @@ function stripBogusCashAndExchange(s, delta) {
     const debtsAddSum = (Array.isArray(delta.debtsAdd) ? delta.debtsAdd : [])
       .reduce((t, d) => t + (Number(d && d.amount) || 0), 0);
     const curInc = (s && s.year && s.month) ? (incomeOf(s.year, s.month) || 0) : 0;
+    const existingBullionWorth = (s && Array.isArray(s.assets) ? s.assets : [])
+      .filter(x => x && x.name && HARD_BULLION_RE.test(x.name))
+      .reduce((t, x) => t + (Number(x.worth) || 0), 0);
+    let remBuyOut = buyOut;
+    let remDropped = droppedWorth;
+    let remDebts = debtsAddSum;
+    let remCash = Math.max(0, curCash + ents.reduce((t, e) => t + (Number(e && e.amount) || 0), 0));
     delta.assetsAdd = delta.assetsAdd.filter(a => {
       if (!a || !a.name) return false;
       const nm = cleanAssetName(a.name);
@@ -683,6 +692,32 @@ function stripBogusCashAndExchange(s, delta) {
         if (matchesBarterEntry || coveredByBarterRev) {
           removedAssets.push(nm);
           return false;
+        }
+      }
+      /* 拦截无本金出账的金银/外币换购与「所有身家」重复汇总（放在所有拒绝条件之后，确保不残留孤儿出账）：
+       * 模型常只扣一笔「换购黄金损耗 -120」却在 assetsAdd 塞进数万「金条储备」，或把原有金条+现钱加总成「所有身家」再记一遍。
+       * 若金额超出现金余额或明显在汇总旧金条，直接拦截；若在可用现金以内则自动补扣换购本金，保持换汇前后净值守恒。 */
+      if (w > 0 && HARD_BULLION_RE.test(nm) && !FREE_FIND_ASSET_RE.test(`${nm} ${nt}`)) {
+        const funded = remBuyOut + remDropped + remDebts;
+        if (funded >= w * 0.25) {
+          let need = w;
+          const u1 = Math.min(remBuyOut, need); remBuyOut -= u1; need -= u1;
+          const u2 = Math.min(remDropped, need); remDropped -= u2; need -= u2;
+          const u3 = Math.min(remDebts, need); remDebts -= u3;
+        } else {
+          const isTotalRecap = RECAP_TOTAL_WORTH_NOTE_RE.test(nt) && existingBullionWorth >= w * 0.35;
+          if (isTotalRecap || remCash <= 0 || w > remCash * 1.15) {
+            removedAssets.push(nm);
+            return false;
+          }
+          const principal = Math.round(Math.min(w, remCash) * 100) / 100;
+          if (!(principal > 0)) {
+            removedAssets.push(nm);
+            return false;
+          }
+          a.worth = principal;
+          ents.push({ what: `换购${nm}本金`, amount: -principal });
+          remCash = Math.max(0, remCash - principal);
         }
       }
       return true;
@@ -1012,15 +1047,17 @@ function speculation(s, list) {
   };
 }
 
-/** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话、同城街区/环路/铺面或具体场所（如东四环/底铺/道观/码头/深山）就不动。
+/** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话、同城街区/环路/铺面、具体场所或泛指方向/撤离动作（如东四环/底铺/道观/码头/深山/北撤/北方）就不动。
  *  年卡还是原来那座城的（物价、政策、时局照用），提示词里会说明人不在那儿。 */
 const NON_CITY_SPOT_RE = /(一环|二环|三环|四环|五环|六环|内侧|外侧|附近|靠近|一带|片区|商圈|城东|城西|城南|城北|城中|城郊|郊区|市区|城里|本城|老街|古巷|胡同|弄堂|街道|大街|大道|市场|商场|广场|大厦|小区|写字楼|底铺|商铺|铺面|铺子|茶楼|茶馆|茶室|酒馆|酒楼|客栈|栈房|货仓|库房|工坊|作坊|纱厂|码头|渡口|道观|古观|寺庙|古庙|破庙|老宅|深山|后巷|据点|村口|车市|鬼市|行会|商会|学堂|医院|银行|钱庄|当铺|书肆|药铺|祠堂|古祠)/;
+const NON_CITY_VAGUE_RE = /^(北方|南方|东方|西方|东北|西北|东南|西南|华北|华南|华东|华中|内地|内陆|后方|大后方|前线|外地|外省|他乡|异乡|远方|乡下|农村|山区|各地|某地|目标地|目的地|北撤|南撤|西撤|东撤|北上|南下|西迁|东渡|撤离|撤退|逃难|逃亡|流亡|转移|跑路|避难|迁徙|搬迁|搬家|返乡|回乡|归乡|出海|远行|途中|路上|船上|车上|航线|水路|陆路|沿江)$/;
+const NON_CITY_ACTION_RE = /(撤离|撤退|北撤|南撤|西撤|东撤|逃难|逃亡|流亡|途中|路上|航线|目标地|目的地|水路|陆路)/;
 function applyMove(s, to) {
   const raw = String(to || '').replace(/\s+/g, '').replace(/[。，,.、；;：:！!？?"'「」『』（）()]/g, '');
   if (!raw || raw === s.city) return null;
   if (raw.length < 2 || raw.length > 6) return null;
   if (/[a-zA-Z0-9]/.test(raw)) return null;
-  if (NON_CITY_SPOT_RE.test(raw) || /(的|里|内|外|旁|边|处)$/.test(raw)) return null;
+  if (NON_CITY_SPOT_RE.test(raw) || NON_CITY_VAGUE_RE.test(raw) || NON_CITY_ACTION_RE.test(raw) || /(的|里|内|外|旁|边|处)$/.test(raw)) return null;
   if (s.city && raw.includes(s.city)) return null;
   const from = s.city;
   s.city = raw;
@@ -2243,6 +2280,8 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
  * 不再根据单月手写狂想把账面人为抬高几百倍。 */
 const LABOR_ENTRY_RE = /(临工|临时|杂工|零散|搬运|卸货|扛包|短工|打杂)/;
 const ONEOFF_ENTRY_RE = /(安家费|定金|押金|变卖|售卖|转卖|变现|悬赏|赔偿|退还|收回|借款|借入|补差|折算价值|截获)/;
+const SALARY_PRESENT_RE = /(薪水|薪资|月薪|月俸|工资|薪酬|津贴|补贴|官俸|俸禄)/;
+const RESIGN_RE = /(递交辞呈|正式辞职|正式离职|辞去.{0,10}(差事|职务|工作|报馆|跑街|职位|顾问)|请辞.{0,8}(职务|差事|报馆)|离职申请|彻底辞职)/;
 
 function recurringBucketOf(what) {
   const w = String(what || '');
@@ -2263,6 +2302,12 @@ function recurringStreamsOf(s) {
   const curInc = incomeOf(s.year, s.month) || 1;
   const lostTxt = ((s && s.memo && s.memo.traits) || []).filter(t => t.lost).map(t => t.what).join(' ');
   const map = new Map();
+  let lastResignN = 0;
+  for (const m of past) {
+    if (m && RESIGN_RE.test(`${m.list || ''} ${m.summary || ''}`)) {
+      lastResignN = Math.max(lastResignN, Number(m.n) || 0);
+    }
+  }
 
   for (const m of past) {
     const mInc = incomeOf(m.year, m.month) || curInc;
@@ -2270,6 +2315,7 @@ function recurringStreamsOf(s) {
       if (!e || !(Number(e.amount) > 0)) continue;
       const b = recurringBucketOf(e.what);
       if (!b) continue;
+      if (b === 'advisor' && lastResignN > 0 && (Number(m.n) || 0) <= lastResignN) continue;
       const ratio = Number(e.amount) / mInc;
       if (ratio < 0.05) continue;
       /* 固定流水的单桶折算比例温和设限，防止单次异动被当成永久月薪无限滚雪球 */
@@ -2287,7 +2333,7 @@ function recurringStreamsOf(s) {
   }
 
   return [...map.values()].filter(st => {
-    if (st.bucket === 'advisor' && /顾问|差事|官职/.test(lostTxt)) return false;
+    if (st.bucket === 'advisor' && /顾问|差事|官职|记者|报馆/.test(lostTxt)) return false;
     if (st.bucket === 'sect' && /堂口|宗门|教派|武馆/.test(lostTxt)) return false;
     if (st.bucket === 'biz' && /铺子|摊子|商号|作坊/.test(lostTxt)) return false;
     return true;
@@ -2331,10 +2377,15 @@ function reconcileMonthFinancials(s, list, delta) {
 
   const seed = (s.seed || 1) * 48271 + (s.n || 1) * 16807;
   const presentBuckets = new Set();
+  const resigningNow = RESIGN_RE.test(`${list || ''} ${(delta && delta.summary) || ''}`);
+  if (resigningNow) presentBuckets.add('advisor');
   for (const e of delta.entries) {
     if (!e || !(Number(e.amount) > 0)) continue;
     const b = recurringBucketOf(e.what);
     if (b) presentBuckets.add(b);
+    else if (SALARY_PRESENT_RE.test(String(e.what || '')) && !/(额外|赏金|奖金|稿费|提成|佣金)/.test(String(e.what || '')) && !LABOR_ENTRY_RE.test(String(e.what || ''))) {
+      presentBuckets.add('advisor');
+    }
   }
 
   for (const st of streams) {
