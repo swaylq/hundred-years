@@ -1047,7 +1047,10 @@ async function runOneMonthInner(req, res, b, s) {
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
     const contextText = `${b.list || ''}\n${out.delta.story || ''}`;
-    const rawValidBond = E.capInitialBond(s, E.normalizeBond(out.delta.bond, s, echoes, contextText), b.list);
+    const normedBond = E.capInitialBond(s, E.normalizeBond(out.delta.bond, s, echoes, contextText), b.list);
+    const rawValidBond = (normedBond && E.isBondGroundedInStory(normedBond, out.delta.story, out.delta.summary))
+      ? normedBond
+      : null;
     const tBeatNow = E.travelerBeat(s, b.list, echoes);
     const isStaleRepeatBond = E.isRedundantBond(s, rawValidBond, tBeatNow);
     const validBond = isStaleRepeatBond ? null : rawValidBond;
@@ -1097,10 +1100,12 @@ async function runOneMonthInner(req, res, b, s) {
       }
     }
 
-    const assetsAdded = (out.delta.assetsAdd || [])
-      .slice(0, 8)
-      .map(a => String((a && a.name) || '').trim())
-      .filter(Boolean);
+    const assetsAdded = Array.isArray(res1.assetsAdded)
+      ? res1.assetsAdded
+      : (out.delta.assetsAdd || [])
+          .slice(0, 8)
+          .map(a => E.cleanAssetName((a && a.name) || ''))
+          .filter(Boolean);
     const memoLine = (out.delta.memo && out.delta.memo.line) || '';
     const summaryText = String(out.delta.summary || '').trim() || E.deriveSummary(out.delta.story, memoLine);
     const headlineText = E.deriveHeadline(out.delta.headline, summaryText, memoLine, out.delta.story);

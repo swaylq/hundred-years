@@ -514,9 +514,16 @@ function unpairedBuys(delta, wage) {
   return { items: buys.map(e => ({ what: e.what, amount: Number(e.amount) })), spent, added, sold };
 }
 
-const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
-const MARKET_ASSET_LOSS_RE = /(黄金|金条|现货|古玩|字画|文玩|股票|基金|期货|理财|比特币|银元|美钞|铺位|商铺|库存|存货|货物|资产).{0,12}(波动损失|波动亏损|亏损清算|市价损失|市场波动损|贬值损失|跌价损失)/;
+const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料|认购证|外汇券|股票|基金|债券).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
+const MARKET_ASSET_LOSS_RE = /(黄金|金条|现货|古玩|字画|文玩|股票|认购证|外汇券|国债|公债|债券|证券|基金|期货|理财|比特币|银元|美钞|外汇|港币|房产|楼盘|地皮|铺位|商铺|库存|存货|货物|资产|电子件|元件|零件|表件|轴承).{0,14}(波动损失|波动亏损|波动跌幅|跌幅结算|跌价结算|亏损清算|市价损失|市场波动损|市值波动|市值跌|市价跌|浮亏结算|价值缩水|贬值损失|贬值结算|跌价损失|账面亏|折价损失)/;
 const CONFISCATED_LOSS_RE = /(亏损本钱|本金亏损|本金损失|赔光本钱|本钱赔光|货被没收|被没收.{0,4}亏|倒卖亏损|货款损失)/;
+const BOOK_RESIDUAL_ENTRY_RE = /(账面残值|资产残值|存货残值|折后残值|账面估值|估值残值|账面现值|残值折算)/;
+const ASSET_KIND_SUFFIX_RE = /[（(](实物|票证|权益|债权|现金类)[）)]$/g;
+const FIXED_ASSET_NAME_RE = /(铺面|铺子|修表铺|茶楼|茶馆|酒楼|酒馆|商铺|商号|门店|店面|店铺|老铺|工坊|作坊|机床|摊位|厂房|工厂|武馆|堂口|宅院|房产|楼房|商房|房子|地皮|栈房|库房|货仓|铺|店|宅|院)$/;
+const FIXED_ASSET_BUY_RE = /(盘下|购入|买下|买入|购买|扩建|加租|续租|添置|置办|改造|升级|盘店|租金与押金|押金|首付)/;
+function cleanAssetName(name) {
+  return String(name || '').trim().replace(ASSET_KIND_SUFFIX_RE, '').trim().slice(0, 30);
+}
 const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
 const REVENUE_REFUND_ASSET_RE = /(回笼|回款|变现|获利|盈利|利润|经营所得|销售所得|出货所得|卖货所得|营收|进账|分红现金|货款现金)/;
 const BARTER_REVENUE_ENTRY_RE = /(置换|换得|换回|折现|差价|增值|回款|变现|所得|分润|收益|获利|转手|出清|囤货)/;
@@ -575,12 +582,19 @@ function stripBogusCashAndExchange(s, delta) {
   const removedEntries = [];
   const removedAssets = [];
   const curCash = Number((s && s.cash) || 0);
-  if (Array.isArray(delta.entries) && delta.entries.length && curCash > 0) {
+  if (Array.isArray(delta.entries) && delta.entries.length) {
+    const hasAssetOrBuy = (Array.isArray(delta.assetsAdd) && delta.assetsAdd.length > 0)
+      || delta.entries.some(e => e && Number(e.amount) < 0 && (BUY_WORD.test(String(e.what || '')) || ASSET_BUY_OUTFLOW_RE.test(String(e.what || ''))));
     delta.entries = delta.entries.filter(e => {
       if (!e) return false;
       const amt = Number(e.amount);
       const what = String(e.what || '');
-      if (amt > 0 && EXCHANGE_BALANCE_ENTRY_RE.test(what) && Math.abs(amt - curCash) <= Math.max(curCash * 0.25, 1)) {
+      if (amt > 0 && curCash > 0 && EXCHANGE_BALANCE_ENTRY_RE.test(what) && Math.abs(amt - curCash) <= Math.max(curCash * 0.25, 1)) {
+        removedEntries.push(what);
+        return false;
+      }
+      /* 存货/零件折后的账面残值是资产估值，不是实收现金，不能当正数进账写进 entries */
+      if (amt > 0 && hasAssetOrBuy && BOOK_RESIDUAL_ENTRY_RE.test(what)) {
         removedEntries.push(what);
         return false;
       }
@@ -683,24 +697,34 @@ function applyMonth(s, delta) {
   if (Math.abs(s.cash) < 1e-9) s.cash = 0;
 
   /* 一天最多添 8 样东西，家底里最多留 40 样。
-   * 先划掉卖出的旧货，再添新货；同名家当合并估值与最新备注，免得同一批库存裂成多行、卖时只销掉一半。 */
+   * 先划掉卖出的旧货，再添新货；同名家当去重（去掉尾部「（权益）」等类型括注）并合并估值；
+   * 已持有的固定铺面/权益若本月无新盘店/扩建出账却被模型照旧复述，只更新备注，不重复累加估值。 */
   for (const name of (delta.assetsDrop || [])) {
-    const cleanDrop = String(name || '').trim();
-    const i = s.assets.findIndex(x => x.name === cleanDrop);
+    const cleanDrop = cleanAssetName(name);
+    const rawDrop = String(name || '').trim();
+    const i = s.assets.findIndex(x => x.name === rawDrop || cleanAssetName(x.name) === cleanDrop);
     if (i >= 0) s.assets.splice(i, 1);
   }
+  const hasFixedBuyOut = entries.some(e => e && Number(e.amount) < 0 && FIXED_ASSET_BUY_RE.test(String(e.what || '')));
   const added = [];
   for (const a of (delta.assetsAdd || []).slice(0, 8)) {
     if (!a || !a.name) continue;
-    const nm = String(a.name).trim().slice(0, 30);
+    const nm = cleanAssetName(a.name);
     const w = Number(a.worth) || 0;
     if (!nm || !(w > 0)) continue;
     const kd = normalizeAssetKind(nm, a.kind);
     const nt = String(a.note || '').trim().slice(0, 60);
     const vn = assetVenueOf(nm, kd, nt);
     const rec = { name: nm, kind: kd, worth: w, note: nt, ...(vn ? { venue: vn } : {}) };
-    const prev = s.assets.find(x => x.name === nm && x.kind === kd);
+    const prev = s.assets.find(x => cleanAssetName(x.name) === nm && x.kind === kd);
     if (prev) {
+      prev.name = nm;
+      const isFixedNonStack = kd === '权益' || FIXED_ASSET_NAME_RE.test(nm);
+      if (isFixedNonStack && !hasFixedBuyOut) {
+        if (nt) prev.note = nt;
+        if (vn && !prev.venue) prev.venue = vn;
+        continue;
+      }
       prev.worth += w;
       if (nt) prev.note = nt;
       if (vn && !prev.venue) prev.venue = vn;
@@ -740,7 +764,7 @@ function applyMonth(s, delta) {
    * 单位写错那一类（比那一年做到头还高一千倍）在上面 fixScale 里折回去了。 */
   const gained = netWorth(s) - before;
 
-  return { gained, cash, entries, overspent, debtRefused, rescaled, flipped, missedGoods };
+  return { gained, cash, entries, assetsAdded: added.map(x => x.name), overspent, debtRefused, rescaled, flipped, missedGoods };
 }
 
 /** 明天能走的那几条路，落库和上屏之前先修一遍。
@@ -1285,10 +1309,35 @@ function applyMemo(s, delta, at, opts = {}) {
    *    本身就是这个人的一部分，删掉的话模型下个月会当他从来没练过。 */
   /* 一个月最多收两条：模型一放开就月月长出一样新本事，二十四个月能攒出九条
    * 名字各异、其实是同一样东西的记录。提示词里也写了同一条，两头一起拦。 */
+  const knownTravKeys = knownTravelersOf(s, opts.echoes);
+  const TRAVELER_REL_TRAIT_RE = /(结拜兄弟|义兄|义弟|知己|同盟|盟友|合伙人|宿敌|对手|道侣|师父|师徒|穿越者|结拜|联手|关系|交情|羁绊)/;
   for (const t of (Array.isArray(d.traits) ? d.traits : []).slice(0, 2)) {
     const what = oneLine(t && t.what, 30);
     const note = oneLine(t && t.note, 60);
     if (!what) continue;
+    /* 模型若在 memo.traits 里另起「结拜兄弟唐砚舟」「知己叶晚」等穿越者关系条，与引擎自动维护的
+     * 「与穿越者XXX结拜」重复——并回已有穿越者羁绊条，不另起重复名目。 */
+    let dupPartner = null;
+    if (TRAVELER_REL_TRAIT_RE.test(what)) {
+      for (const [, nick] of knownTravKeys) {
+        if (nick && nick.length >= 2 && what.includes(nick)) { dupPartner = nick; break; }
+      }
+    }
+    if (dupPartner) {
+      const pKey = whoKey(dupPartner);
+      const existingBondTrait = m.traits.find(x => {
+        const bm = String((x && x.what) || '').match(/^与穿越者(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$/);
+        return !!(bm && whoKey(cleanTravelerNick(bm[1])) === pKey);
+      });
+      if (existingBondTrait) {
+        existingBondTrait.last = n;
+        if (note && !existingBondTrait.notes.some(x => x.note === note)) {
+          existingBondTrait.notes.push({ n, note });
+          added.traitNotes++;
+        }
+        continue;
+      }
+    }
     /* 模型给同一样本事改名是常事（第 1 个月「洋行跑街学徒」、第 2 个月「洋行跑街」）。
      * 一个名字套着另一个名字，就当同一样东西并起来，**留最近那个叫法**——
      * 名目本来就跟着人一起变，第 24 个月他早不是学徒了。 */
@@ -1327,8 +1376,11 @@ function applyMemo(s, delta, at, opts = {}) {
     const tWhat = `与穿越者${partner}${rel}`;
     const pKey = whoKey(partner);
     const isSameBondTrait = w => {
-      const m = String(w || '').match(/^(?:与)?(?:穿越者)?(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行|关系|交情|渊源|羁绊)$/);
-      return !!(m && whoKey(cleanTravelerNick(m[1])) === pKey);
+      const s0 = String(w || '').trim();
+      const m1 = s0.match(/^(?:与)?(?:穿越者)?(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行|关系|交情|渊源|羁绊)$/);
+      if (m1 && whoKey(cleanTravelerNick(m1[1])) === pKey) return true;
+      const m2 = s0.match(/^(?:结拜兄弟|义兄|义弟|知己|同盟|盟友|合伙人|宿敌|对手|道侣|师父|师徒)(?:穿越者)?(.{1,16})$/);
+      return !!(m2 && whoKey(cleanTravelerNick(m2[1])) === pKey);
     };
     let trec = m.traits.find(x => isSameBondTrait(x.what));
     if (!trec) { trec = { what: tWhat, notes: [], first: n, last: n, lost: null }; m.traits.push(trec); added.traits++; }
@@ -1994,6 +2046,26 @@ function formatBondTrace(nick, partner, city, rel, note) {
   return trimTrace(cleanNote ? `${head}：${cleanNote}` : head, 50);
 }
 
+const BOND_STORY_CUE_RE = {
+  '结拜': /(结拜|金兰|拜把|异姓|盟誓|结义|焚香|血酒|生死兄弟|义兄|义弟|义姐|义妹|磕头)/,
+  '提亲': /(提亲|下聘|求亲|说媒|订婚|聘礼|定亲)/,
+  '成婚': /(成婚|拜堂|洞房|迎娶|结婚|夫妻|领证|喜酒|婚事)/,
+  '道侣': /(道侣|双修|结为道侣)/,
+  '宿敌': /(反目|决裂|撕破脸|宿敌|死敌|死仇|拔刀|翻脸|结仇|恩断义绝)/,
+};
+
+/** 校验高烈度关系跃迁（结拜/提亲/成婚/道侣/宿敌）是否在当月 story/summary 正文里真有落笔，
+ *  防止正文只写了寻常同行，模型却在 JSON bond 里凭空编造「于半步茶寮结为金兰」。 */
+function isBondGroundedInStory(bond, story = '', summary = '') {
+  if (!bond || !bond.with || !bond.rel) return false;
+  const txt = `${story || ''}\n${summary || ''}`;
+  if (!txt.trim()) return true;
+  if (!txt.includes(bond.with)) return false;
+  const cue = BOND_STORY_CUE_RE[bond.rel];
+  if (cue && !cue.test(txt)) return false;
+  return true;
+}
+
 const ROUTINE_BOND_NOTE_RE = /(深度绑定|利益绑定|绑定加深|继续合作|合作顺畅|例行分账|维持合作|稳步推进|正常分润|深度合作|深度战略|达成共识|高度契合|资源深度共享|深化产能合作|稳产共识|深度互信|深层利益|互通协议)/;
 
 /** 判定本月返回的 bond 是否属于无实质变化的冗余重复：
@@ -2074,6 +2146,21 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
     ? trimTrace(rawEv.includes(nick) ? rawEv : `穿越者「${nick}」在${city}：${rawEv}`, 50)
     : null;
   if (!text) return null;
+  /* 同一局的个人事迹/奇闻留痕最多留 2 条，避免同一个招牌产线在后期连刷 3 条雷同留痕 */
+  const pastDeeds = ((s && s.months) || [])
+    .map(pm => pm && pm.worldTrace)
+    .filter(wt => wt && (wt.kind === 'deed' || wt.kind === 'weird'));
+  if (pastDeeds.length >= 2) return null;
+  const evCore = rawEv.replace(/^穿越者「[^」]+」在[^：:]+[：:]/, '');
+  if (evCore.length >= 6 && pastDeeds.some(wt => {
+    const prevCore = String(wt.summary || '').replace(/^穿越者「[^」]+」在[^：:]+[：:]/, '');
+    for (let i = 0; i <= evCore.length - 4; i++) {
+      if (prevCore.includes(evCore.slice(i, i + 4))) return true;
+    }
+    return false;
+  })) {
+    return null;
+  }
   return {
     year, month, city, nick,
     kind: WEIRD_THEMES.some(w => w.re.test(text)) ? 'weird' : 'deed',
@@ -2560,7 +2647,7 @@ function stampOf(title, score, traits) {
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
-  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isBondDowngrade, capInitialBond, isRedundantBond, normalizeAssetKind, stripPaperLossEntries, stripBogusCashAndExchange,
+  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isBondDowngrade, capInitialBond, isRedundantBond, isBondGroundedInStory, cleanAssetName, normalizeAssetKind, stripPaperLossEntries, stripBogusCashAndExchange,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
   SCENARIOS, wishSuggestionsFor, checkWish, stageInfo, monthlyPulse, extractCapsule, stampOf, assetVenueOf,
