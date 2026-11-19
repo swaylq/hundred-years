@@ -499,8 +499,10 @@ function normalizeAssetKind(name, kind) {
   return kd || '实物';
 }
 
-/** 这个月有没有「买了东西却没记下东西」。`wage` 是当月一个月的收入，用来滤掉零碎开销。 */
-function unpairedBuys(delta, wage) {
+/** 这个月有没有「买了东西却没记下东西」。`wage` 是当月一个月的收入，用来滤掉零碎开销；
+ *  若当月投机/囤货大亏（bet.win === false），按折损后的合理残值门槛校验，避免正常折价残值或血本无归被误报成漏记家当。 */
+function unpairedBuys(delta, wage, bet = null) {
+  if (bet && bet.bet && !bet.win && bet.mine > 0 && Number(bet.mult) <= -0.75) return null;
   const ents = (delta.entries || []).filter(e => e && e.what != null && isFinite(Number(e.amount)));
   const floor = Math.max(0, (Number(wage) || 0) / 4);          // 小于四分之一个月工钱的不算进货
   const buys = ents.filter(e => Number(e.amount) < 0 && BUY_WORD.test(e.what) && !BUY_LOSS_RE.test(e.what) && -Number(e.amount) >= floor);
@@ -510,14 +512,31 @@ function unpairedBuys(delta, wage) {
   const sold = ents.filter(e => Number(e.amount) > 0 && SELL_WORD.test(e.what)).reduce((t, e) => t + Number(e.amount), 0);
   if (sold >= spent * 0.8) return null;
   const added = (delta.assetsAdd || []).reduce((t, a) => t + (Number(a && a.worth) || 0), 0);
-  if (added >= spent * 0.4) return null;                       // 记上了大半就算数
+  const needRatio = (bet && bet.bet && !bet.win && bet.mine > 0)
+    ? Math.max(0.15, Math.min(0.4, (1 + Number(bet.mult || 0)) * 0.6))
+    : 0.4;
+  if (added >= spent * needRatio) return null;                 // 记上了大半就算数
   return { items: buys.map(e => ({ what: e.what, amount: Number(e.amount) })), spent, added, sold };
 }
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料|认购证|外汇券|股票|基金|债券).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
 const MARKET_ASSET_LOSS_RE = /(黄金|金条|现货|古玩|字画|文玩|股票|认购证|外汇券|国债|公债|债券|证券|基金|期货|理财|比特币|银元|美钞|外汇|港币|房产|楼盘|地皮|铺位|商铺|库存|存货|货物|资产|电子件|元件|零件|表件|轴承).{0,14}(波动损失|波动亏损|波动跌幅|跌幅结算|跌价结算|亏损清算|市价损失|市场波动损|市值波动|市值跌|市价跌|浮亏结算|价值缩水|贬值损失|贬值结算|跌价损失|账面亏|折价损失)/;
+const STANDALONE_PAPER_LOSS_RE = /(行情波动.{0,6}(亏损|损失|结算|跌幅)|波动.{0,4}(亏损结算|跌幅结算|清算亏损)|账面残值调整|残值调整.{0,6}(亏损|损失)|估值下调.{0,6}(亏损|损失))/;
 const CONFISCATED_LOSS_RE = /(亏损本钱|本金亏损|本金损失|赔光本钱|本钱赔光|货被没收|被没收.{0,4}亏|倒卖亏损|货款损失)/;
 const BOOK_RESIDUAL_ENTRY_RE = /(账面残值|资产残值|存货残值|折后残值|账面估值|估值残值|账面现值|残值折算)/;
+const RESIDUAL_ASSET_NAME_RE = /(残值|账面残值|折后残值)$/;
+const SWAP_FEE_ONLY_RE = /(手续与溢价|手续费?|溢价|佣金|打点|损耗)/;
+const SALE_CASH_ENTRY_RE = /(变现|回笼|回款|尾款|出售|卖出|售出|清算|转手|套现)/;
+const GENERIC_STEM_STOP_RE = /(置换|溢价|收入|收益|进账|批文|权益|库存|存货|物资|本金|成本|费用|开销|打点|回笼|回款|变现|处理|残值|账面|本月|日常|交易|业务|所得|分润|利润|差价|资金|现金|资产|货物|老物件|货源|渠道|份额|指标|批次|家具)/g;
+function sharedAssetStem(a, b) {
+  const ca = String(a || '').replace(GENERIC_STEM_STOP_RE, '').replace(/[^\u4e00-\u9fff]+/g, '');
+  const cb = String(b || '').replace(GENERIC_STEM_STOP_RE, '').replace(/[^\u4e00-\u9fff]+/g, '');
+  if (ca.length < 2 || cb.length < 2) return false;
+  for (let i = 0; i <= ca.length - 2; i++) {
+    if (cb.includes(ca.slice(i, i + 2))) return true;
+  }
+  return false;
+}
 const ASSET_KIND_SUFFIX_RE = /[（(](实物|票证|权益|债权|现金类)[）)]$/g;
 const FIXED_ASSET_NAME_RE = /(铺面|铺子|修表铺|茶楼|茶馆|酒楼|酒馆|商铺|商号|门店|店面|店铺|老铺|工坊|作坊|机床|摊位|厂房|工厂|武馆|堂口|宅院|房产|楼房|商房|房子|地皮|栈房|库房|货仓|陈列资产|装修资产|经营资产|固定资产|冷链仓储|仓储设施|仓储空间|店铺设施|铺|店|宅|院)$/;
 const FIXED_ASSET_BUY_RE = /(盘下|购入|买下|买入|购买|扩建|加租|续租|添置|置办|改造|升级|盘店|租金与押金|押金|首付|装修|购置)/;
@@ -576,7 +595,7 @@ function stripPaperLossEntries(delta) {
       removed.push(what);
       return false;
     }
-    if (hasUnrecoveredBuy && CONFISCATED_LOSS_RE.test(what) && lossAmt <= buyOut * 1.05) {
+    if (hasUnrecoveredBuy && (CONFISCATED_LOSS_RE.test(what) || STANDALONE_PAPER_LOSS_RE.test(what)) && lossAmt <= buyOut * 1.05) {
       removed.push(what);
       return false;
     }
@@ -623,8 +642,17 @@ function stripBogusCashAndExchange(s, delta) {
       .filter(e => e && Number(e.amount) > 0 && BARTER_REVENUE_ENTRY_RE.test(String(e.what || '')))
       .reduce((t, e) => t + Number(e.amount), 0);
     const buyOut = ents
-      .filter(e => e && Number(e.amount) < 0 && ASSET_BUY_OUTFLOW_RE.test(String(e.what || '')) && !BUY_LOSS_RE.test(String(e.what || '')))
+      .filter(e => {
+        if (!e || !(Number(e.amount) < 0)) return false;
+        const wStr = String(e.what || '');
+        if (!ASSET_BUY_OUTFLOW_RE.test(wStr) || BUY_LOSS_RE.test(wStr)) return false;
+        if (SWAP_FEE_ONLY_RE.test(wStr) && !/(本金|成本|货款)/.test(wStr)) return false;
+        return true;
+      })
       .reduce((t, e) => t - Number(e.amount), 0);
+    const saleCashIn = ents
+      .filter(e => e && Number(e.amount) > 0 && SALE_CASH_ENTRY_RE.test(String(e.what || '')))
+      .reduce((t, e) => t + Number(e.amount), 0);
     const drops = Array.isArray(delta.assetsDrop) ? delta.assetsDrop.map(x => String(x || '').trim()).filter(Boolean) : [];
     const droppedWorth = drops.length && s && Array.isArray(s.assets)
       ? s.assets
@@ -638,7 +666,8 @@ function stripBogusCashAndExchange(s, delta) {
       .filter(x => x && x.name && HARD_BULLION_RE.test(x.name))
       .reduce((t, x) => t + (Number(x.worth) || 0), 0);
     let remBuyOut = buyOut;
-    let remDropped = droppedWorth;
+    /* 若旧货销账的同时 entries 已经收到对应变现现金，则销账部分已折现进 s.cash，不能再当成免费以物易物额度抵扣新买的金银/外汇券 */
+    let remDropped = Math.max(0, droppedWorth - saleCashIn);
     let remDebts = debtsAddSum;
     let remCash = Math.max(0, curCash + ents.reduce((t, e) => t + (Number(e && e.amount) || 0), 0));
     delta.assetsAdd = delta.assetsAdd.filter(a => {
@@ -681,7 +710,35 @@ function stripBogusCashAndExchange(s, delta) {
         removedAssets.push(nm);
         return false;
       }
-      /* 置换/以货换货双计拦截：无买入出账也无旧货销账，却已在 entries 计入同额/覆盖额正数置换收益，不许再凭空叠加实物家当 */
+      /* 已在 entries 里处理变现回笼的货物，绝不许再把同额「某某残值」塞进 assetsAdd 算两遍 */
+      if (w > 0 && RESIDUAL_ASSET_NAME_RE.test(nm) && ents.some(e =>
+        e && Number(e.amount) > 0 &&
+        /(变现|回笼|处理|售出|卖出|清算)/.test(String(e.what || '')) &&
+        Math.abs(Number(e.amount) - w) <= Math.max(w * 0.1, 1)
+      )) {
+        removedAssets.push(nm);
+        return false;
+      }
+      /* 置换/以货换货双计拦截：无买入出账也无旧货销账，却已在 entries 计入同额/覆盖额正数置换收益，不许再凭空叠加实物家当；
+       * 即便同月另有无关采购出账，若某笔正数置换进账与本资产同名且同额（且无同名买入出账），同样拦截。 */
+      if (w > 0 && !isDeposit && !FREE_FIND_ASSET_RE.test(`${nm} ${nt}`)) {
+        const sameStemBarterPos = ents.some(e =>
+          e && Number(e.amount) > 0 &&
+          BARTER_REVENUE_ENTRY_RE.test(String(e.what || '')) &&
+          Math.abs(Number(e.amount) - w) <= Math.max(w * 0.06, 1) &&
+          sharedAssetStem(nm, e.what)
+        );
+        const sameStemBuyOut = ents.some(e =>
+          e && Number(e.amount) < 0 &&
+          ASSET_BUY_OUTFLOW_RE.test(String(e.what || '')) &&
+          !BUY_LOSS_RE.test(String(e.what || '')) &&
+          sharedAssetStem(nm, e.what)
+        );
+        if (sameStemBarterPos && !sameStemBuyOut && remDropped < w * 0.25) {
+          removedAssets.push(nm);
+          return false;
+        }
+      }
       if (w > 0 && !isDeposit && buyOut < w * 0.25 && droppedWorth < w * 0.25 && !FREE_FIND_ASSET_RE.test(`${nm} ${nt}`)) {
         const matchesBarterEntry = ents.some(e =>
           e && Number(e.amount) > 0 &&
@@ -695,27 +752,32 @@ function stripBogusCashAndExchange(s, delta) {
         }
       }
       /* 拦截无本金出账的金银/外币换购与「所有身家」重复汇总（放在所有拒绝条件之后，确保不残留孤儿出账）：
-       * 模型常只扣一笔「换购黄金损耗 -120」却在 assetsAdd 塞进数万「金条储备」，或把原有金条+现钱加总成「所有身家」再记一遍。
-       * 若金额超出现金余额或明显在汇总旧金条，直接拦截；若在可用现金以内则自动补扣换购本金，保持换汇前后净值守恒。 */
+       * 模型常只扣一笔「换购黄金损耗 / 换购外汇券手续与溢价」却在 assetsAdd 塞进大额「金条/外汇券」，或把原有金条+现钱加总成「所有身家」再记一遍。
+       * 若金额超出现金余额或明显在汇总旧金条，直接拦截；若在可用现金以内则自动补扣未覆盖的换购本金，保持换汇前后净值守恒。 */
       if (w > 0 && HARD_BULLION_RE.test(nm) && !FREE_FIND_ASSET_RE.test(`${nm} ${nt}`)) {
         const funded = remBuyOut + remDropped + remDebts;
-        if (funded >= w * 0.25) {
+        if (funded >= w * 0.65) {
           let need = w;
           const u1 = Math.min(remBuyOut, need); remBuyOut -= u1; need -= u1;
           const u2 = Math.min(remDropped, need); remDropped -= u2; need -= u2;
           const u3 = Math.min(remDebts, need); remDebts -= u3;
         } else {
           const isTotalRecap = RECAP_TOTAL_WORTH_NOTE_RE.test(nt) && existingBullionWorth >= w * 0.35;
-          if (isTotalRecap || remCash <= 0 || w > remCash * 1.15) {
+          const shortfall = Math.max(0, w - funded);
+          if (isTotalRecap || remCash <= 0 || shortfall > remCash * 1.15) {
             removedAssets.push(nm);
             return false;
           }
-          const principal = Math.round(Math.min(w, remCash) * 100) / 100;
+          const principal = Math.round(Math.min(shortfall, remCash) * 100) / 100;
           if (!(principal > 0)) {
             removedAssets.push(nm);
             return false;
           }
-          a.worth = principal;
+          let used = funded;
+          const u1 = Math.min(remBuyOut, used); remBuyOut -= u1; used -= u1;
+          const u2 = Math.min(remDropped, used); remDropped -= u2; used -= u2;
+          const u3 = Math.min(remDebts, used); remDebts -= u3;
+          a.worth = Math.round((funded + principal) * 100) / 100;
           ents.push({ what: `换购${nm}本金`, amount: -principal });
           remCash = Math.max(0, remCash - principal);
         }
@@ -726,13 +788,13 @@ function stripBogusCashAndExchange(s, delta) {
   return (removedEntries.length || removedAssets.length) ? { removedEntries, removedAssets } : null;
 }
 
-function applyMonth(s, delta) {
+function applyMonth(s, delta, opts = {}) {
   const before = netWorth(s);
   const flipped = fixSigns(delta);       // 一笔出账都没有？先把忘掉的负号补回去
   const rescaled = fixScale(s, delta);   // 整个月的账写小了几个数量级？补上再算
   stripPaperLossEntries(delta);          // 账面跌价已折在 assetsAdd 估值里，不重复从现金里再扣一遍
   stripBogusCashAndExchange(s, delta);   // 拦截把原有积蓄/换币结余或现金结余重复记两遍
-  const missedGoods = unpairedBuys(delta, incomeOf(s.year, s.month) / 12);   // 进了货却没记下东西？
+  const missedGoods = unpairedBuys(delta, incomeOf(s.year, s.month) / 12, opts && opts.bet);   // 进了货却没记下东西？
 
   const entries = (delta.entries || [])
     .filter(e => e && e.what != null && isFinite(Number(e.amount)))
@@ -990,7 +1052,7 @@ const BET_DEBT = /(杠杆|配资|借钱|借的钱|抵押|当掉|高利贷|印子
 /* 否定或观望分句（如「断不可再碰高杠杆投机」「绝不轻易入局高杠杆」「避开股市波动」「避险黄金暂不动」），
  * 命中这类表态说明玩家明确拒绝投机，绝不能当成下注硬掷亏损骰子。 */
 const NEGATED_BET_CLAUSE_RE = /(绝不|断不可|决不|不再|不可再|切忌|切勿|莫要|千万别|绝不能|不要再|暂不动|按兵不动|观望不动|绝不轻易)/;
-const INLINE_AVOID_BET_RE = /(?:避开|躲开|远离|不碰|别碰|不沾|不炒|不押|不赌|不做|戒掉)[^，,。；;！？!?\n]{0,16}/g;
+const INLINE_AVOID_BET_RE = /(?:避开|躲开|远离|不碰|别碰|不沾|不炒|不押|不赌|不谈|不搞|不做|放弃|戒掉)[^，,。；;！？!?\n]{0,16}/g;
 const DEFENSIVE_GOLD_RE = /(避险|保值|抗通胀|防通胀|锁死|压箱底|稳妥)/;
 const AGGRESSIVE_BET_RE = /(炒|杠杆|配资|期货|做空|押注|下注|赌|投机|抄底|追高|满仓|全仓|梭哈|短线|博一把)/;
 
@@ -1950,6 +2012,10 @@ function travelerBeat(s, list, echoes) {
 
   const n = (s && s.n) || 1;
   const preferDeepen = bonds.length >= 3;
+  const terminalRel = new Set(['结拜', '成婚', '道侣', '宿敌']);
+  const seenPeopleKeys = new Set(
+    (((s && s.memo && s.memo.people) || []).map(p => whoKey((p && p.who) || '')).filter(Boolean))
+  );
   const mentioned = allCandidates
     .filter(c => c.nick && txt.includes(c.nick))
     .sort((a, b) => {
@@ -1957,9 +2023,13 @@ function travelerBeat(s, list, echoes) {
       const db = hasDeepIntentFor(txt, b.nick);
       if (da !== db) return da ? -1 : 1;
       if (preferDeepen) {
-        const aUnmetFallback = !a.isBonded && !a.isPlayer;
-        const bUnmetFallback = !b.isBonded && !b.isPlayer;
-        if (aUnmetFallback !== bUnmetFallback) return aUnmetFallback ? 1 : -1;
+        /* 玩家在多个月里持续点名一位尚未结出 bond 的同城穿越者（已在人脉录里），或另一位已达结拜/成婚/宿敌高位且本月无深交意图时，不压制新同道的正式结缘 */
+        const aSettled = a.isBonded && terminalRel.has(a.rel) && !da;
+        const bSettled = b.isBonded && terminalRel.has(b.rel) && !db;
+        const aUnmetFresh = !a.isBonded && !a.isPlayer && !seenPeopleKeys.has(whoKey(a.nick));
+        const bUnmetFresh = !b.isBonded && !b.isPlayer && !seenPeopleKeys.has(whoKey(b.nick));
+        if (aSettled !== bSettled) return aSettled ? 1 : -1;
+        if (aUnmetFresh !== bUnmetFresh) return aUnmetFresh ? 1 : -1;
       } else if (a.isBonded !== b.isBonded) {
         return a.isBonded ? 1 : -1;
       }

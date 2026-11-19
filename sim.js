@@ -586,7 +586,7 @@ function buildUser(s, list, extra = {}) {
           `赢多少记多少：押得大、行情又对上了，这个月的进项超过 ${both(topThis, cur)}` +
           `（这一年做到头的一个月）也照写，游戏不削。\n`
         : `**这一把砸了。** 押进去的本钱亏掉 ${Math.round(Math.abs(bet.mult) * 100)}%——` +
-          `entries 里要有对应的那一笔负数，数目跟正文里写的对得上；若亏的是本月买进并记入 assetsAdd 的货/金条/房产，只记「买进出账」+「assetsAdd 折后残值」，绝不再额外加一条「波动损失/亏损清算」出账（否则同一笔亏会扣两遍）。\n` +
+          `entries 里要有对应的那一笔负数，数目跟正文里写的对得上；若亏的是本月买进并记入 assetsAdd 的货/金条/房产，只记「买进出账」+「assetsAdd 折后残值」，绝不再额外加一条「行情波动亏损结算/账面残值调整/亏损清算」出账（否则同一笔亏会扣两遍）；若货已当月变现并在 entries 记了回笼进账，更不许再把同额「残值」写进 assetsAdd。\n` +
           `不许写成「他及时收手躲过一劫」，也不许写成「幸好只是小亏」。\n` +
           (bet.debt ? `这笔钱是借来的：亏光了他还欠着，写进 debtsAdd——欠谁的、多少、说好什么时候还。\n` : '')
         ) +
@@ -662,9 +662,13 @@ function buildUser(s, list, extra = {}) {
     || null;
   const swornCount = E.activeTravelerBondsOf(s).filter(b => b.rel === '结拜').length;
   const targetRivalLean = /竞合|抢筹|博弈|劲敌/.test(`${(targetFellow && targetFellow.stance) || ''} ${(targetFellow && targetFellow.desc) || ''}`);
-  const alsoSay = (tBeat.alsoMentioned && tBeat.alsoMentioned.length)
-    ? `（打算里顺带提到的老熟人「${tBeat.alsoMentioned.join('、')}」按既有分工一两句交代即可，本月对手戏聚焦「${tBeat.target}」。）`
-    : '';
+  const bondedNickSet = new Set(E.activeTravelerBondsOf(s).map(b => b.nick));
+  const alsoBonded = (tBeat.alsoMentioned || []).filter(nm => bondedNickSet.has(nm));
+  const alsoUnmet = (tBeat.alsoMentioned || []).filter(nm => !bondedNickSet.has(nm));
+  const alsoParts = [];
+  if (alsoBonded.length) alsoParts.push(`打算里顺带提到的老相识「${alsoBonded.join('、')}」按既有关系一两句交代即可`);
+  if (alsoUnmet.length) alsoParts.push(`顺带提到的同城穿越者「${alsoUnmet.join('、')}」照打算简短带过即可`);
+  const alsoSay = alsoParts.length ? `（${alsoParts.join('；')}，本月对手戏聚焦「${tBeat.target}」。）` : '';
   const directStageGuide = (() => {
     const r = tBeat.rel;
     const staleM = Number(tBeat.monthsSincePartner || 0);

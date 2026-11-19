@@ -1040,13 +1040,13 @@ async function runOneMonthInner(req, res, b, s) {
      * （「属于犯罪活动」「风险大于收益」），那种拒绝在这儿扔掉——
      * 留着它，下个月的提示词还会拿它当「上个月顶回去过」接着顶。 */
     out.delta.refused = E.cleanRefused(out.delta.refused, E.scanAnachronism(b.list, s.year), b.list);
-    const res1 = E.applyMonth(s, out.delta);
-    /* 他这个月要是走了（换城、出海），人跟着搬——年卡照旧用原来那座城的。 */
-    const moved = E.applyMove(s, out.delta.moveTo);
-    /* 这个月有几成是他自己写的、撞没撞上奇遇。跟 sim.buildUser 里算的是同一个函数、
-     * 同一份存档（还没 push、还没 advanceTo），所以结果一定一样；记下来是为了回头能查。 */
+    /* 这个月有几成是他自己写的、撞没撞上奇遇、押注成败如何。跟 sim.buildUser 里算的是同一个函数、
+     * 同一份存档（还没 push、还没 advanceTo），所以结果一定一样；先算好传给 applyMonth 校验残值与漏记。 */
     const sd = E.serendipity(s, b.list);
     const bt = E.speculation(s, b.list);
+    const res1 = E.applyMonth(s, out.delta, { bet: bt });
+    /* 他这个月要是走了（换城、出海），人跟着搬——年卡照旧用原来那座城的。 */
+    const moved = E.applyMove(s, out.delta.moveTo);
     /* 把这个月压成的那几行并进记忆。**要在 advanceTo 之前**——
      * 记的是刚过完的这个月，挪完日历再记就串到下个月头上了。 */
     const tally = E.tallyLine(res1.entries, curNow);
