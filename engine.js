@@ -403,7 +403,7 @@ function applySwitch(s, sw) {
  *  一个月零开销的月份不存在。156 个有账的月份里符合这条的只有 2 个，两个都是真错。
  *  真到了一笔出账都没有的月份，翻的也只是名字里明说了在花钱的那几笔。 */
 const SPEND = /伙食|房租|房钱|租金|路费|车钱|打点|门包|茶钱|保护费|开销|购置|采买|买|支出|费用|水电|煤球|工本|手续/;
-const EARN = /卖出|售出|所得|收回|讨回|退还|报酬|工钱|工资|奖励|提成|抽成|酬劳|利润|差价|收益|溢价|赚/;
+const EARN = /卖出|售出|所得|收回|讨回|退还|报酬|工钱|工资|奖励|提成|抽成|酬劳|利润|差价|收益|溢价|赚|分租|出租|收租|包租|转租|招租|租金收入|房租收入|租金进项|租金回款|房租回款/;
 function fixSigns(delta) {
   const ents = (delta.entries || []).filter(e => e && e.what != null && isFinite(Number(e.amount)));
   if (ents.length < 3 || ents.some(e => Number(e.amount) < 0)) return null;
@@ -898,18 +898,19 @@ function speculation(s, list) {
   };
 }
 
-/** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话或同城具体场所（如道观/码头/深山）就不动。
+/** 他这个月搬到哪儿去了。模型给了 moveTo 才动，给的是废话、同城街区/环路/铺面或具体场所（如东四环/底铺/道观/码头/深山）就不动。
  *  年卡还是原来那座城的（物价、政策、时局照用），提示词里会说明人不在那儿。 */
-const NON_CITY_SPOT_RE = /(道观|古观|寺庙|古庙|破庙|茶馆|酒馆|码头|纱厂|工坊|铺子|老宅|深山|后巷|弄堂|栈房|货仓|客栈|据点|村口)$/;
+const NON_CITY_SPOT_RE = /(一环|二环|三环|四环|五环|六环|内侧|外侧|附近|靠近|一带|片区|商圈|城东|城西|城南|城北|城中|城郊|郊区|市区|城里|本城|老街|古巷|胡同|弄堂|街道|大街|大道|市场|商场|广场|大厦|小区|写字楼|底铺|商铺|铺面|铺子|茶楼|茶馆|茶室|酒馆|酒楼|客栈|栈房|货仓|库房|工坊|作坊|纱厂|码头|渡口|道观|古观|寺庙|古庙|破庙|老宅|深山|后巷|据点|村口|车市|鬼市|行会|商会|学堂|医院|银行|钱庄|当铺|书肆|药铺|祠堂|古祠)/;
 function applyMove(s, to) {
-  const name = String(to || '').replace(/\s+/g, '').replace(/[。，,.、；;：:！!？?"'「」『』（）()]/g, '').slice(0, 8);
-  if (!name || name === s.city) return null;
-  if (/[a-zA-Z0-9]/.test(name)) return null;
-  if (NON_CITY_SPOT_RE.test(name)) return null;
-  if (s.city && name.startsWith(s.city) && name.length > s.city.length) return null;
+  const raw = String(to || '').replace(/\s+/g, '').replace(/[。，,.、；;：:！!？?"'「」『』（）()]/g, '');
+  if (!raw || raw === s.city) return null;
+  if (raw.length < 2 || raw.length > 6) return null;
+  if (/[a-zA-Z0-9]/.test(raw)) return null;
+  if (NON_CITY_SPOT_RE.test(raw) || /(的|里|内|外|旁|边|处)$/.test(raw)) return null;
+  if (s.city && raw.includes(s.city)) return null;
   const from = s.city;
-  s.city = name;
-  return { from, to: name };
+  s.city = raw;
+  return { from, to: raw };
 }
 
 /** 走到第 n 个月。跨过换币的月份就自动换钱，并把这件事报回去。
@@ -1287,13 +1288,16 @@ function applyMemo(s, delta, at, opts = {}) {
     if (!prec.notes.some(x => x.note === pText)) { prec.notes.push({ n, note: pText }); added.notes++; }
 
     const tWhat = `与穿越者${partner}${rel}`;
-    const bondTraitRe = new RegExp(`^(与)?(穿越者)?${escReg(partner)}(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$`);
-    let trec = m.traits.find(x => x.what.includes(`穿越者${partner}`))
-      || m.traits.find(x => bondTraitRe.test(x.what));
+    const pKey = whoKey(partner);
+    const isSameBondTrait = w => {
+      const m = String(w || '').match(/^(?:与)?(?:穿越者)?(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$/);
+      return !!(m && whoKey(cleanTravelerNick(m[1])) === pKey);
+    };
+    let trec = m.traits.find(x => isSameBondTrait(x.what));
     if (!trec) { trec = { what: tWhat, notes: [], first: n, last: n, lost: null }; m.traits.push(trec); added.traits++; }
     for (let i = m.traits.length - 1; i >= 0; i--) {
       const dup = m.traits[i];
-      if (dup === trec || !bondTraitRe.test(dup.what)) continue;
+      if (dup === trec || !isSameBondTrait(dup.what)) continue;
       for (const dn of (dup.notes || [])) {
         if (dn && dn.note && !trec.notes.some(x => x.note === dn.note)) trec.notes.push(dn);
       }
@@ -1638,10 +1642,22 @@ function escReg(s) {
   return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function cleanTravelerNick(raw) {
+  return oneLine(
+    String(raw || '')
+      .replace(/[（(][^）)]*[）)]/g, '')
+      .replace(/^[「『"'【\[]+|[」』"'】\]]+$/g, '')
+      .replace(/^穿越者/, '')
+      .replace(/[\s·\-—:：]+(合伙人|同盟|知己|师父|师徒|对手|宿敌|道侣|同行|老乡)$/, '')
+      .trim(),
+    14
+  );
+}
+
 function knownTravelersOf(s, echoes) {
   const byKey = new Map();
   const add = raw => {
-    const clean = oneLine(String(raw || '').replace(/^穿越者/, '').replace(/^[「『"']|[」』"']$/g, ''), 14);
+    const clean = cleanTravelerNick(raw);
     if (!clean || clean === (s && s.nick)) return;
     const k = whoKey(clean);
     if (k && !byKey.has(k)) byKey.set(k, clean);
@@ -1655,23 +1671,23 @@ function knownTravelersOf(s, echoes) {
   for (const b of (ec.myBonds || [])) {
     for (const m of String(b || '').matchAll(/穿越者「([^」]+)」/g)) add(m[1]);
   }
+  for (const pm of ((s && s.months) || [])) {
+    if (pm && pm.bond && pm.bond.with) add(pm.bond.with);
+  }
   const memo = (s && s.memo) || {};
+  for (const t of (memo.traits || [])) {
+    const m = String((t && t.what) || '').match(/^与穿越者(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$/);
+    if (m) add(m[1]);
+  }
   for (const p of (memo.people || [])) {
     if (p && /^穿越者/.test(String(p.who || ''))) add(p.who);
-  }
-  for (const t of (memo.traits || [])) {
-    const m = String((t && t.what) || '').match(/^与穿越者(.{1,12}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|同行)$/);
-    if (m) add(m[1]);
   }
   return byKey;
 }
 
 function normalizeBond(rawBond, s, echoes, contextText = '') {
   if (!rawBond || typeof rawBond !== 'object') return null;
-  let partner = oneLine(rawBond.with || rawBond.partner || '', 16)
-    .replace(/^[「『"']|[」』"']$/g, '')
-    .replace(/^穿越者/, '')
-    .trim();
+  let partner = cleanTravelerNick(rawBond.with || rawBond.partner || '');
   if (!partner || /^(null|none|nil|无|没有|暂无)$/i.test(partner)) return null;
   if (s && partner === s.nick) return null;
 
@@ -1694,20 +1710,21 @@ function normalizeBond(rawBond, s, echoes, contextText = '') {
 
 function activeTravelerBondsOf(s) {
   const memo = (s && s.memo) || {};
-  const out = [];
-  const seen = new Set();
+  const byKey = new Map();
   for (const t of (memo.traits || [])) {
     if (!t || t.lost) continue;
-    const m = String(t.what || '').match(/^与穿越者(.{1,14}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$/);
+    const m = String(t.what || '').match(/^与穿越者(.{1,16}?)(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$/);
     if (!m) continue;
-    const nick = m[1].trim();
-    if (!nick || seen.has(nick)) continue;
-    seen.add(nick);
+    const nick = cleanTravelerNick(m[1]);
+    const k = whoKey(nick);
+    if (!nick || !k) continue;
     const notes = t.notes || [];
     const lastNote = notes.length ? notes[notes.length - 1].note : '';
-    out.push({ nick, rel: m[2], note: lastNote, last: t.last || 0 });
+    const item = { nick, rel: m[2], note: lastNote, last: t.last || 0 };
+    const prev = byKey.get(k);
+    if (!prev || item.last >= prev.last) byKey.set(k, item);
   }
-  return out;
+  return [...byKey.values()];
 }
 
 const DEEP_TRAVELER_INTENT_RE = /(吃酒|痛饮|深谈|交心|对弈|品茗|叙旧|知交|托付|结拜|拜把|义结金兰|提亲|成婚|拜堂|道侣|切磋|比武|争锋|翻脸|拆台|摊牌|围堵|决战|密谈)/;
