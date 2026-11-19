@@ -508,8 +508,8 @@ function unpairedBuys(delta, wage) {
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
 const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
-const REVENUE_REFUND_ASSET_RE = /(回笼|回款|经营所得|销售所得|营收|进账|分红现金|货款现金)/;
-const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|营收|所得|款项|余款|进账)$/;
+const REVENUE_REFUND_ASSET_RE = /(回笼|回款|变现|获利|盈利|利润|经营所得|销售所得|出货所得|卖货所得|营收|进账|分红现金|货款现金)/;
+const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|变现款|现款|收款|营收|所得|款项|余款|进账)$/;
 const BANK_DEPOSIT_RE = /(存单|定期|活期|存款|存折|银行账户)/;
 const ASSET_BUY_OUTFLOW_RE = /(购入|买入|购买|换购|换取|兑换|置换|囤|存货|采购|收购|进货|预付|定金|盘下|置办)/;
 const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口碑|名声)$/;
@@ -580,6 +580,10 @@ function stripBogusCashAndExchange(s, delta) {
       const normKind = normalizeAssetKind(nm, a.kind);
       const revNamed = REVENUE_REFUND_ASSET_RE.test(`${nm} ${nt}`);
       const isDeposit = BANK_DEPOSIT_RE.test(nm);
+      if (normKind === '现金类' && !isDeposit && !hasDepositOut) {
+        removedAssets.push(nm);
+        return false;
+      }
       const matchesPosEntry = ents.some(e => e && Number(e.amount) > 0 && Math.abs(Number(e.amount) - w) <= Math.max(w * 0.08, 1));
       if (w > 0 && revNamed && !isDeposit && posRev >= w * 0.3 && (normKind === '现金类' || CASH_LIKE_ASSET_NAME_RE.test(nm) || matchesPosEntry || buyOut < w * 0.3)) {
         removedAssets.push(nm);
@@ -1669,27 +1673,48 @@ function activeTravelerBondsOf(s) {
   return out;
 }
 
+const DEEP_TRAVELER_INTENT_RE = /(吃酒|痛饮|深谈|交心|结拜|拜把|义结金兰|提亲|成婚|拜堂|道侣|切磋|比武|争锋|翻脸|拆台|决战|密谈)/;
+
+function hasDeepIntentFor(txt, nick) {
+  const idx = txt.indexOf(nick);
+  if (idx < 0) return false;
+  const win = txt.slice(Math.max(0, idx - 12), Math.min(txt.length, idx + nick.length + 18));
+  return DEEP_TRAVELER_INTENT_RE.test(win);
+}
+
 /** 判定本月穿越者互动节奏：
- *  - direct：玩家点名某位穿越者或主动寻找同道对暗号 → 优先聚焦尚未结缘或较久未深交的对象，避免被单一长期合伙人垄断
- *  - bond_echo：玩家已有结下关系的穿越者，隔两三个月自然来往、助力、分账或起摩擦
- *  - cross：玩家未点名时，第 2 个月或每隔数月让尚未结缘的同城穿越者在相关行当里狭路相逢/对暗号/抢货递话 */
+ *  - direct：玩家点名某位穿越者或主动寻找同道对暗号 → 已有核心同道（>=3 位）后不再被新面孔强抢戏份，优先回应明确深交意图、真人穿越者或久未推进的老搭档
+ *  - bond_echo：玩家已有结下关系的穿越者，隔两三个月自然来往、助力、分账或触发关系转折
+ *  - cross：玩家未点名时，前期（已结识不足 3 位）或城中有未照面真人穿越者时自然狭路相逢，中后期把戏份留给已有羁绊的深化与反转 */
 function travelerBeat(s, list, echoes) {
   const txt = String(list || '');
   const fellows = (echoes && Array.isArray(echoes.fellows)) ? echoes.fellows : [];
   const bonds = activeTravelerBondsOf(s);
   const unmetFellows = fellows.filter(f => f && f.nick && !bonds.some(b => whoKey(b.nick) === whoKey(f.nick)));
+  const unmetPlayers = unmetFellows.filter(f => f.origin === 'player');
   const allCandidates = [
-    ...unmetFellows.map(f => ({ nick: f.nick, rel: null, note: '', desc: f.desc || f.summary || '', isBonded: false, last: 0, fellow: f, bond: null })),
+    ...unmetFellows.map(f => ({ nick: f.nick, rel: null, note: '', desc: f.desc || f.summary || '', isBonded: false, isPlayer: f.origin === 'player', last: 0, fellow: f, bond: null })),
     ...bonds.map(b => {
       const f = fellows.find(x => whoKey(x.nick) === whoKey(b.nick)) || null;
-      return { nick: b.nick, rel: b.rel, note: b.note, desc: (f && f.desc) || b.note, isBonded: true, last: b.last || 0, fellow: f, bond: b };
+      return { nick: b.nick, rel: b.rel, note: b.note, desc: (f && f.desc) || b.note, isBonded: true, isPlayer: !!(f && f.origin === 'player'), last: b.last || 0, fellow: f, bond: b };
     }),
   ];
 
+  const n = (s && s.n) || 1;
+  const preferDeepen = bonds.length >= 3;
   const mentioned = allCandidates
     .filter(c => c.nick && txt.includes(c.nick))
     .sort((a, b) => {
-      if (a.isBonded !== b.isBonded) return a.isBonded ? 1 : -1;
+      const da = hasDeepIntentFor(txt, a.nick);
+      const db = hasDeepIntentFor(txt, b.nick);
+      if (da !== db) return da ? -1 : 1;
+      if (preferDeepen) {
+        const aUnmetFallback = !a.isBonded && !a.isPlayer;
+        const bUnmetFallback = !b.isBonded && !b.isPlayer;
+        if (aUnmetFallback !== bUnmetFallback) return aUnmetFallback ? 1 : -1;
+      } else if (a.isBonded !== b.isBonded) {
+        return a.isBonded ? 1 : -1;
+      }
       if ((a.last || 0) !== (b.last || 0)) return (a.last || 0) - (b.last || 0);
       return txt.indexOf(a.nick) - txt.indexOf(b.nick);
     });
@@ -1703,11 +1728,16 @@ function travelerBeat(s, list, echoes) {
       rel: pick.rel || null,
       fellow: pick.fellow || null,
       bond: pick.bond || null,
+      monthsSincePartner: pick.isBonded ? Math.max(0, n - (pick.last || 0)) : 0,
       alsoMentioned: mentioned.slice(1).map(c => c.nick),
     };
   }
   if (/(穿越者|同道异客|现代老乡|老乡|对暗号|奇变偶不变|宫廷玉液酒|前世同乡)/.test(txt) && allCandidates.length) {
-    const pick = allCandidates[0];
+    const pick = (preferDeepen && unmetPlayers.length)
+      ? allCandidates.find(c => c.nick === unmetPlayers[0].nick) || allCandidates[0]
+      : (preferDeepen && bonds.length
+        ? allCandidates.filter(c => c.isBonded).sort((a, b) => (a.last || 0) - (b.last || 0))[0] || allCandidates[0]
+        : allCandidates[0]);
     return {
       active: true,
       mode: 'direct',
@@ -1715,6 +1745,7 @@ function travelerBeat(s, list, echoes) {
       rel: pick.rel || null,
       fellow: pick.fellow || null,
       bond: pick.bond || null,
+      monthsSincePartner: pick.isBonded ? Math.max(0, n - (pick.last || 0)) : 0,
       alsoMentioned: [],
     };
   }
@@ -1738,19 +1769,27 @@ function travelerBeat(s, list, echoes) {
     }
   }
 
-  const n = (s && s.n) || 1;
   const roll = hash32((s && s.seed ? s.seed : 1) * 19937 + n * 104729) / 2 ** 32;
 
-  /* 优先让城里尚未照面的其他穿越者也有登场机会，不让单一老搭档把整局 24 个月全包圆 */
-  if (unmetFellows.length > 0 && ((n === 2 && monthsSince >= 99) || (monthsSince >= 3 && roll < 0.45) || (bonds.length === 1 && n >= 6 && n % 5 === 0 && roll < 0.6))) {
-    const f0 = unmetFellows[hash32(((s && s.seed) || 1) * 8191 + n * 131071) % unmetFellows.length];
+  /* 前期（已结识不足 3 位）或城里有尚未照面的真人穿越者时，安排自然狭路相逢；
+   * 已有 3 位以上同道后，不再频频硬塞新面孔，把中后期戏份留给核心同道的深化、结拜或反目。 */
+  const crossPool = bonds.length < 3 ? unmetFellows : unmetPlayers;
+  if (crossPool.length > 0 && ((n === 2 && monthsSince >= 99) || (monthsSince >= 3 && roll < 0.45) || (bonds.length === 1 && n >= 6 && n % 5 === 0 && roll < 0.6))) {
+    const f0 = crossPool[hash32(((s && s.seed) || 1) * 8191 + n * 131071) % crossPool.length];
     return { active: true, mode: 'cross', target: f0.nick, fellow: f0 };
   }
 
-  if (bonds.length > 0 && monthsSince >= 2 && roll < 0.48) {
+  if (bonds.length > 0 && monthsSince >= 2 && roll < 0.52) {
     const sortedBonds = [...bonds].sort((a, b) => (a.last || 0) - (b.last || 0));
-    const b0 = sortedBonds[n % sortedBonds.length];
-    return { active: true, mode: 'bond_echo', target: b0.nick, rel: b0.rel, bond: b0 };
+    const b0 = sortedBonds[0];
+    return {
+      active: true,
+      mode: 'bond_echo',
+      target: b0.nick,
+      rel: b0.rel,
+      bond: b0,
+      monthsSincePartner: Math.max(0, n - (b0.last || 0)),
+    };
   }
 
   return { active: false, mode: 'none' };
@@ -1866,8 +1905,8 @@ function formatBondTrace(nick, partner, city, rel, note) {
 const ROUTINE_BOND_NOTE_RE = /(深度绑定|利益绑定|绑定加深|继续合作|合作顺畅|例行分账|维持合作|稳步推进|正常分润|深度合作|深度战略|达成共识|高度契合|资源深度共享|深化产能合作|稳产共识|深度互信|深层利益|互通协议)/;
 
 /** 判定本月返回的 bond 是否属于无实质变化的冗余重复：
- *  跨月扫描历史记录（不只看上个月），只要该搭档名分未变且间隔不足 6 个月、
- *  或备注落入套话、或本月互动焦点并非此人，即判为冗余，避免 24 个月清一色「同盟」刷屏。 */
+ *  只要与该搭档的当前名分相同（如隔十几个月再次报「试探」或「同盟」）或发生同轨降格，即判为冗余；
+ *  只有初次结缘、关系跃迁或正反反转才作为本月新关系里程碑上屏与留痕。 */
 function isRedundantBond(s, bond, tBeat) {
   if (!bond || !bond.with) return false;
   const key = whoKey(bond.with);
@@ -1882,16 +1921,12 @@ function isRedundantBond(s, bond, tBeat) {
   }
   if (!prev) return false;
   if (isBondDowngrade(prev.bond.rel, bond.rel)) return true;
-  if (prev.bond.rel !== bond.rel) return false;
-  const gap = ((s && s.n) || (past.length + 1)) - (prev.n || 0);
-  if (gap < 6) return true;
-  if (ROUTINE_BOND_NOTE_RE.test(bond.note || '')) return true;
-  if (!tBeat || !tBeat.active || whoKey(tBeat.target) !== key) return true;
+  if (prev.bond.rel === bond.rel) return true;
   return false;
 }
 
-const PURE_NEWS_EVENT_RE = /(国务院|暂行办法|办法出台|命令发行|正式发行|颁布|施行|停兑|停止流通|停止使用|大会召开|宣布成立|全国推行|市委|市政府|部委|法令出台|法币贬值|金圆券.{0,8}(发行|崩塌|作废|限价|贬值|前奏)|物价.{0,6}(飞涨|暴涨|狂飙|一日|动荡)|投机客.{0,6}破产|王春哲|证券大楼|抢购成风|黑市转入地下|人心惶惶|解放军进城|军管会|物价闯关|熔断|股灾|金融危机|央行|叫停|ICO|币圈|洪水|受灾|千股跌停|暴雷潮|P2P|安稳无恙|避开泥潭|及时.{0,4}避险|风声鹤唳)/;
-const PERSONAL_DEED_RE = /(立下|创办|盘下|开起|建成|拿下|打通|创立|拜师|成婚|结拜|立宗|夺得|斩获|练成|破境|淘得|炼出|入股|独揽|获批|立起|开办|商号|字号|分销|秘方|奇物|根基|手艺|资质|名号|名震|传遍|声名大噪)/;
+const PURE_NEWS_EVENT_RE = /(国务院|暂行办法|办法出台|命令发行|正式发行|颁布|施行|停兑|停止流通|停止使用|大会召开|宣布成立|全国推行|市委|市政府|部委|法令出台|法币贬值|金圆券.{0,8}(发行|崩塌|作废|限价|贬值|前奏)|物价.{0,6}(飞涨|暴涨|狂飙|一日|动荡)|投机客.{0,6}破产|王春哲|证券大楼|抢购成风|黑市转入地下|人心惶惶|解放军进城|军管会|物价闯关|熔断|股灾|金融危机|央行|叫停|ICO|币圈|洪水|受灾|千股跌停|暴雷潮|P2P|安稳无恙|避开泥潭|及时.{0,4}避险|风声鹤唳|大整顿|整顿期货|被迫关停|期货市场|交易所|宏观调控|汇率并轨|公司法|最低工资|数十家|几十家)/;
+const PERSONAL_DEED_RE = /(立下|创办|盘下|盘活|开起|建成|建起|拿下|买下|打通|创立|拜师|成婚|结拜|立宗|夺得|斩获|练成|破境|淘得|炼出|入股|独揽|获批|立起|开办|商号|字号|分销|秘方|奇物|根基|手艺|资质|名号|名震|传遍|声名大噪|收服|击败|打响|闻名|轰动|设摊|开店|办厂|成名|置下|救下|揭穿|大赚)/;
 
 /** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
  *  严格克制：普通打工买卖、纯抄历史新闻或名分未变/倒退的例行合作返回 null，只有初次结缘、关系跃迁或真正个人大事才记入该年。 */
@@ -1930,7 +1965,8 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
   }
 
   const rawEv = toThirdPersonTrace(oneLine(delta && delta.worldEvent, 48));
-  if (rawEv && PURE_NEWS_EVENT_RE.test(rawEv) && !rawEv.includes(nick) && !PERSONAL_DEED_RE.test(rawEv)) {
+  const hasPersonalDeed = rawEv && (PERSONAL_DEED_RE.test(rawEv) || BOND_RE.test(rawEv) || WEIRD_THEMES.some(w => w.re.test(rawEv)));
+  if (rawEv && (PURE_NEWS_EVENT_RE.test(rawEv) ? !hasPersonalDeed : (!rawEv.includes(nick) && !hasPersonalDeed))) {
     return null;
   }
   const inc = incomeOf(year, month);
@@ -1963,9 +1999,9 @@ function recurringBucketOf(what) {
   if (ONEOFF_ENTRY_RE.test(w) && !/(月度|每月|例行|常规|津贴|房租|香火|月利)/.test(w)) return null;
   if (/(门徒|信徒|教徒|香火|宗门|堂口香火)/.test(w) && /(供奉|香火|月费|会费|收益|进项|余利)/.test(w)) return 'sect';
   if (/(顾问|俸禄|津贴|官俸|固定薪水|月俸)/.test(w) && !/(额外|赏金)/.test(w)) return 'advisor';
-  if (/(房租|租金|田租|地租|铺租)/.test(w)) return 'rent';
+  if (/(房租|租金|田租|地租|铺租)/.test(w) || /租赁.{0,4}(收益|收入|净进|进项|回款)/.test(w)) return 'rent';
   if (/(份子|保护费|堂口|抽头|规费)/.test(w)) return 'dues';
-  if (/(销售收益|经营净利|经营收入|分红|股息|红利|月利|余利|铺面收益)/.test(w)) return 'biz';
+  if (/(销售收益|经营净利|经营净进|经营收入|经营收益|经营进项|分红|股息|红利|月利|余利|铺面收益|铺面经营|铺面净进)/.test(w)) return 'biz';
   return null;
 }
 

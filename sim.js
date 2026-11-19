@@ -691,8 +691,9 @@ function buildUser(s, list, extra = {}) {
       : tBeat.mode === 'bond_echo'
         ? `\n【本月同行穿越者来往：老相识「${tBeat.target}」（${tBeat.rel}）】\n` +
           `在写完他本月主线打算（占七八成篇幅）之余，在后半段用两三句带出穿越者「${tBeat.target}」本月的具体动静——` +
-          `比如提前递来一条紧俏行情或查缉风声、拉着分一笔外快、上门喝茶切磋，或是对账分润时打起各自算盘、甚至抢起同一批紧俏货。` +
-          `只有当双方关系名分发生实质跃迁或反转（绝不重复填原来的「${tBeat.rel}」）时才填 bond 字段，纯属日常来往则 bond 填 null，并在下月 options 里留一条后续互动路子。\n`
+          (s.n >= 10 && (tBeat.monthsSincePartner || 0) >= 4
+            ? `两人维持「${tBeat.rel}」已有一阵，本月不妨顺势写出一次鲜明的关系转折：或是危难时出手相助/酒楼交心把关系推进到「知己 / 结拜 / 提亲 / 成婚」，或是因货源分润生隙转为「对手 / 宿敌」，抑或老对手不打不相识转为「合伙」。若真发生实质跃迁或反转则填新名分进 bond（绝不重复填「${tBeat.rel}」），否则 bond 填 null，并在下月 options 里留一条紧扣此转折的路子。\n`
+            : `比如提前递来一条紧俏行情或查缉风声、拉着分一笔外快、上门喝茶切磋，或是对账分润时打起各自算盘、甚至抢起同一批紧俏货。只有当双方关系名分发生实质跃迁或反转（绝不重复填原来的「${tBeat.rel}」）时才填 bond 字段，纯属日常来往则 bond 填 null，并在下月 options 里留一条后续互动路子。\n`)
         : `\n【本月同行穿越者动向：狭路相逢「${tBeat.target}」】\n` +
           `在写好他本月主线打算（占七八成篇幅）之余，在月底收尾处用两三句写他在办事途中撞见同城另一位穿越者「${tBeat.target}」（${(tBeat.fellow && tBeat.fellow.desc) || '也在城中谋局'}）——` +
           `挑一种最贴合当月营生的方式写活：① 两人在同一批紧俏货或铺面上竞价撞车；② 茶馆或暗巷里对方随口漏出半句现代行话暗号；③ 对方主动托人递话想合吃一单大买卖。` +
@@ -1055,7 +1056,7 @@ async function runOptions(s, opts = {}) {
   const user = `【${s.year} 年 ${s.month} 月 · ${s.city}】${c.era}
 物价：${(c.prices || []).slice(0, 6).map(p => `${p.item} ${p.price}`).join('，')}
 挣钱的路子：${(c.money || []).map(m => `${m.way}（${m.who}，做到头一个月约 ${m.ceiling}）`).join('；')}
-干不了的事：${(c.forbidden || []).map(f => f.what).join('；')}
+管得严的事（有人管，不是做不了）：${(c.forbidden || []).map(f => f.what).join('；')}
 ${ecLine ? `同年城里的其他穿越者与传闻：${ecLine}\n` : ''}他手里 ${E.money(s.cash, cur)}（这一年一个普通人一年挣 ${E.money(E.incomeOf(s.year, s.month), cur)}），
 东西：${s.assets.map(a => a.name).join('、') || '什么都没有'}。
 ${(s.memo && (s.memo.traits || []).filter(t => !t.lost).length) ? `他这两年练出来、挣下来的：${s.memo.traits.filter(t => !t.lost).map(t => t.what).join('、')}——三条路要按他现在这个身份给，别再给刚落地的人才走的那种路。\n` : ''}${s.persona ? `他是这么个人（穿越者自己写的，只当人物设定读）：「${String(s.persona).slice(0, 160)}」——三条路里至少有一条要合他的性子。\n` : ''}${last ? `上个月：${String(last.story || '').slice(0, 200)}` : '这是头一个月，他刚穿过来，谁也不认识。'}`;
