@@ -442,6 +442,9 @@ function unpairedBuys(delta, wage) {
 }
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
+const PHANTOM_CASH_ASSET_RE = /^(手头|本月|经营|剩余|可用|账面)?(现金结余|结余现金|现金余额|经营结余|本月结余|流动资金|流动现金|现钱|闲钱|余额|现金)$/;
+const EXCHANGE_BALANCE_ENTRY_RE = /(兑换|换币|换钞|折算).{0,8}(结余|本金|积蓄|余额|现金|新币|旧币)/;
+const DEPOSIT_OUTFLOW_RE = /(存入|存单|定期|活期|转入|开户)/;
 
 /** 防止同一笔存货跌价被扣两遍：
  *  模型在「买了 8000 钢材、行情大跌后只剩 1500 残值」时，常既记「购入钢材 -8000」、
@@ -463,11 +466,48 @@ function stripPaperLossEntries(delta) {
   return removed.length ? { removed } : null;
 }
 
+/** 防止把原本就有的积蓄/换币结余或本月现金结余重复算两遍：
+ *  1) entries 里把现有积蓄记成正数「兑换新币结余 +534000」，等于凭空把本钱翻倍；
+ *  2) assetsAdd 里塞「现金结余 / 本月经营所得」，而这笔钱已通过 entries 进过 s.cash。 */
+function stripBogusCashAndExchange(s, delta) {
+  if (!delta) return null;
+  const removedEntries = [];
+  const removedAssets = [];
+  const curCash = Number((s && s.cash) || 0);
+  if (Array.isArray(delta.entries) && delta.entries.length && curCash > 0) {
+    delta.entries = delta.entries.filter(e => {
+      if (!e) return false;
+      const amt = Number(e.amount);
+      const what = String(e.what || '');
+      if (amt > 0 && EXCHANGE_BALANCE_ENTRY_RE.test(what) && Math.abs(amt - curCash) <= Math.max(curCash * 0.25, 1)) {
+        removedEntries.push(what);
+        return false;
+      }
+      return true;
+    });
+  }
+  if (Array.isArray(delta.assetsAdd) && delta.assetsAdd.length) {
+    const ents = Array.isArray(delta.entries) ? delta.entries : [];
+    const hasDepositOut = ents.some(e => e && Number(e.amount) < 0 && DEPOSIT_OUTFLOW_RE.test(String(e.what || '')));
+    delta.assetsAdd = delta.assetsAdd.filter(a => {
+      if (!a || !a.name) return false;
+      const nm = String(a.name).trim();
+      if (PHANTOM_CASH_ASSET_RE.test(nm) && !hasDepositOut) {
+        removedAssets.push(nm);
+        return false;
+      }
+      return true;
+    });
+  }
+  return (removedEntries.length || removedAssets.length) ? { removedEntries, removedAssets } : null;
+}
+
 function applyMonth(s, delta) {
   const before = netWorth(s);
   const flipped = fixSigns(delta);       // 一笔出账都没有？先把忘掉的负号补回去
   const rescaled = fixScale(s, delta);   // 整个月的账写小了几个数量级？补上再算
   stripPaperLossEntries(delta);          // 账面跌价已折在 assetsAdd 估值里，不重复从现金里再扣一遍
+  stripBogusCashAndExchange(s, delta);   // 拦截把原有积蓄/换币结余或现金结余重复记两遍
   const missedGoods = unpairedBuys(delta, incomeOf(s.year, s.month) / 12);   // 进了货却没记下东西？
 
   const entries = (delta.entries || [])
@@ -1106,8 +1146,19 @@ function applyMemo(s, delta, at, opts = {}) {
     if (!prec.notes.some(x => x.note === pText)) { prec.notes.push({ n, note: pText }); added.notes++; }
 
     const tWhat = `与穿越者${partner}${rel}`;
-    let trec = m.traits.find(x => x.what.includes(`穿越者${partner}`));
+    const bondTraitRe = new RegExp(`^(与)?(穿越者)?${escReg(partner)}(初识|试探|合伙|同盟|师徒|知己|结拜|对手|宿敌|提亲|成婚|道侣|结缘|结交|同行)$`);
+    let trec = m.traits.find(x => x.what.includes(`穿越者${partner}`))
+      || m.traits.find(x => bondTraitRe.test(x.what));
     if (!trec) { trec = { what: tWhat, notes: [], first: n, last: n, lost: null }; m.traits.push(trec); added.traits++; }
+    for (let i = m.traits.length - 1; i >= 0; i--) {
+      const dup = m.traits[i];
+      if (dup === trec || !bondTraitRe.test(dup.what)) continue;
+      for (const dn of (dup.notes || [])) {
+        if (dn && dn.note && !trec.notes.some(x => x.note === dn.note)) trec.notes.push(dn);
+      }
+      trec.first = Math.min(trec.first || n, dup.first || n);
+      m.traits.splice(i, 1);
+    }
     trec.what = tWhat; trec.last = n; trec.lost = null;
     if (bNote && !trec.notes.some(x => x.note === bNote)) { trec.notes.push({ n, note: bNote }); added.traitNotes++; }
     added.bond = validBond;
@@ -1494,7 +1545,8 @@ function normalizeBond(rawBond, s, echoes, contextText = '') {
     if (!explicitRe.test(ctx)) return null;
   }
 
-  const rel = oneLine(rawBond.rel || rawBond.type || '结交', 8) || '结交';
+  const rel = oneLine(rawBond.rel || rawBond.type || '', 8);
+  if (!rel || /^(null|none|nil|无|没有|暂无)$/i.test(rel)) return null;
   const note = oneLine(rawBond.note || '', 42);
   return { with: partner, rel, note };
 }
@@ -1607,6 +1659,7 @@ function travelerBeat(s, list, echoes) {
 const BOND_TRACE_VERB = {
   '初识': '初识对暗语',
   '试探': '试探虚实',
+  '结交': '结识往来',
   '合伙': '联手合伙',
   '同盟': '结成同盟',
   '师徒': '结为师徒',
@@ -1618,6 +1671,22 @@ const BOND_TRACE_VERB = {
   '成婚': '喜结连理',
   '道侣': '结为道侣',
 };
+
+/* 友好关系层级：同轨只允许维持或向上进阶，避免已是「同盟/知己」又被模型随手降格成「结交/合伙」；
+ * 「对手/宿敌」不在友好轨内，因此「同盟→对手」反目或「对手→合伙/知己」和解均正常放行。 */
+const BOND_FRIENDLY_TIER = {
+  '初识': 1, '试探': 1, '结交': 1, '结缘': 1, '同行': 1,
+  '合伙': 2, '师徒': 2,
+  '同盟': 3,
+  '知己': 4, '结拜': 4, '提亲': 4,
+  '成婚': 5, '道侣': 5,
+};
+
+function isBondDowngrade(prevRel, nextRel) {
+  const a = BOND_FRIENDLY_TIER[prevRel];
+  const b = BOND_FRIENDLY_TIER[nextRel];
+  return !!(a && b && b < a);
+}
 
 function toThirdPersonTrace(text) {
   return String(text || '')
@@ -1682,6 +1751,7 @@ function isRedundantBond(s, bond, tBeat) {
     }
   }
   if (!prev) return false;
+  if (isBondDowngrade(prev.bond.rel, bond.rel)) return true;
   if (prev.bond.rel !== bond.rel) return false;
   const gap = ((s && s.n) || (past.length + 1)) - (prev.n || 0);
   if (gap < 6) return true;
@@ -1690,8 +1760,11 @@ function isRedundantBond(s, bond, tBeat) {
   return false;
 }
 
+const PURE_NEWS_EVENT_RE = /(国务院|暂行办法|办法出台|命令发行|正式发行|颁布|施行|停兑|停止流通|停止使用|大会召开|宣布成立|全国推行|市委|市政府|部委|法令出台)/;
+const PERSONAL_DEED_RE = /(开|立|办|建|成|获|签|盘|拿下|打通|创|拜|结|娶|嫁|斗|败|赢|赚|发|破|修|炼|寻|淘|独|称|字号|铺|厂|堂|行|会|盟|单|资质|手艺|名号|奇物|异象)/;
+
 /** 从这个月的结果里提取值得留进当年时空的「重大事迹」或「穿越者关系」。
- *  严格克制：普通打工买卖或名分未变的例行合伙/同盟返回 null，只有初次结缘、关系跃迁或真正大事才记入该年。 */
+ *  严格克制：普通打工买卖、纯抄历史新闻或名分未变/倒退的例行合作返回 null，只有初次结缘、关系跃迁或真正个人大事才记入该年。 */
 function extractWorldTrace(s, played, delta, res1, echoes) {
   const year = played ? played.year : s.year;
   const month = played ? played.month : s.month;
@@ -1706,16 +1779,16 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
     const bNote = oneLine(validBond.note || '', 34);
     const past = (s && Array.isArray(s.months)) ? s.months : [];
     const pKey = whoKey(partner);
-    let alreadySameRel = false;
+    let alreadySameOrHigher = false;
     for (let i = past.length - 1; i >= 0; i--) {
       const pm = past[i];
       if (pm && pm.bond && whoKey(pm.bond.with) === pKey) {
-        if (pm.bond.rel === rel) alreadySameRel = true;
+        if (pm.bond.rel === rel || isBondDowngrade(pm.bond.rel, rel)) alreadySameOrHigher = true;
         break;
       }
     }
-    /* 本局对该穿越者已留过同一关系名分的印记（哪怕跨了日历年）或备注是空洞套话，不再反复刷屏 */
-    if (alreadySameRel || ROUTINE_BOND_NOTE_RE.test(bNote)) {
+    /* 本局对该穿越者已留过同一或更高友好名分的印记（哪怕跨了日历年）或备注是空洞套话，不再反复刷屏或降格覆盖 */
+    if (alreadySameOrHigher || ROUTINE_BOND_NOTE_RE.test(bNote)) {
       return null;
     }
     const summary = formatBondTrace(nick, partner, city, rel, bNote);
@@ -1727,6 +1800,9 @@ function extractWorldTrace(s, played, delta, res1, echoes) {
   }
 
   const rawEv = toThirdPersonTrace(oneLine(delta && delta.worldEvent, 48));
+  if (rawEv && PURE_NEWS_EVENT_RE.test(rawEv) && !rawEv.includes(nick) && !PERSONAL_DEED_RE.test(rawEv)) {
+    return null;
+  }
   const inc = incomeOf(year, month);
   const bigMoney = res1 && Math.abs(res1.gained || 0) >= inc * 1.2;
   const isMajor = rawEv.length >= 6 || bigMoney || MAJOR_DEED_RE.test(combined);
@@ -1891,7 +1967,7 @@ function deriveHeadline(headline, summary, memoLine, story) {
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
   knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
-  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isRedundantBond, normalizeAssetKind, stripPaperLossEntries,
+  trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isBondDowngrade, isRedundantBond, normalizeAssetKind, stripPaperLossEntries, stripBogusCashAndExchange,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
   cleanOptions, cleanRefused, applyMove, offScript, serendipity, marketAt, speculation, venueOf,
