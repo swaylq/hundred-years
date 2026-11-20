@@ -98,7 +98,7 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 若买进的实物/存货/股票认购证当月市价下跌，进货款记出账、assetsAdd 按跌后的现值记即可，**绝不许在 entries 里再额外扣一笔「库存贬值/跌价损耗/市值波动跌幅结算」现金出账，也不许把「账面残值」记成正数现金进账**，否则同一笔亏空或残值会被算两遍。
 手头原有本钱、换币结余和本月挣剩下的现金，系统会自动计入现金余额：**绝不许把「兑换新币结余」「原有积蓄」记成正数进账，也不许把「现金结余」「本月经营所得」再塞进 assetsAdd**，否则同一笔钱会被算两遍。
 已经盘下在手的铺面、房产、机床不要每个月在 assetsAdd 里重复再记一遍（只在真新买、新盘或扩建时记）；assetsAdd 的 name 里不要把「（权益）」「（实物）」这类类型括注写进名字。
-换购金银外币或囤货时，entries 必须把花出去的**全部换购本金**记为负数（如「换购银元 -5000」），同时 assetsAdd 只记本月新换到的那一份实物，**绝不许只扣一笔「换购黄金损耗」而不扣本金，也不许把手里原有金条和现钱加总写成「所有身家」重复塞进 assetsAdd**；以货换货或置换实物时，必须用 assetsDrop 销掉交出去的旧货再在 assetsAdd 记新货，**若换来的实物留在手里进了 assetsAdd，绝不许同时在 entries 里再记一笔同额「置换收益/折现」（否则同一笔资产算两遍）**，entries 只记实落到手的净差价；卖货收到的回款既已记进 entries 正数，也不许再把同一笔「回笼银元/回款资金」重复塞进 assetsAdd；买货后若货被没收或赔光，entries 只记买入本金负数，不许额外再扣一笔「亏损本钱」。同类粮油、金银或票证继续添仓时优先沿用家底里已有的名字。感悟、线索、门路、渠道、口碑只记进 memo.traits 或 memo.threads，不进 assetsAdd。
+换购金银外币或囤货时，entries 必须把花出去的**全部换购本金**记为负数（如「换购银元 -5000」），同时 assetsAdd 只记本月新换到的那一份实物，**绝不许只扣一笔「换购黄金损耗」而不扣本金，也不许把手里原有金条和现钱加总写成「所有身家」重复塞进 assetsAdd**；以货换货或置换实物时，必须用 assetsDrop 销掉交出去的旧货再在 assetsAdd 记新货，**若换来的实物留在手里进了 assetsAdd，绝不许同时在 entries 里再记一笔同额「置换收益/折现」（否则同一笔资产算两遍）**，entries 只记实落到手的净差价；卖货收到的回款既已记进 entries 正数，也不许再把同一笔「回笼银元/回款资金」重复塞进 assetsAdd；买货后若货被没收或赔光，entries 只记买入本金负数，不许额外再扣一笔「亏损本钱」。同类粮油、金银或票证继续添仓时优先沿用家底里已有的名字。感悟、线索、门路、渠道、口碑、情报、资料、暗线只记进 memo.traits 或 memo.threads，不进 assetsAdd。
 
 **当月买当月就卖光了的，不用记 assetsAdd**——进账出账两笔已经把它说清楚了。
 要记的是**月底还压在他手里**的那些：没卖完的货、交出去还没退的押金、
@@ -242,7 +242,7 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 【绝对不许】
 1. 写这一年还不存在的东西。资料里会点名玩家提到的哪些东西那时候没有，你必须把他顶回去。
 2. 出现游戏用语：玩家、数值、加成、触发、解锁、副本、难度、存档、收益率。
-3. 用「赋能」「闭环」「底层逻辑」「值得注意的是」「归根结底」这类词。
+3. 用「赋能」「闭环」「底层逻辑」「深度绑定」「利益深度绑定」「深度共识」「值得注意的是」「归根结底」这类词。
 4. 讲道理、发感慨、总结这个月的意义。写完事情就停。
 5. 劝他、替他掂量划不划算、写「建议」「不宜」「风险大于收益」「得不偿失」这类话。
    他要做的事就是这一个月的题目，你只管算它的结果。
@@ -252,7 +252,7 @@ const SYS = `你是《这一百年》的记事人。主角是一位穿越者，�
 【输出】
 只输出一个 JSON 对象，不要有别的话，不要包在反引号里，**务必按下面字段顺序输出（headline、summary、story 排在最前面）**：
 {
-  "headline": "一句话标题，10到20个字，概括本月最核心的一幕，不带书名号、末尾句号和第二人称「你」，禁用「赋能」「深度绑定」「闭环」等现代黑话",
+  "headline": "一句话标题，10到20个字，概括本月最核心的一幕，必须严格贴合下面 summary 与 story 里真正发生的事（绝不提前编造正文没写的反转或暗算），不带书名号、末尾句号和第二人称「你」，禁用「赋能」「深度绑定」「闭环」等现代黑话",
   "summary": "本月精简概要，2到3句第二人称（「你」）大白话，绝不用第一人称「我」，共50到90字：干脆交代你这个月办的事、成没成、最要紧的结果或转折，最关键的1句用 **...** 括起",
   "story": "本月完整详情，180到300字：具体场面、人名、原话、器物与时间推移，把直接回应他打算的1到2处核心句段用 **...** 括起",
   "entries": [{"what":"这笔钱是什么","amount":进账写正数、出账写负数}],
@@ -623,11 +623,17 @@ function buildUser(s, list, extra = {}) {
       : `\n【初探暗面边缘（${weird.themes[0].name}）—— 暂不给真神通，先摸门径】\n` +
         `这是他头一回试探「${weird.themes[0].name}」。暗面门道深藏市井之下，**这个月不让他立刻练成法术或一步得宝**，只写他摸到一点真假莫辨的蛛丝马迹（如半真半假的相师、旧摊残页或高人闭门考验），在 memo.threads 里留一条下个月可继续追查的钩子。\n`;
 
-  /* 同年时空里的其他穿越者与重要留痕（严格控制字数，突出同行互动与跨年代遗踪） */
+  /* 同年时空里的其他穿越者与重要留痕（跨年后依然保留本局已结缘同道及其当前名分，避免翻年失忆或把老知己重写成初结缘） */
   const ec = extra.echoes || { traces: [], fellows: [], myBonds: [], legacies: [] };
-  const fellowLines = (ec.fellows || []).slice(0, 3).map(f =>
-    `· 穿越者「${f.nick}」（${f.stance || f.tag || '同行'}）：${f.desc || f.summary}`
+  const activeBonds = E.activeTravelerBondsOf(s);
+  const bondedKeySet = new Set(activeBonds.map(b => E.whoKey(b.nick)));
+  const activeBondLines = activeBonds.map(b =>
+    `· 【已结缘同道】穿越者「${b.nick}」（当前已是「${b.rel}」${b.last ? `，第 ${b.last} 月定名` : ''}）：${b.note || '仍在城中往来'}`
   );
+  const fellowLines = (ec.fellows || [])
+    .filter(f => f && !bondedKeySet.has(E.whoKey(f.nick)))
+    .slice(0, 3)
+    .map(f => `· 穿越者「${f.nick}」（${f.stance || f.tag || '同行'}）：${f.desc || f.summary}`);
   const traceLines = (ec.traces || [])
     .filter(t => t && t.kind !== 'traveler')
     .slice(0, 3)
@@ -649,6 +655,7 @@ function buildUser(s, list, extra = {}) {
   const echoLines = [
     ...(ec.myBonds || []).map(b => `· 【跨局因果】${b}`),
     ...legacyLines,
+    ...activeBondLines,
     ...fellowLines,
     ...traceLines,
   ];
@@ -842,10 +849,10 @@ function storyPicker() {
 function finalizeDelta(s, list, raw) {
   const delta = E.reconcileMonthFinancials(s, list, raw || {});
   const memoLine = delta.memo && delta.memo.line ? delta.memo.line : '';
-  delta.story = String(delta.story || '').trim();
-  const rawSummary = String(delta.summary || '').trim();
+  delta.story = E.cleanJargon(String(delta.story || '').trim());
+  const rawSummary = E.cleanJargon(String(delta.summary || '').trim());
   delta.summary = rawSummary || E.deriveSummary(delta.story, memoLine);
-  delta.headline = E.deriveHeadline(delta.headline, delta.summary, memoLine, delta.story);
+  delta.headline = E.deriveHeadline(E.cleanJargon(delta.headline), delta.summary, memoLine, delta.story);
   return delta;
 }
 

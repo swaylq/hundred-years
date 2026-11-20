@@ -213,7 +213,7 @@ async function draftPlayerPlan(st, yearCard, monthIdx) {
         .filter(f => /^play-traveler-[^.]+\.json$/.test(f) && f !== 'play-traveler-latest.json')
         .map(f => ({ f, mt: fs.statSync(path.join(LOG_DIR, f)).mtimeMs }))
         .sort((a, b) => b.mt - a.mt)
-        .slice(0, 4)
+        .slice(0, 8)
         .map(x => {
           try { return JSON.parse(fs.readFileSync(path.join(LOG_DIR, x.f), 'utf8')).diagnostics?.nick; } catch { return null; }
         })

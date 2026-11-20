@@ -483,7 +483,7 @@ function fixScale(s, delta) {
 const BUY_WORD = /货款|进货|买入|购入|囤|存货|预付|押金|盘下|置办|采买|定金|批发|收货/;
 const BUY_LOSS_RE = /(亏损|折损|损失|被扣|没收|罚款|赔光|亏空|浮亏|贬值|跌价|损耗|抽头|门包|手续费)/;
 const SELL_WORD = /卖|售|出货|所得|货款收|转手/;
-const HARD_BULLION_RE = /(黄金|金条|赤金|美钞|美元|外汇|英镑|港币|银元|大洋|袁大头|白银|银锭)/;
+const HARD_BULLION_RE = /(黄金|金条|赤金|美钞|美元|外汇|侨汇券|英镑|港币|银元|大洋|袁大头|白银|银锭)/;
 const CASH_DEPOSIT_RE = /(存款|存单|存折|活期|定期|钱庄存|银行存)/;
 const RECEIVABLE_RE = /(借条|欠条|应收款|应收账款|债权)/;
 
@@ -521,7 +521,7 @@ function unpairedBuys(delta, wage, bet = null) {
 
 const PAPER_LOSS_RE = /(库存|存货|钢材|货物|商品|资产|物资|房产|设备|原料|认购证|外汇券|股票|基金|债券).{0,6}(贬值|缩水|跌价|折价|估值下调|账面亏损|账面损耗|浮亏)/;
 const MARKET_ASSET_LOSS_RE = /(黄金|金条|现货|古玩|字画|文玩|股票|认购证|外汇券|国债|公债|债券|证券|基金|期货|理财|比特币|银元|美钞|外汇|港币|房产|楼盘|地皮|铺位|商铺|库存|存货|货物|资产|电子件|元件|零件|表件|轴承).{0,14}(波动损失|波动亏损|波动跌幅|跌幅结算|跌价结算|亏损清算|市价损失|市场波动损|市值波动|市值跌|市价跌|浮亏结算|价值缩水|贬值损失|贬值结算|跌价损失|账面亏|折价损失)/;
-const STANDALONE_PAPER_LOSS_RE = /(行情波动.{0,6}(亏损|损失|结算|跌幅)|波动.{0,4}(亏损结算|跌幅结算|清算亏损)|账面残值调整|残值调整.{0,6}(亏损|损失)|估值下调.{0,6}(亏损|损失))/;
+const STANDALONE_PAPER_LOSS_RE = /(行情波动.{0,6}(亏损|损失|结算|跌幅|折算)|波动.{0,4}(亏损结算|亏损折算|跌幅结算|清算亏损)|(?:行情|市价|市场|倒腾|倒卖).{0,4}(?:行情|波动)?(?:亏损|折损)(?:折算|结算)?|账面残值调整|残值调整.{0,6}(亏损|损失)|估值下调.{0,6}(亏损|损失))/;
 const CONFISCATED_LOSS_RE = /(亏损本钱|本金亏损|本金损失|赔光本钱|本钱赔光|货被没收|被没收.{0,4}亏|倒卖亏损|货款损失)/;
 const BOOK_RESIDUAL_ENTRY_RE = /(账面残值|资产残值|存货残值|折后残值|账面估值|估值残值|账面现值|残值折算)/;
 const RESIDUAL_ASSET_NAME_RE = /(残值|账面残值|折后残值)$/;
@@ -562,20 +562,25 @@ const BARTER_DOUBLE_ASSET_RE = /(置换|换得|换回|换取|囤积|避险|储�
 const FREE_FIND_ASSET_RE = /(挖出|寻访|遗踪|铁盒|暗盒|获赠|赠与|捡到|捡漏|赏赐|奖励)/;
 const CASH_LIKE_ASSET_NAME_RE = /(资金|现金|回款|变现款|现款|收款|营收|所得|款项|余款|进账)$/;
 const BANK_DEPOSIT_RE = /(存单|定期|活期|存款|存折|银行账户)/;
-const ASSET_BUY_OUTFLOW_RE = /(购入|买入|购买|换购|换取|兑换|置换|囤|存货|采购|收购|进货|预付|定金|盘下|置办)/;
-const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口碑|名声|门路|渠道|人脉|情报网|消息网|路子)$/;
+const ASSET_BUY_OUTFLOW_RE = /(购入|买入|购买|换购|换取|兑换|置换|囤|存货|采购|收购|进货|预付|定金|盘下|置办|(?:周转|本金|资金|货款|收货|进货|采购|倒腾|倒卖|押注)投入)/;
+const ABSTRACT_ASSET_RE = /(感悟|心得|线索|传闻|风声|印象|默契|口碑|名声|门路|渠道|人脉|情报网|情报|消息网|消息|资料|信息|路子|暗线|密径)$/;
 const RECAP_TOTAL_WORTH_NOTE_RE = /(所有身家|全部身家|全部家底|所有家底|总值|合计|累计|汇总)/;
 const EXCHANGE_BALANCE_ENTRY_RE = /(兑换|换币|换钞|折算).{0,8}(结余|本金|积蓄|余额|现金|新币|旧币)/;
 const DEPOSIT_OUTFLOW_RE = /(存入|存单|定期|活期|转入|开户)/;
 
-/** 防止同一笔存货/实物资产跌价或货被没收被扣两遍：
+/** 防止同一笔存货/实物资产跌价、残值回笼后重复记亏或货被没收被扣两遍：
  *  1) 「买了 45 万黄金、行情大跌后只剩 13.5 万残值」时，已记购入出账与折后残值，不再重复扣波动亏损；
- *  2) 「买黑市药引子本金 -40」且货被没收（未入家当），本金已通过买进出账扣完，不再额外扣一笔「亏损本钱 -38」。 */
+ *  2) 「买进货本金 -250、变卖残余回笼 +88」时净亏 -162 已在账上实现，不再额外扣一笔「旧物倒腾行情亏损 -162」；
+ *  3) 「买黑市药引子本金 -40」且货被没收（未入家当），本金已通过买进出账扣完，不再额外扣一笔「亏损本钱 -38」。 */
 function stripPaperLossEntries(delta) {
   if (!delta || !Array.isArray(delta.entries) || !delta.entries.length) return null;
-  const buyOut = delta.entries
-    .filter(e => e && Number(e.amount) < 0 && (BUY_WORD.test(String(e.what || '')) || ASSET_BUY_OUTFLOW_RE.test(String(e.what || ''))) && !BUY_LOSS_RE.test(String(e.what || '')))
-    .reduce((t, e) => t - Number(e.amount), 0);
+  const buyEntries = delta.entries.filter(
+    e => e && Number(e.amount) < 0 && (BUY_WORD.test(String(e.what || '')) || ASSET_BUY_OUTFLOW_RE.test(String(e.what || ''))) && !BUY_LOSS_RE.test(String(e.what || ''))
+  );
+  const buyOut = buyEntries.reduce((t, e) => t - Number(e.amount), 0);
+  const saleCashIn = delta.entries
+    .filter(e => e && Number(e.amount) > 0 && SALE_CASH_ENTRY_RE.test(String(e.what || '')))
+    .reduce((t, e) => t + Number(e.amount), 0);
   const addedWorth = (Array.isArray(delta.assetsAdd) ? delta.assetsAdd : [])
     .reduce((t, a) => t + (Number(a && a.worth) || 0), 0);
   const hasBuyOrAsset = buyOut > 0 || addedWorth > 0;
@@ -595,7 +600,11 @@ function stripPaperLossEntries(delta) {
       removed.push(what);
       return false;
     }
-    if (hasUnrecoveredBuy && (CONFISCATED_LOSS_RE.test(what) || STANDALONE_PAPER_LOSS_RE.test(what)) && lossAmt <= buyOut * 1.05) {
+    const matchesRealizedBuyGap = buyOut > 0 && saleCashIn > 0 && buyEntries.some(b => {
+      const gap = (-Number(b.amount)) - saleCashIn;
+      return gap > 0 && Math.abs(lossAmt - gap) <= Math.max((-Number(b.amount)) * 0.15, 2);
+    });
+    if ((hasUnrecoveredBuy || matchesRealizedBuyGap) && (CONFISCATED_LOSS_RE.test(what) || STANDALONE_PAPER_LOSS_RE.test(what)) && lossAmt <= buyOut * 1.05) {
       removed.push(what);
       return false;
     }
@@ -1926,19 +1935,21 @@ function knownTravelersOf(s, echoes) {
   return byKey;
 }
 
+function cleanJargon(text) {
+  return String(text == null ? '' : text)
+    .replace(/利益深度绑定/g, '分利共担')
+    .replace(/深度利益共享同盟/g, '共担盈亏的同盟')
+    .replace(/深度利益共享/g, '共担盈亏')
+    .replace(/深度绑定/g, '联手共进')
+    .replace(/利益绑定/g, '分利共担')
+    .replace(/深度共识/g, '实在默契')
+    .replace(/深度合作/g, '联手合作')
+    .replace(/赋能/g, '助力')
+    .replace(/闭环/g, '一条龙');
+}
+
 function cleanBondNote(note) {
-  return oneLine(
-    String(note || '')
-      .replace(/利益深度绑定/g, '分利共担')
-      .replace(/深度利益共享同盟/g, '共担盈亏的同盟')
-      .replace(/深度利益共享/g, '共担盈亏')
-      .replace(/深度绑定/g, '联手共进')
-      .replace(/利益绑定/g, '分利共担')
-      .replace(/深度合作/g, '联手合作')
-      .replace(/赋能/g, '助力')
-      .replace(/闭环/g, '一条龙'),
-    42
-  );
+  return oneLine(cleanJargon(note), 42);
 }
 
 function normalizeBond(rawBond, s, echoes, contextText = '') {
@@ -2835,7 +2846,7 @@ function stampOf(title, score, traits) {
 
 module.exports = {
   WEIRD_THEMES, weirdRoll, planEffort, extractWorldTrace,
-  knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat,
+  knownTravelersOf, normalizeBond, activeTravelerBondsOf, travelerBeat, whoKey, cleanJargon,
   trimTrace, formatBondTrace, toThirdPersonTrace, ROUTINE_BOND_NOTE_RE, isBondDowngrade, capInitialBond, isRedundantBond, isBondGroundedInStory, cleanAssetName, normalizeAssetKind, stripPaperLossEntries, stripBogusCashAndExchange,
   recurringBucketOf, recurringStreamsOf, scaleTierOf, reconcileMonthFinancials,
   deriveSummary, deriveHeadline,
